@@ -1,0 +1,20 @@
+# Core
+Django==5.1.5
+djangorestframework==3.15.2
+
+# Middleware & static files
+django-cors-headers==4.6.0
+whitenoise==6.11.0
+
+# Config
+python-dotenv==1.0.1
+
+# Image processing (property image compression)
+pillow==11.1.0
+# System dependency for advertisement video compression: ffmpeg binary must be installed.
+
+# Production WSGI server (Azure App Service)
+gunicorn==23.0.0
+
+# MySQL driver (see property_listing/settings.py -> DATABASES)
+mysqlclient==2.2.7

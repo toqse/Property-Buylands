@@ -1,0 +1,6 @@
+# Prefer generated HTML files for extensionless routes
+/:path    /:path.html   200
+/:path/   /:path/index.html   200
+
+# Fallback to exported 404 page for unknown paths
+/*        /404.html     404

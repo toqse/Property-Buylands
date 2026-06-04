@@ -1,0 +1,2564 @@
+# Property Listing API Documentation
+
+**Local dev base URL (default `python manage.py runserver`):** `http://127.0.0.1:8844` — this project avoids **8000** because another Django app often uses it and causes **404** on `/api/accounts/...`. Override: `python manage.py runserver 127.0.0.1:8000` or set env `P4U_DEV_PORT`.
+
+## API changelog
+
+### 2026-06-02
+| Area | Change |
+|------|--------|
+| **Advertisements** | New module at `/api/advertisements/`. Admin CRUD with image+video uploads (image compression and ffmpeg video compression on save). Public `GET /api/advertisements/active/?placement=…` returns location-targeted active ads. |
+| **Properties listing** | `GET /api/properties/properties/` returns a **mixed feed** only when `?include_ads=true`: `results` items are tagged `{ "type": "property" \| "ad", "data": {...} }`; ads are spliced in after every `ad_inject_after_every_n_properties` from site settings (default 5). Default is plain property objects (no ads). Pagination metadata still reflects property count. |
+| **Video thumbnails** | `property_video` upload (write) auto-generates a JPEG thumbnail via ffmpeg; responses expose `property_video_url` and `video_thumbnail_url` only. Ad `video_file` uploads behave similarly (`video_thumbnail_url` on public responses). Manual ad thumbnail upload removed. Requires ffmpeg on the server. |
+
+### 2026-05-19
+| Area | Change |
+|------|--------|
+| **Admin panel images** | CRUD at `/api/properties/admin-images/` — `title` (max 50) + image; max **5** images system-wide; bulk upload via `titles` JSON + `image_0`…`image_4`; mobile-friendly `{ success, message, data/results }` responses. |
+| **Property types** | `image` icon field on create/update (multipart). |
+| **Properties** | `area_unit` (`sqft` \| `cent`) controls required built-property fields (`bedrooms`, `bathrooms`, `built_year`, `furnishing`). |
+
+### 2026-05-18
+| Area | Change |
+|------|--------|
+| **Documentation** | Expanded owner register/login, property create (required vs optional fields), property response schema, `mine`/approve/reject/delete_image; removed undocumented `delete_nearby_place` (use PATCH `nearby_places_data`). |
+
+### 2026-05-15
+
+| Area | Change |
+|------|--------|
+| **Accounts / profile** | `GET` + `PATCH` `/api/accounts/profile/` for owners; `POST` `/api/accounts/profile/email-change/request/` for email re-verification. |
+| **UserProfile model** | Added `address`, `pending_email` (internal; set during email-change OTP flow). |
+| **UserSerializer** | Added `address`, `email_verified` on all login/register/profile responses. |
+| **OTP purposes** | New `email_change` purpose on `OTPVerification` (in addition to `registration`, `login`, `password_reset`). |
+| **Properties** | `slug` on listings; detail URLs accept `{id_or_slug}`; `GET .../properties/mine/` for owner dashboard. |
+| **Properties / ownership** | `created_by` on listings; owner create → `pending` moderation; staff approve/reject actions. |
+| **Contacts** | Optional `property` FK on enquiries; owners see enquiries for their listings only. |
+| **Testimonials** | CRUD at `/api/properties/testimonials/`; section copy on `site-settings`. |
+| **Site settings** | `admin_phone`, `admin_whatsapp`, `company_email`, `company_address` on `SiteSettings`; public `GET /api/properties/site-contact/` and `GET /api/properties/company-contact/`. |
+
+---
+
+## Authentication APIs
+
+**Sanity check (before calling register):** `GET {base}/api/_meta/` (e.g. `GET http://127.0.0.1:8844/api/_meta/`) must return JSON with `"ROOT_URLCONF": "property_listing.urls"` and `"register_path": "/api/accounts/register/"`. If you get 404 or a different `ROOT_URLCONF`, you are not hitting this backend (wrong host/port or another process).
+
+Canonical paths from **`apidoc.txt`** are wired in **`property_listing/urls.py`**. Optional aliases live in **`accounts/urls.py`** (included at `api/accounts/`).
+
+### Accounts API index
+- **URL**: `/api/accounts/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: **200 OK** — JSON with `detail`, `ROOT_URLCONF`, and an `endpoints` map (register, login, profile, OTP routes, etc.). Use to confirm routing in dev.
+
+### `UserSerializer` (auth responses)
+
+Returned as `user` on login/register/verify and as the body of `GET`/`PATCH` profile. Owner accounts include profile fields from `UserProfile`.
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `id` | integer | Django user pk |
+| `username` | string | |
+| `email` | string | |
+| `first_name`, `last_name` | string | Display name; profile PATCH accepts `full_name` to update both |
+| `is_staff` | boolean | Admin/staff |
+| `is_property_owner` | boolean | Has `UserProfile` with `account_type` = `property_owner` |
+| `phone` | string | From profile |
+| `whatsapp_number` | string | From profile |
+| `address` | string | From profile (owner dashboard) |
+| `avatar` | string \| null | Absolute URL when set |
+| `account_type` | string \| null | e.g. `property_owner` |
+| `email_verified` | boolean | `true` when `profile.email_verified_at` is set |
+
+**Example `user` object** (owner after verify, OTP login, or profile GET):
+```json
+{
+  "id": 12,
+  "username": "owner_jane",
+  "email": "owner@example.com",
+  "first_name": "Jane",
+  "last_name": "Owner",
+  "is_staff": false,
+  "is_property_owner": true,
+  "phone": "+971501234567",
+  "whatsapp_number": "+971509876543",
+  "address": "123 Marina Walk, Dubai",
+  "avatar": "http://127.0.0.1:8844/media/avatars/photo.webp",
+  "account_type": "property_owner",
+  "email_verified": true
+}
+```
+
+### Register Admin Account
+- **URL**: `/api/accounts/register/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "username": "admin",
+    "email": "admin@example.com",
+    "password": "StrongPassword123!",
+    "password2": "StrongPassword123!",
+    "first_name": "Admin",
+    "last_name": "User"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+      "user": {
+        "id": 1,
+        "username": "admin",
+        "email": "admin@example.com",
+        "first_name": "Admin",
+        "last_name": "User",
+        "is_staff": true,
+        "is_property_owner": false,
+        "phone": "",
+        "whatsapp_number": "",
+        "address": "",
+        "avatar": null,
+        "account_type": null,
+        "email_verified": false
+      }
+    }
+    ```
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: Validation errors
+- **Aliases (optional, same request body and `RegisterView`)**: `POST /api/accounts/register/user/`, `POST /api/accounts/register/admin/`
+- **404 troubleshooting**: The Django 404 page should reference **`property_listing.urls`**. If you see another project name, stop that server and run `python manage.py runserver` from this repo’s **`Backend`** folder. Use **JSON** body and `Content-Type: application/json` in clients (e.g. Postman).
+
+### Login
+- **URL**: `/api/accounts/login/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "email": "admin@example.com",
+    "password": "StrongPassword123!"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+      "user": {
+        "id": 1,
+        "username": "admin",
+        "email": "admin@example.com",
+        "first_name": "Admin",
+        "last_name": "User",
+        "is_staff": true,
+        "is_property_owner": false,
+        "phone": "",
+        "whatsapp_number": "",
+        "address": "",
+        "avatar": null,
+        "account_type": null,
+        "email_verified": false
+      }
+    }
+    ```
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: `{"non_field_errors": ["Invalid email or password."]}`
+
+### Logout
+- **URL**: `/api/accounts/logout/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: `{"message": "Successfully logged out."}`
+
+### Get owner profile
+- **URL**: `/api/accounts/profile/`
+- **Method**: GET
+- **Auth Required**: Yes (Token) — property owner with `UserProfile` only
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content** (`UserSerializer`):
+    ```json
+    {
+      "id": 2,
+      "username": "jane_owner",
+      "email": "jane@example.com",
+      "first_name": "Jane",
+      "last_name": "Owner",
+      "is_staff": false,
+      "is_property_owner": true,
+      "phone": "+971501234567",
+      "whatsapp_number": "+971501234567",
+      "address": "123 Marina Walk, Dubai",
+      "avatar": null,
+      "account_type": "property_owner",
+      "email_verified": true
+    }
+    ```
+- **Error Response**:
+  - **Code**: 403 FORBIDDEN — user has no owner profile
+
+### Update owner profile
+- **URL**: `/api/accounts/profile/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token) — property owner with `UserProfile` only
+- **Headers**: `Authorization: Token <token>`, `Content-Type: application/json`
+
+| Field | Required | Type | Notes |
+|-------|----------|------|--------|
+| `full_name` | No | string | Updates `first_name` + `last_name` |
+| `phone` | No | string | |
+| `whatsapp_number` | No | string | |
+| `address` | No | string | |
+| `current_password` | Conditional | string | Required with password change (send all three password fields together) |
+| `new_password` | Conditional | string | Django validators |
+| `new_password2` | Conditional | string | Must match `new_password` |
+| `email` | Conditional | string | Requires `email_otp` after `POST .../profile/email-change/request/` |
+| `email_otp` | Conditional | string | 6-digit OTP sent to **new** email |
+
+- **Request Body** (all fields optional unless noted; send only what you change):
+  ```json
+  {
+    "full_name": "Jane Owner",
+    "phone": "+971501234567",
+    "whatsapp_number": "+971509876543",
+    "address": "123 Marina Walk, Dubai, UAE"
+  }
+  ```
+- **Change password** (send all three together):
+  ```json
+  {
+    "current_password": "OldPass123!",
+    "new_password": "NewPass456!",
+    "new_password2": "NewPass456!"
+  }
+  ```
+- **Change email** (after OTP request below; send `email` and `email_otp` together):
+  ```json
+  {
+    "email": "newemail@example.com",
+    "email_otp": "123456"
+  }
+  ```
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content**: Updated `UserSerializer` (same shape as GET profile)
+- **Error Response**:
+  - **Code**: 400 BAD REQUEST — field validation (e.g. wrong `current_password`, missing `email_otp` when email changed)
+  - **Code**: 403 FORBIDDEN — no owner profile
+
+### Request email-change OTP (profile)
+- **URL**: `/api/accounts/profile/email-change/request/`
+- **Method**: POST
+- **Auth Required**: Yes (Token) — property owner with `UserProfile` only
+- **Headers**: `Authorization: Token <token>`, `Content-Type: application/json`
+- **Request Body**:
+  ```json
+  {
+    "new_email": "newemail@example.com"
+  }
+  ```
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content**: `{"success": true, "message": "OTP sent successfully.", "otp": "123456"}`
+- **Notes**: Emails a 6-digit OTP to the **new** address only; on success, stores `pending_email` on the profile. Response includes `otp` for client/testing. Complete the change with **PATCH** `/api/accounts/profile/` including `email` and `email_otp`. OTP expires in 10 minutes. OTP is never sent to admin email.
+- **Error Response**:
+  - **Code**: 400 BAD REQUEST — field validation, e.g. `{"new_email": ["Email already in use."]}`
+  - **Code**: 400 BAD REQUEST — delivery / send failure: `{"success": false, "message": "Unable to send OTP to this email address."}`
+
+### Staff: list property owners
+- **URL**: `/api/accounts/owners/`
+- **Method**: GET
+- **Auth Required**: Yes (Token) — **staff** (`is_staff=true`) only
+- **Headers**: `Authorization: Token <token>`
+- **Query params**:
+  | Param | Type | Notes |
+  |-------|------|--------|
+  | `page` | int | Default 1 |
+  | `page_size` | int | Default 20, max 100 |
+  | `search` | string | Optional — matches name, email, username, phone, WhatsApp |
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content** (paginated):
+    ```json
+    {
+      "count": 42,
+      "next": "http://host/api/accounts/owners/?page=2",
+      "previous": null,
+      "results": [
+        {
+          "id": 2,
+          "username": "jane_owner",
+          "email": "jane@example.com",
+          "first_name": "Jane",
+          "last_name": "Owner",
+          "is_staff": false,
+          "is_property_owner": true,
+          "phone": "+971501234567",
+          "whatsapp_number": "+971501234567",
+          "address": "123 Marina Walk",
+          "avatar": null,
+          "account_type": "property_owner",
+          "email_verified": true,
+          "date_joined": "2026-01-15T10:30:00Z",
+          "is_active": true,
+          "property_count": 3
+        }
+      ]
+    }
+    ```
+- **Error Response**:
+  - **Code**: 403 FORBIDDEN — non-staff token
+
+### Staff: get property owner
+- **URL**: `/api/accounts/owners/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token) — staff only
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content**: Same object shape as one item in list `results` above
+- **Error Response**:
+  - **Code**: 404 NOT FOUND — not a property owner account
+
+### Staff: update property owner
+- **URL**: `/api/accounts/owners/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token) — staff only
+- **Headers**: `Authorization: Token <token>`, `Content-Type: application/json`
+- **Request Body** (all optional; send only fields to change):
+  | Field | Type | Notes |
+  |-------|------|--------|
+  | `full_name` | string | Updates `first_name` + `last_name` |
+  | `email` | string | Applied directly (no OTP); sets `email_verified` |
+  | `phone` | string | |
+  | `whatsapp_number` | string | |
+  | `address` | string | |
+  | `is_active` | boolean | `false` invalidates auth tokens for that user |
+  | `new_password` | string | Django validators; send with `new_password2` |
+  | `new_password2` | string | Must match `new_password` |
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content**: Updated owner object (list/detail shape)
+- **Error Response**:
+  - **Code**: 400 BAD REQUEST — validation (e.g. email in use, staff account)
+  - **Code**: 404 NOT FOUND
+
+### Staff: delete property owner
+- **URL**: `/api/accounts/owners/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token) — staff only
+- **Success Response**:
+  - **Code**: 204 NO CONTENT
+- **Notes**: Permanently deletes the user and profile. Listings with `created_by` set to this user keep the row but `created_by` becomes `null`.
+- **Error Response**:
+  - **Code**: 400 BAD REQUEST — cannot delete staff account or your own account
+  - **Code**: 404 NOT FOUND
+
+### Owner register — step 1 (send OTP)
+- **URL**: `/api/accounts/register/owner/init/`
+- **Method**: POST
+- **Auth Required**: No
+- **Content-Type**: `multipart/form-data`
+
+| Field | Required | Type | Notes |
+|-------|----------|------|--------|
+| `full_name` | **Yes** | string | Split into `first_name` / `last_name` on the user record |
+| `email` | **Yes** | string | Must be unique (case-insensitive) |
+| `phone` | **Yes** | string | Stored on `UserProfile.phone` |
+| `whatsapp_number` | **Yes** | string | Stored on `UserProfile.whatsapp_number` |
+| `password` | **Yes** | string | Django password validators apply |
+| `password2` | **Yes** | string | Must match `password` |
+| `avatar` | No | file | Alias: `profile_photo`. Max **500 KB**; jpg/jpeg/png/webp |
+
+- **Success Response** — **201 CREATED**:
+  ```json
+  { "success": true, "message": "OTP sent successfully.", "otp": "123456" }
+  ```
+  No `token` until step 2. Creates **inactive** `User` + `UserProfile`; emails 6-digit OTP to the entered email only (`purpose`: `registration`). Rolls back user creation if email delivery fails. Response includes `otp`.
+- **Error Response** — **400 BAD REQUEST** (examples):
+  ```json
+  { "email": ["Email already in use."] }
+  ```
+  ```json
+  { "password": ["Password fields didn't match."] }
+  ```
+  ```json
+  { "success": false, "message": "Unable to send OTP to this email address." }
+  ```
+  Field-level validation errors for missing/invalid fields.
+
+### Owner register — step 2 (verify OTP)
+- **URL**: `/api/accounts/register/owner/verify/`
+- **Method**: POST
+- **Auth Required**: No
+- **Content-Type**: `application/json`
+
+| Field | Required | Type | Notes |
+|-------|----------|------|--------|
+| `email` | **Yes** | string | Same email used in step 1 |
+| `otp` | **Yes** | string | 6-digit code from email; expires in **10 minutes** |
+
+- **Request Body**:
+  ```json
+  {
+    "email": "owner@example.com",
+    "otp": "123456"
+  }
+  ```
+- **Success Response** — **200 OK**:
+  ```json
+  {
+    "success": true,
+    "message": "OTP verified successfully.",
+    "otp": "123456",
+    "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+    "user": {
+      "id": 12,
+      "username": "owner_jane",
+      "email": "owner@example.com",
+      "first_name": "Jane",
+      "last_name": "Owner",
+      "is_staff": false,
+      "is_property_owner": true,
+      "phone": "+971501234567",
+      "whatsapp_number": "+971509876543",
+      "address": "",
+      "avatar": null,
+      "account_type": "property_owner",
+      "email_verified": true
+    }
+  }
+  ```
+- **Error Response** — **400 BAD REQUEST** (examples):
+  ```json
+  { "detail": "Invalid or expired OTP." }
+  ```
+  ```json
+  { "detail": "Account is already verified. Please log in." }
+  ```
+  ```json
+  { "detail": "Invalid email or code." }
+  ```
+
+### Owner login — request OTP
+- **URL**: `/api/accounts/login/otp/request/`
+- **Method**: POST
+- **Auth Required**: No
+- **Content-Type**: `application/json`
+
+| Field | Required | Type | Notes |
+|-------|----------|------|--------|
+| `email` | **Yes** | string | Active property owner only; staff must use password login |
+
+- **Request Body**:
+  ```json
+  { "email": "owner@example.com" }
+  ```
+- **Success Response** — **200 OK**:
+  ```json
+  { "success": true, "message": "OTP sent successfully.", "otp": "123456" }
+  ```
+- **Error Response** — **400 BAD REQUEST** (generic; does not reveal whether email exists):
+  ```json
+  { "success": false, "message": "Unable to send OTP to this email address." }
+  ```
+  Returned for unknown email, inactive account, non-owner, staff account, or SMTP/delivery failure.
+
+### Owner login — verify OTP
+- **URL**: `/api/accounts/login/otp/verify/`
+- **Method**: POST
+- **Auth Required**: No
+- **Content-Type**: `application/json`
+
+| Field | Required | Type | Notes |
+|-------|----------|------|--------|
+| `email` | **Yes** | string | |
+| `otp` | **Yes** | string | 6-digit code; expires in **10 minutes** |
+
+- **Request Body**:
+  ```json
+  {
+    "email": "owner@example.com",
+    "otp": "123456"
+  }
+  ```
+- **Success Response** — **200 OK**: Same shape as owner register verify (`success`, `message`, `otp`, `token`, `user`).
+- **Error Response** — **400 BAD REQUEST**:
+  ```json
+  { "detail": "Invalid or expired OTP." }
+  ```
+  ```json
+  { "detail": "Invalid email or code." }
+  ```
+
+### OTP purposes (`OTPVerification.purpose`)
+| Value | Used for |
+|-------|----------|
+| `registration` | Owner sign-up (`register/owner/init` → `verify`) |
+| `login` | Owner OTP login |
+| `password_reset` | Forgot password flow |
+| `email_change` | Profile email change (`profile/email-change/request` → `PATCH profile` with `email_otp`) |
+
+OTP codes expire after **10 minutes**.
+
+### Forgot Password
+- **URL**: `/api/accounts/forgot-password/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "email": "admin@example.com"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: `{"success": true, "message": "OTP sent successfully.", "otp": "123456"}`
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: `{"success": false, "message": "Unable to send OTP to this email address."}` (unknown email or delivery failure; does not enumerate accounts)
+
+### Verify OTP
+- **URL**: `/api/accounts/verify-otp/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "email": "admin@example.com",
+    "otp": "123456"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: `{"success": true, "message": "OTP verified successfully.", "otp": "123456"}`
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: `{"success": false, "message": "Invalid OTP or expired"}`
+
+### Reset Password
+- **URL**: `/api/accounts/reset-password/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "email": "admin@example.com",
+    "otp": "123456",
+    "new_password": "NewStrongPassword123!",
+    "confirm_password": "NewStrongPassword123!"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: `{"message": "Password reset successful"}`
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: `{"error": "Invalid OTP or expired"}` or password validation errors
+
+## Authentication
+All protected endpoints require token authentication. Include the token in the request header:
+```
+Authorization: Token 9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b
+```
+
+## Property Management APIs
+
+### Features
+
+#### List All Features
+- **URL**: `/api/properties/features/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "Swimming Pool"
+      },
+      {
+        "id": 2,
+        "name": "Garden"
+      }
+    ]
+    ```
+
+#### Get Feature Detail
+- **URL**: `/api/properties/features/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Swimming Pool"
+    }
+    ```
+
+#### Create Feature
+- **URL**: `/api/properties/features/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Swimming Pool"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Swimming Pool"
+    }
+    ```
+
+#### Update Feature
+- **URL**: `/api/properties/features/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Large Swimming Pool"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Large Swimming Pool"
+    }
+    ```
+
+#### Delete Feature
+- **URL**: `/api/properties/features/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+### Property Types
+
+Property type objects include an icon/image used in filters and listing UI. Responses return `image` as an **absolute URL** (or `null` for legacy rows not yet migrated).
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `id` | integer | Primary key |
+| `name` | string | Display name |
+| `image` | string \| null | Absolute icon URL when set |
+| `created_at` | string | ISO datetime |
+| `updated_at` | string | ISO datetime |
+
+Allowed upload formats: **jpg**, **jpeg**, **png**, **webp**.
+
+#### List All Property Types
+- **URL**: `/api/properties/property-types/`
+- **Method**: GET
+- **Auth Required**: No (public)
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "Apartment",
+        "image": "http://127.0.0.1:8844/media/property_types/icons/apartment.webp",
+        "created_at": "2026-05-15T10:30:00Z",
+        "updated_at": "2026-05-15T10:30:00Z"
+      },
+      {
+        "id": 2,
+        "name": "House",
+        "image": "http://127.0.0.1:8844/media/property_types/icons/house.webp",
+        "created_at": "2026-05-15T11:00:00Z",
+        "updated_at": "2026-05-15T11:00:00Z"
+      }
+    ]
+    ```
+
+#### Get Property Type Detail
+- **URL**: `/api/properties/property-types/{id}/`
+- **Method**: GET
+- **Auth Required**: No (public)
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Apartment",
+      "image": "http://127.0.0.1:8844/media/property_types/icons/apartment.webp",
+      "created_at": "2026-05-15T10:30:00Z",
+      "updated_at": "2026-05-15T10:30:00Z"
+    }
+    ```
+
+#### Create Property Type
+- **URL**: `/api/properties/property-types/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Content-Type**: `multipart/form-data`
+- **Required fields**: `name`, `image` (file)
+- **Request Body** (multipart):
+  ```
+  name=Apartment
+  image=<file>
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Apartment",
+      "image": "http://127.0.0.1:8844/media/property_types/icons/apartment.webp",
+      "created_at": "2026-05-15T10:30:00Z",
+      "updated_at": "2026-05-15T10:30:00Z"
+    }
+    ```
+- **Error Response** — **400 BAD REQUEST** (example):
+  ```json
+  { "image": ["This field is required."] }
+  ```
+
+#### Update Property Type
+- **URL**: `/api/properties/property-types/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Content-Type**: `multipart/form-data`
+- **Request Body** (multipart; send only fields to change):
+  ```
+  name=Luxury Apartment
+  image=<file>
+  ```
+- **Notes**: `image` is **required** when the property type has no stored icon yet. If an icon already exists, `image` is optional on PATCH (send a new file only to replace it). You cannot clear `image` to empty.
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Luxury Apartment",
+      "image": "http://127.0.0.1:8844/media/property_types/icons/luxury-apartment.webp",
+      "created_at": "2026-05-15T10:30:00Z",
+      "updated_at": "2026-05-15T12:00:00Z"
+    }
+    ```
+
+#### Delete Property Type
+- **URL**: `/api/properties/property-types/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+### Admin panel images
+
+Gallery images for the admin panel and mobile app. **Maximum 5 images** in the system at any time. Allowed formats: **jpg**, **jpeg**, **png**, **webp**.
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `id` | integer | Primary key |
+| `title` | string | Required; max **50** characters |
+| `image` | string | Absolute image URL in responses |
+| `image_url` | string | Same as `image` (mobile alias) |
+| `display_order` | integer | Sort order (lower first) |
+| `created_at` | string | ISO datetime |
+| `updated_at` | string | ISO datetime |
+
+List responses use a mobile-friendly envelope: `success`, `message`, `max_allowed`, `total_count`, `current_page`, `total_pages`, `results`.
+
+#### List admin images
+- **URL**: `/api/properties/admin-images/`
+- **Method**: GET
+- **Auth Required**: No (public — mobile app)
+- **Query**: `page` (default 1), `limit` (default 10, max 50)
+- **Success Response** — **200 OK**:
+  ```json
+  {
+    "success": true,
+    "message": "Images retrieved successfully.",
+    "max_allowed": 5,
+    "total_count": 2,
+    "current_page": 1,
+    "total_pages": 1,
+    "results": [
+      {
+        "id": 1,
+        "title": "Summer Offer",
+        "image": "http://127.0.0.1:8844/media/admin_panel/images/summer.webp",
+        "image_url": "http://127.0.0.1:8844/media/admin_panel/images/summer.webp",
+        "display_order": 0,
+        "created_at": "2026-05-19T10:00:00Z",
+        "updated_at": "2026-05-19T10:00:00Z"
+      }
+    ]
+  }
+  ```
+
+#### Get admin image detail
+- **URL**: `/api/properties/admin-images/{id}/`
+- **Method**: GET
+- **Auth Required**: No (public)
+- **Success Response** — **200 OK**:
+  ```json
+  {
+    "success": true,
+    "message": "Image retrieved successfully.",
+    "data": {
+      "id": 1,
+      "title": "Summer Offer",
+      "image": "http://127.0.0.1:8844/media/admin_panel/images/summer.webp",
+      "image_url": "http://127.0.0.1:8844/media/admin_panel/images/summer.webp",
+      "display_order": 0,
+      "created_at": "2026-05-19T10:00:00Z",
+      "updated_at": "2026-05-19T10:00:00Z"
+    }
+  }
+  ```
+
+#### Create admin image(s)
+- **URL**: `/api/properties/admin-images/`
+- **Method**: POST
+- **Auth Required**: Yes — **admin** (`is_staff` user token)
+- **Headers**: `Authorization: Token <token>`
+- **Content-Type**: `multipart/form-data`
+
+**Single upload**
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `title` | Yes | Max 50 characters |
+| `image` | Yes | One file |
+| `display_order` | No | Integer; default auto-increment |
+
+```
+title=Summer Offer
+image=<file>
+display_order=0
+```
+
+**Bulk upload** (multiple files in one request, total system count must stay ≤ 5)
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `titles` | Yes | JSON array string, e.g. `["Offer A","Offer B"]` (max 50 chars per title) |
+| `images` | Yes* | Repeat multipart field — one file per image, same order as `titles` |
+| `image_0`, `image_1`, … | Yes* | Alternative to `images` — indexed file fields matching `titles` order |
+| `display_order` | No | Starting order for first image; others increment |
+
+\* Provide either repeated `images` **or** `image_0` … `image_4` (not both patterns required — indexed fields are preferred for mobile clients).
+
+```
+titles=["Offer A","Offer B"]
+image_0=<file1>
+image_1=<file2>
+```
+
+- **Success Response** — **201 CREATED** (single):
+  ```json
+  {
+    "success": true,
+    "message": "Image created successfully.",
+    "data": { "id": 1, "title": "Summer Offer", "image": "http://...", "image_url": "http://...", "display_order": 0, "created_at": "...", "updated_at": "..." }
+  }
+  ```
+- **Success Response** — **201 CREATED** (bulk):
+  ```json
+  {
+    "success": true,
+    "message": "2 images created successfully.",
+    "count": 2,
+    "data": [ { "id": 1, "title": "Offer A", ... }, { "id": 2, "title": "Offer B", ... } ]
+  }
+  ```
+- **Error Response** — **400** (limit exceeded):
+  ```json
+  {
+    "success": false,
+    "message": "Cannot add 3 image(s). Maximum is 5 total (2 slot(s) remaining).",
+    "errors": { "images": ["System limit is 5 images. Currently 3, tried to add 3."] }
+  }
+  ```
+
+#### Update admin image
+- **URL**: `/api/properties/admin-images/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes — **admin**
+- **Content-Type**: `multipart/form-data`
+- **Request Body** (send only fields to change): `title`, `image`, `display_order`
+- **Success Response** — **200 OK**:
+  ```json
+  {
+    "success": true,
+    "message": "Image updated successfully.",
+    "data": { "id": 1, "title": "Updated Title", "image": "http://...", ... }
+  }
+  ```
+- **Note**: `PUT` is not allowed (405).
+
+#### Delete admin image
+- **URL**: `/api/properties/admin-images/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes — **admin**
+- **Success Response** — **200 OK**:
+  ```json
+  {
+    "success": true,
+    "message": "Image \"Summer Offer\" deleted successfully."
+  }
+  ```
+
+### Properties
+
+#### Property object (response shape)
+
+Returned by list, detail, create, update, approve, reject, and `mine`. Write-only on create/update: `uploaded_images`, `nearby_places_data` (input); `state` / `district` / `city` accept **integer PK** or **name string** on write.
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `id` | integer | Primary key |
+| `property_for` | string | `rent` \| `sell` |
+| `property_ownership` | string | `management` \| `direct_owner` |
+| `contact_name` | string | |
+| `whatsapp_number`, `phone_number` | string | |
+| `email` | string | |
+| `state`, `district`, `city` | integer | FK ids in responses |
+| `state_name`, `district_name`, `city_name` | string | Display names |
+| `location` | object | `{ "state", "district", "city" }` names |
+| `title` | string | |
+| `slug` | string | URL segment; auto-generated from `title` if omitted on create |
+| `price` | string | Numeric or text (e.g. `"25 Lakh"`, `"Negotiable"`) |
+| `property_type` | integer | Write: PK. Read: also `property_type_details`, `property_type_name` |
+| `latitude`, `longitude` | string \| null | Decimal as string |
+| `bedrooms`, `bathrooms` | integer \| null | Required when `area_unit` = `sqft`; may be `null` for `cent` |
+| `area` | integer | |
+| `area_unit` | string | `sqft` (default) \| `cent` — controls which built-property fields are required |
+| `description` | string | |
+| `features` | integer[] | Write: feature PKs. Read: `feature_details` array |
+| `google_maps_url` | string \| null | |
+| `google_embedded_map_link` | string \| null | iframe HTML |
+| `youtube_video_link` | string \| null | |
+| `property_video_url` | string \| null | Absolute media URL when a video is uploaded |
+| `video_thumbnail_url` | string \| null | Read-only; auto-generated from uploaded property video (absolute URL) |
+| `nearby_places` | mixed | Legacy JSON storage |
+| `nearby_places_data` | array | Normalized `[{ "name", "distance" }]` in responses |
+| `built_year` | integer \| null | Optional on every `area_unit`; stored as `null` when omitted |
+| `furnishing` | string \| null | Required when `area_unit` = `sqft`; may be `null` for `cent` |
+| `parking_spaces` | integer | Default `0` |
+| `is_featured` | boolean | |
+| `images` | array | `[{ "id", "image" }]` — absolute URLs |
+| `moderation_status` | string | `pending` \| `approved` \| `rejected` (read-only) |
+| `moderated_at` | string \| null | ISO datetime |
+| `moderated_by_username` | string \| null | Staff display name |
+| `created_by` | integer \| null | Owner user id who created the listing |
+| `created_at`, `updated_at` | string | ISO datetimes |
+
+**Example single property (201 create / 200 detail)**:
+```json
+{
+  "id": 42,
+  "property_for": "rent",
+  "property_ownership": "direct_owner",
+  "contact_name": "Jane Owner",
+  "whatsapp_number": "+971501234567",
+  "phone_number": "+971501234567",
+  "email": "jane@example.com",
+  "state": 1,
+  "state_name": "Kerala",
+  "district": 2,
+  "district_name": "Ernakulam",
+  "city": 3,
+  "city_name": "Kochi",
+  "location": { "state": "Kerala", "district": "Ernakulam", "city": "Kochi" },
+  "title": "Luxury Apartment in Downtown",
+  "slug": "luxury-apartment-in-downtown",
+  "price": "1500.00",
+  "property_type": 1,
+  "property_type_details": { "id": 1, "name": "Apartment" },
+  "property_type_name": "Apartment",
+  "latitude": "9.931233",
+  "longitude": "76.267303",
+  "bedrooms": 2,
+  "bathrooms": 2,
+  "area": 1200,
+  "area_unit": "sqft",
+  "description": "Beautiful apartment with city view",
+  "features": [1, 2],
+  "feature_details": [{ "id": 1, "name": "Pool" }, { "id": 2, "name": "Gym" }],
+  "google_maps_url": "https://maps.google.com/?q=Kochi",
+  "google_embedded_map_link": null,
+  "youtube_video_link": null,
+  "property_video_url": null,
+  "video_thumbnail_url": null,
+  "nearby_places": [{ "name": "International School", "distance": 0.5 }],
+  "nearby_places_data": [{ "name": "International School", "distance": 0.5 }],
+  "built_year": 2018,
+  "furnishing": "furnished",
+  "parking_spaces": 1,
+  "is_featured": false,
+  "images": [{ "id": 10, "image": "http://127.0.0.1:8844/media/property_images/img_a1b2.webp" }],
+  "moderation_status": "pending",
+  "moderated_at": null,
+  "moderated_by_username": null,
+  "created_by": 12,
+  "created_at": "2026-05-15T10:30:00Z",
+  "updated_at": "2026-05-15T10:30:00Z"
+}
+```
+
+#### List All Properties
+- **URL**: `/api/properties/properties/`
+- **Method**: GET
+- **Auth Required**: No (public). Optional `Authorization: Token <token>` for staff-only filters.
+- **Pagination**: Page-number (`page`, `page_size`, default `page_size=10`, max `100`)
+- **Public visibility**: Unauthenticated and non-staff users only receive properties with `moderation_status` = `approved` (pending and rejected listings are hidden).
+- **Query Parameters**:
+  - `moderation_status` &mdash; **Staff only** (`is_staff`): `pending`, `approved`, `rejected`, or `all` (default). Filters the admin list; ignored for non-staff (they always get approved-only).
+  - `property_for` &mdash; `rent` or `sell`
+  - `price_min`, `price_max` &mdash; Decimal amounts
+  - `ownership` &mdash; `management` or `direct_owner`
+  - `area_min`, `area_max` &mdash; Numeric; combine with `area_unit` (`sqft` default, `cent` converted to sqft)
+  - `date_from`, `date_to` &mdash; `YYYY-MM-DD` (applies to `created_at`)
+  - `property_type` &mdash; Property type ID
+  - `bedrooms_min`, `bedrooms_max`
+  - `bathrooms_min`, `bathrooms_max`
+  - `state_id`, `district_id`, `city_id`
+  - `location` &mdash; Text match against state/district/city names
+  - `latitude`, `longitude` &mdash; Nearby filter: properties within `radius` km (defaults to admin `filter_radius` from site settings when `radius` omitted)
+  - `radius` &mdash; Optional override for nearby filter radius in kilometers (used with `latitude` + `longitude`)
+  - `lat_min`, `lat_max`, `lng_min`, `lng_max` &mdash; Bounding-box coordinate filters
+  - `furnishing` &mdash; Exact furnishing value (case-insensitive)
+  - `search` &mdash; Matches property title, description, feature names, or nearby places
+  - `include_ads` &mdash; Optional boolean (default `false`). When `true`, response `results` is a **mixed feed** of `{ "type": "property", "data": {...} }` and `{ "type": "ad", "data": {...} }` items. Ads are inserted after every `ad_inject_after_every_n_properties` from site settings (global, default 5). Without location params: property ads first, then generic ads. With `latitude`/`longitude` (and optional `state_id`/`district_id`/`city_id`): generic ads always included; property ads filtered by radius/region; property ads ordered before generic. Omit or set to `false` to receive plain property objects.
+- **Example Requests**:
+  - `/api/properties/properties/?page=2&page_size=20&price_min=500000&price_max=2000000`
+  - `/api/properties/properties/?property_type=3&bedrooms_min=3&bathrooms_min=2&ownership=direct_owner`
+  - `/api/properties/properties/?area_min=5&area_unit=cent&location=koch`
+  - `/api/properties/properties/?property_for=rent&furnishing=furnished&search=pool`
+  - `/api/properties/properties/?moderation_status=pending` (staff token only)
+- **Property JSON fields (moderation)**:
+  - `moderation_status` &mdash; `pending` | `approved` | `rejected` (read-only in API responses; changed via approve/reject actions or set on create for staff).
+  - `is_featured` &mdash; boolean; optional on create/update (`true` / `false`).
+  - `moderated_at` &mdash; ISO datetime when last approved/rejected (nullable).
+  - `moderated_by_username` &mdash; Display name of staff who last moderated (nullable).
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "count": 25,
+      "next": "http://example.com/api/properties/properties/?page=2",
+      "previous": null,
+      "results": [
+        {
+          "id": 1,
+          "property_for": "rent",
+          "property_ownership": "management",
+          "contact_name": "John Doe",
+          "whatsapp_number": "+1234567890",
+          "phone_number": "+1234567890",
+          "email": "john@example.com",
+          "state": 1,
+          "state_name": "California",
+          "district": 1,
+          "district_name": "Los Angeles County",
+          "city": 1,
+          "city_name": "Los Angeles",
+          "title": "Luxury Apartment in Downtown",
+          "slug": "luxury-apartment-in-downtown",
+          "price": "1500.00",
+          "property_type": 1,
+          "property_type_name": "Apartment",
+          "latitude": "12.971598",
+          "longitude": "77.594562",
+          "bedrooms": 2,
+          "bathrooms": 2,
+          "area": 1200,
+          "area_unit": "sqft",
+          "description": "Beautiful apartment with city view",
+          "features": [1, 2],
+          "google_maps_url": "https://maps.google.com/?q=123+Main+St",
+          "youtube_video_link": "https://www.youtube.com/watch?v=example",
+          "property_video_url": "http://example.com/media/property/videos/tour.mp4",
+          "video_thumbnail_url": "http://example.com/media/property/video_thumbs/tour_thumb_a1b2.webp",
+          "nearby_places_data": [{ "name": "Shopping Mall", "distance": 1.0 }],
+          "built_year": 2018,
+          "furnishing": "furnished",
+          "parking_spaces": 1,
+          "is_featured": false,
+          "moderation_status": "approved",
+          "moderated_at": "2026-05-10T08:00:00Z",
+          "moderated_by_username": "Admin User",
+          "created_by": 12,
+          "images": [
+            {
+              "id": 1,
+              "image": "http://example.com/media/property_images/apartment1_a1b2c3d4.webp"
+            }
+          ],
+          "created_at": "2023-06-16T10:30:00Z",
+          "updated_at": "2023-06-16T10:30:00Z"
+        }
+      ]
+    }
+    ```
+- **Note (`include_ads=true`)**: Each item in `results` is wrapped as `{ "type": "property", "data": { ...property fields above... } }` with optional `{ "type": "ad", "data": { ...Advertisement public object... } }` inserted every N properties. See **Property feed with injected ads** under Advertisement Management APIs. Default (no `include_ads` or `include_ads=false`) returns plain property objects.
+
+#### List Property Locations (autocomplete / nearby)
+- **URL**: `/api/properties/locations/`
+- **Method**: GET
+- **Auth Required**: No
+- **Pagination**: Page-number (`page`, `page_size`, default `page_size=10`, max `100`)
+- **Description**: Returns distinct approved listing locations (city, district, state label + representative coordinates). Locations in the same city/district/state within the admin `filter_radius` (km) are merged; the newest listing’s coordinates are used. Ordered by most recently added first.
+- **Query Parameters**:
+  - `search` &mdash; Filter by state, district, or city name (case-insensitive contains)
+  - `property_for` &mdash; Optional: `rent` or `sell`
+- **Example**: `/api/properties/locations/?search=koch&property_for=rent&page=1&page_size=20`
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content**:
+    ```json
+    {
+      "count": 42,
+      "filter_radius_km": 10.0,
+      "next": "http://example.com/api/properties/locations/?page=2&page_size=20&search=koch",
+      "previous": null,
+      "results": [
+        {
+          "location_name": "Kochi, Ernakulam, Kerala",
+          "latitude": "9.931233",
+          "longitude": "76.267303",
+          "state": "Kerala",
+          "district": "Ernakulam",
+          "city": "Kochi"
+        }
+      ]
+    }
+    ```
+
+#### Get Property Detail
+- **URL**: `/api/properties/properties/{id_or_slug}/`
+- **Method**: GET
+- **Auth Required**: No
+- **Lookup**: The path segment may be a **numeric primary key** (all digits, including legacy bookmarks) or a **unique `slug`** (any other string). All-digit segments are always treated as integer `pk`, so a listing slug cannot be digits-only.
+- **Visibility**: Non-staff may only retrieve **approved** properties; pending/rejected return **404 Not Found**. Staff may retrieve any status.
+- **Response fields**: List responses and detail include read/write **`slug`** (URL segment). On create/update, omit or leave `slug` blank to auto-generate from `title` (with numeric suffix on collision). Client-supplied slugs are normalized and must not collide; digits-only slugs are rejected.
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: Same as in List All Properties for a single property
+
+#### Create Property
+- **URL**: `/api/properties/properties/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Content-Type**: `multipart/form-data`
+- **Moderation**: **Staff** (`is_staff`) → `moderation_status: approved`. **Owner** → `pending` (hidden from public list/detail until staff approves). `created_by` is set to the authenticated user.
+- **Property images (`uploaded_images`)**:
+  - Multipart field name: `uploaded_images` (repeat the field for multiple files).
+  - Allowed formats: **jpg**, **jpeg**, **png**, **webp**.
+  - Each file is **auto-optimized on upload** (WebP/JPEG, **≤ 300 KB**). Returns **400** if optimization fails.
+
+**Required fields (POST)** — always
+
+| Field | Type | Allowed / notes |
+|-------|------|-----------------|
+| `property_for` | string | **Yes** — `rent` \| `sell` |
+| `property_ownership` | string | **Yes** — `management` \| `direct_owner` |
+| `state` | int \| string | **Yes** — State PK or name (creates state if name is new) |
+| `district` | int \| string | **Yes** — District PK or name within state |
+| `city` | int \| string | **Yes** — City PK or name within district |
+| `title` | string | **Yes** |
+| `price` | string | **Yes** — numeric or text |
+| `property_type` | integer | **Yes** — `PropertyType` PK |
+| `area` | integer | **Yes** — positive |
+| `description` | string | **Yes** |
+| `area_unit` | string | **Yes** if sent; defaults to `sqft` when omitted — `sqft` \| `cent` |
+
+**Required when `area_unit` = `sqft`** (built property; default)
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `bedrooms` | integer | positive |
+| `bathrooms` | integer | positive |
+| `furnishing` | string | non-empty |
+
+`built_year` is **always optional** (omit or send empty to store `null`); when provided it must be a positive integer.
+
+When `area_unit` = `cent` (plot / land), the three fields above are **optional** and may be omitted or sent as empty; the API stores `null` and returns `null` in responses.
+
+**Optional fields (POST)**
+
+| Field | Type | Default / notes |
+|-------|------|-----------------|
+| `slug` | string | Auto-generated from `title` if omitted |
+| `contact_name` | string | **Owner**: defaults to owner full name (or username/email). **Staff**: required if omitted |
+| `whatsapp_number` | string | **Owner**: defaults to `UserProfile.whatsapp_number` |
+| `phone_number` | string | **Owner**: defaults to `UserProfile.phone` |
+| `email` | string | **Owner**: defaults to account email. **Staff**: required if omitted |
+| `bedrooms`, `bathrooms`, `furnishing` | — | Optional when `area_unit` = `cent` only |
+| `built_year` | integer | Optional on every `area_unit` (positive integer when supplied) |
+| `latitude`, `longitude` | decimal string | null |
+| `parking_spaces` | integer | `0` |
+| `features` | integer or repeated field | Feature PKs; empty allowed |
+| `google_maps_url` | string | null |
+| `google_embedded_map_link` | string | iframe HTML; null |
+| `youtube_video_link` | string | null |
+| `property_video` | file | Write-only on create/update (multipart). mp4, mov, avi, mkv, webm. After save, the server runs ffmpeg to extract a frame and stores it as `video_thumbnail` on the model; responses expose `property_video_url` and `video_thumbnail_url` only. If ffmpeg is unavailable, the upload still succeeds but `video_thumbnail_url` stays `null`. |
+| `nearby_places_data` | JSON string or array | `[{ "name": "School", "distance": 0.5 }]` — `distance` in km |
+| `is_featured` | boolean | `false` |
+| `uploaded_images` | file(s) | Repeat field for multiple images |
+
+- **Example multipart body** (conceptual):
+  ```
+  property_for=rent
+  property_ownership=direct_owner
+  state=1
+  # contact_name, whatsapp_number, phone_number, email optional for owners — filled from profile when omitted
+  district=2
+  city=3
+  title=Luxury Apartment in Downtown
+  price=1500.00
+  property_type=1
+  bedrooms=2
+  bathrooms=2
+  area=1200
+  area_unit=sqft
+  description=Beautiful apartment with city view
+  built_year=2018
+  furnishing=furnished
+  parking_spaces=1
+  features=1
+  features=2
+  google_maps_url=https://maps.google.com/?q=Kochi
+  nearby_places_data=[{"name":"International School","distance":0.5}]
+  uploaded_images=<file1>
+  uploaded_images=<file2>
+  ```
+- **Example cent listing** (built fields omitted):
+  ```
+  property_for=sell
+  property_ownership=direct_owner
+  state=1
+  district=2
+  city=3
+  title=5 Cent Plot Near Highway
+  price=45 Lakh
+  property_type=3
+  area=5
+  area_unit=cent
+  description=Clear title, road access
+  ```
+- **Success Response** — **201 CREATED**: Full property object (see **Property object (response shape)**). Owner example includes `"moderation_status": "pending"`, `"created_by": <user id>`. Cent listings may return `"bedrooms": null`, `"bathrooms": null`, `"built_year": null`, `"furnishing": null`.
+- **Error Response** — **400 BAD REQUEST** (examples):
+  ```json
+  { "state": ["State is required"] }
+  ```
+  ```json
+  { "uploaded_images": ["Could not compress image within size limit."] }
+  ```
+
+#### Update Property
+- **URL**: `/api/properties/properties/{id_or_slug}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token) — **staff** may edit any listing; **owners** may edit only `created_by` = self
+- **Headers**: `Authorization: Token <token>`
+- **Content-Type**: `multipart/form-data`
+- **Request Body**: Any subset of create fields (all optional on PATCH). Replace nearby places by sending full `nearby_places_data` array. Append images with `uploaded_images`.
+- **`area_unit` on PATCH**: Changing to `cent` clears `bedrooms`, `bathrooms`, `built_year`, and `furnishing` to `null` when those fields are omitted in the same request. Changing to `sqft` requires `bedrooms`, `bathrooms`, and `furnishing` (in the request or already stored on the listing); `built_year` remains optional.
+- **Success Response** — **200 OK**: Full updated property object (same shape as create response).
+- **Error Response**: **404** if not found or not owned by caller; **400** validation errors.
+
+#### Delete Property
+- **URL**: `/api/properties/properties/{id_or_slug}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+#### Approve Property (staff)
+- **URL**: `/api/properties/properties/{id}/approve/`
+- **Method**: POST
+- **Auth Required**: Yes (Token); user must be **staff** (`is_staff`)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**: None
+- **Success Response** — **200 OK**: Full property object with `"moderation_status": "approved"`, `moderated_at` set, `moderated_by_username` populated.
+- **Error Response**:
+  - **403**: `{"detail": "Only staff can approve properties."}`
+  - **404**: Property not found
+
+#### Reject Property (staff)
+- **URL**: `/api/properties/properties/{id}/reject/`
+- **Method**: POST
+- **Auth Required**: Yes (Token); user must be **staff**
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**: None
+- **Effect**: Soft reject — row kept with `moderation_status: rejected`; hidden from public list/detail/locations.
+- **Success Response** — **200 OK**: Full property object with `"moderation_status": "rejected"`.
+- **Error Response**: **403** / **404** (same pattern as approve)
+
+#### List my properties (owner dashboard)
+- **URL**: `/api/properties/properties/mine/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Description**: Paginated properties where `created_by` = request user. Includes **all** moderation statuses. Supports same query filters as public list where applicable (`page`, `page_size`, `property_for`, `search`, etc.).
+- **Success Response** — **200 OK**:
+  ```json
+  {
+    "count": 3,
+    "next": null,
+    "previous": null,
+    "results": [ "<property object>", "<property object>" ]
+  }
+  ```
+  Each item matches **Property object (response shape)** (includes `moderation_status`, `created_by`).
+- **Error Response**: **401** if not authenticated.
+
+#### Delete Property Image
+- **URL**: `/api/properties/properties/{id}/delete_image/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token) — staff or listing owner
+- **Headers**: `Authorization: Token <token>`
+
+| Field | Required | Type | Notes |
+|-------|----------|------|--------|
+| `image_id` | **Yes** | integer | JSON body **or** query `?image_id=1` |
+
+- **Request Body** (optional if using query param):
+  ```json
+  { "image_id": 10 }
+  ```
+- **Success Response** — **204 NO CONTENT**
+- **Error Response**:
+  - **400**: `{"detail": "image_id is required. Pass it in the request body or as query param (e.g. ?image_id=1)."}`
+  - **404**: `{"detail": "Image not found or does not belong to this property."}`
+
+#### Nearby places on update
+There is **no** `delete_nearby_place` action in the current API. To remove or change nearby places, **PATCH** the property with a new `nearby_places_data` JSON array (replaces stored value). Example:
+```json
+"nearby_places_data": [{ "name": "Park", "distance": 0.3 }]
+```
+Send `[]` to clear all nearby places.
+
+## Location Management APIs
+
+### States
+
+#### List All States
+- **URL**: `/api/properties/states/`
+- **Method**: GET
+- **Auth Required**: No (public list; token optional)
+- **Pagination**: Page-number (`page`, `page_size`, default `page_size=20`, max `100`)
+- **Query Parameters**:
+  | Param | Type | Notes |
+  |-------|------|--------|
+  | `page` | int | Page number (default `1`) |
+  | `page_size` | int | Items per page (default `20`, max `100`) |
+- **Example**: `/api/properties/states/?page=1&page_size=20`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "count": 2,
+      "next": null,
+      "previous": null,
+      "results": [
+        {
+          "id": 1,
+          "name": "California"
+        },
+        {
+          "id": 2,
+          "name": "New York"
+        }
+      ]
+    }
+    ```
+
+#### Get State Detail
+- **URL**: `/api/properties/states/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "California"
+    }
+    ```
+
+#### Create State
+- **URL**: `/api/properties/states/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "California"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "California"
+    }
+    ```
+
+### Districts
+
+#### List All Districts
+- **URL**: `/api/properties/districts/`
+- **Method**: GET
+- **Auth Required**: No (public list; token optional)
+- **Pagination**: Page-number (`page`, `page_size`, default `page_size=20`, max `100`)
+- **Query Parameters**:
+  | Param | Type | Notes |
+  |-------|------|--------|
+  | `state_id` | int | Filter districts by state ID |
+  | `page` | int | Page number (default `1`) |
+  | `page_size` | int | Items per page (default `20`, max `100`) |
+- **Example**: `/api/properties/districts/?state_id=1&page=1&page_size=20`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "count": 2,
+      "next": null,
+      "previous": null,
+      "results": [
+        {
+          "id": 1,
+          "name": "Los Angeles County",
+          "state": 1
+        },
+        {
+          "id": 2,
+          "name": "Orange County",
+          "state": 1
+        }
+      ]
+    }
+    ```
+
+#### Get District Detail
+- **URL**: `/api/properties/districts/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Los Angeles County",
+      "state": 1
+    }
+    ```
+
+#### Create District
+- **URL**: `/api/properties/districts/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Los Angeles County",
+    "state": 1
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Los Angeles County",
+      "state": 1
+    }
+    ```
+
+### Cities
+
+#### List All Cities
+- **URL**: `/api/properties/cities/`
+- **Method**: GET
+- **Auth Required**: No (public list; token optional)
+- **Pagination**: Page-number (`page`, `page_size`, default `page_size=20`, max `100`)
+- **Query Parameters**:
+  | Param | Type | Notes |
+  |-------|------|--------|
+  | `district_id` | int | Filter cities by district ID |
+  | `page` | int | Page number (default `1`) |
+  | `page_size` | int | Items per page (default `20`, max `100`) |
+- **Example**: `/api/properties/cities/?district_id=1&page=1&page_size=20`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "count": 2,
+      "next": null,
+      "previous": null,
+      "results": [
+        {
+          "id": 1,
+          "name": "Los Angeles",
+          "district": 1
+        },
+        {
+          "id": 2,
+          "name": "Beverly Hills",
+          "district": 1
+        }
+      ]
+    }
+    ```
+
+#### Get City Detail
+- **URL**: `/api/properties/cities/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Los Angeles",
+      "district": 1
+    }
+    ```
+
+#### Create City
+- **URL**: `/api/properties/cities/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Los Angeles",
+    "district": 1
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Los Angeles",
+      "district": 1
+    }
+    ```
+
+### Nearby Places
+
+#### List All Nearby Places
+- **URL**: `/api/properties/nearby-places/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "International School"
+      },
+      {
+        "id": 2,
+        "name": "Shopping Mall"
+      }
+    ]
+    ```
+
+#### Get Nearby Place Detail
+- **URL**: `/api/properties/nearby-places/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "International School"
+    }
+    ```
+
+#### Create Nearby Place
+- **URL**: `/api/properties/nearby-places/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "International School"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "International School"
+    }
+    ```
+
+#### Update Nearby Place
+- **URL**: `/api/properties/nearby-places/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "New International School"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "New International School"
+    }
+    ```
+
+#### Delete Nearby Place
+- **URL**: `/api/properties/nearby-places/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+### Nearby Place Distances
+
+#### List All Nearby Place Distances
+- **URL**: `/api/properties/nearby-place-distances/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "property": 1,
+        "nearby_place": 1,
+        "distance": "0.5 km"
+      },
+      {
+        "id": 2,
+        "property": 1,
+        "nearby_place": 2,
+        "distance": "1 km"
+      }
+    ]
+    ```
+
+#### Get Nearby Place Distance Detail
+- **URL**: `/api/properties/nearby-place-distances/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "property": 1,
+      "nearby_place": 1,
+      "distance": "0.5 km"
+    }
+    ```
+
+#### Create Nearby Place Distance
+- **URL**: `/api/properties/nearby-place-distances/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "property": 1,
+    "nearby_place": 1,
+    "distance": "0.5 km"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "property": 1,
+      "nearby_place": 1,
+      "distance": "0.5 km"
+    }
+    ```
+
+#### Update Nearby Place Distance
+- **URL**: `/api/properties/nearby-place-distances/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "distance": "1 km"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "property": 1,
+      "nearby_place": 1,
+      "distance": "1 km"
+    }
+    ```
+
+#### Delete Nearby Place Distance
+- **URL**: `/api/properties/nearby-place-distances/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+## Banner Management APIs
+
+### Hero Banners
+
+#### List Hero Banners
+- **URL**: `/api/properties/hero-banners/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "image": "/media/banners/hero/banner1.jpg",
+        "created_at": "2024-03-20T10:30:00Z"
+      }
+    ]
+    ```
+
+#### Get Hero Banner Detail
+- **URL**: `/api/properties/hero-banners/{id}/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "image": "/media/banners/hero/banner1.jpg",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+#### Create/Replace Hero Banner
+- **URL**: `/api/properties/hero-banners/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**: Multipart form data
+  ```
+  image: file
+  ```
+- **Note**: Creating a new hero banner will automatically delete any existing hero banner
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "image": "/media/banners/hero/banner1.jpg",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+#### Delete Hero Banner
+- **URL**: `/api/properties/hero-banners/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+### Offer Banners
+
+#### List Offer Banners
+- **URL**: `/api/properties/offer-banners/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "image": "/media/banners/offers/banner1.jpg",
+        "created_at": "2024-03-20T10:30:00Z"
+      }
+    ]
+    ```
+
+#### Get Offer Banner Detail
+- **URL**: `/api/properties/offer-banners/{id}/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "image": "/media/banners/offers/banner1.jpg",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+#### Create/Replace Offer Banner
+- **URL**: `/api/properties/offer-banners/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**: Multipart form data
+  ```
+  image: file
+  ```
+- **Note**: Creating a new offer banner will automatically delete any existing offer banner
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "image": "/media/banners/offers/banner1.jpg",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+#### Delete Offer Banner
+- **URL**: `/api/properties/offer-banners/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+## Testimonials (Client Stories)
+
+### List Testimonials (public, paginated)
+- **URL**: `/api/properties/testimonials/`
+- **Method**: GET
+- **Auth Required**: No
+- **Query Parameters**:
+  - `page` (optional, default: 1)
+  - `limit` (optional, default: 3, max: 50)
+- **Note**: Anonymous requests only receive `is_published=true` items. Authenticated **staff** see all items (including drafts).
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content**:
+    ```json
+    {
+      "section": {
+        "tag": "CLIENT STORIES",
+        "heading": "What our clients say",
+        "description": "Real experiences from people who found their perfect space with us."
+      },
+      "total_count": 6,
+      "current_page": 1,
+      "total_pages": 2,
+      "results": [
+        {
+          "id": 1,
+          "client_name": "Savannah N.",
+          "client_role": "Property Investor",
+          "testimonial_text": "The entire process was flawless...",
+          "rating": 5,
+          "avatar": null,
+          "initial": "S",
+          "is_published": true,
+          "display_order": 0,
+          "created_at": "2026-05-15T10:00:00Z",
+          "updated_at": "2026-05-15T10:00:00Z"
+        }
+      ]
+    }
+    ```
+
+### Get Testimonial Detail
+- **URL**: `/api/properties/testimonials/{id}/`
+- **Method**: GET
+- **Auth Required**: No (unpublished hidden from non-staff)
+
+### Create Testimonial
+- **URL**: `/api/properties/testimonials/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`, `Content-Type: multipart/form-data`
+- **Request Body**:
+  ```
+  client_name: Savannah N.
+  client_role: Property Investor
+  testimonial_text: The entire process was flawless...
+  rating: 5
+  is_published: true
+  display_order: 0
+  avatar: file (optional)
+  ```
+
+### Update Testimonial
+- **URL**: `/api/properties/testimonials/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+
+### Delete Testimonial
+- **URL**: `/api/properties/testimonials/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+
+### Site settings (singleton, staff)
+- **URL**: `/api/properties/site-settings/`
+- **Methods**: `GET` (retrieve), `PATCH` (partial update)
+- **Auth Required**: Yes — **staff/admin** (`is_staff`)
+- **Headers**: `Authorization: Token <token>`
+- **PATCH fields** (all optional): `filter_radius`, `ad_inject_after_every_n_properties` (global feed cadence, min 1, default 5), `admin_phone`, `admin_whatsapp`, `company_email`, `company_address`, `testimonials_section_tag`, `testimonials_section_heading`, `testimonials_section_description`
+- **Success Response**: **200 OK** — full settings object
+
+### Company settings (admin — phone, whatsapp, email, address)
+- **URL**: `/api/properties/company-settings/`
+- **Methods**: `GET` (retrieve), `PATCH` (partial update)
+- **Auth Required**: Yes — **admin** (`is_superuser` / `IsAdminUser`)
+- **Headers**: `Authorization: Token <token>`
+- **PATCH fields** (all optional): `phone`, `whatsapp`, `email`, `address`
+- **Success Response**: **200 OK**
+  ```json
+  {
+    "phone": "9961280628",
+    "whatsapp": "9961280628",
+    "email": "Premiumproperty4you@gmail.com",
+    "address": "4/461, Second Floor, Valamkottil Towers, Thrikkakara, Ernakulam – 682021, Kerala, India"
+  }
+  ```
+- **Notes**: Maps to `admin_phone`, `admin_whatsapp`, `company_email`, `company_address` on `SiteSettings` singleton. `phone` and `whatsapp` are independent — updating one does not affect the other.
+
+### Public company contact (footer, contact page)
+- **URL**: `/api/properties/company-contact/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**:
+  ```json
+  {
+    "phone": "9961280628",
+    "email": "Premiumproperty4you@gmail.com",
+    "address": "4/461, Second Floor, Valamkottil Towers, Thrikkakara, Ernakulam – 682021, Kerala, India",
+    "whatsapp": "9961280628"
+  }
+  ```
+
+### Public site contact (listing pages)
+- **URL**: `/api/properties/site-contact/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**:
+  ```json
+  {
+    "admin_phone": "9961280628",
+    "admin_whatsapp": "9961280628",
+    "email": "Premiumproperty4you@gmail.com",
+    "address": "4/461, Second Floor, Valamkottil Towers, Thrikkakara, Ernakulam – 682021, Kerala, India"
+  }
+  ```
+- **Notes**: Values come from `SiteSettings`; used on property detail / contact CTAs. Distinct from per-owner phone on listings.
+
+## Contact Us API
+
+### List Contact Messages (Staff: all; owners: their listings)
+- **URL**: `/api/properties/contacts/`
+- **Method**: GET
+- **Auth Required**: Yes — **staff** receive all rows; **authenticated owners** receive only rows with `property` set and `property.created_by` = request user.
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "phone_number": "+1234567890",
+        "subject": "Property Inquiry",
+        "budget_range": "₹50,000 - ₹1,00,000",
+        "message": "I'm interested in the downtown apartment.",
+        "property": 42,
+        "property_title": "Luxury Apartment in Downtown",
+        "created_at": "2024-03-20T10:30:00Z"
+      }
+    ]
+    ```
+- **Note**: `property` is null for general site contact; `property_title` is empty when `property` is null.
+
+### Get Contact Message Detail (Staff: any; owners: own listing enquiries)
+- **URL**: `/api/properties/contacts/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes — same visibility rules as list; **not** available anonymously.
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone_number": "+1234567890",
+      "subject": "Property Inquiry",
+      "budget_range": "₹50,000 - ₹1,00,000",
+      "message": "I'm interested in the downtown apartment.",
+      "property": 42,
+      "property_title": "Luxury Apartment in Downtown",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+### Submit Contact Form (Public)
+- **URL**: `/api/properties/contacts/`
+- **Method**: POST
+- **Auth Required**: No
+- **Content-Type**: `application/json`
+
+| Field | Required | Type | Notes |
+|-------|----------|------|--------|
+| `name` | **Yes** | string | max 100 |
+| `email` | **Yes** | string | valid email |
+| `phone_number` | **Yes** | string | max 20 |
+| `subject` | **Yes** | string | max 200 |
+| `message` | **Yes** | string | |
+| `budget_range` | No | string | e.g. `₹50,000 - ₹1,00,000` |
+| `property` | No | integer | Listing PK; must be **approved**. Omit for general site contact |
+
+- **Request Body**:
+  ```json
+  {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone_number": "+1234567890",
+    "subject": "Property Inquiry",
+    "budget_range": "₹50,000 - ₹1,00,000",
+    "message": "I'm interested in the downtown apartment.",
+    "property": 42
+  }
+  ```
+  Omit `property` for general site contact.
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone_number": "+1234567890",
+      "subject": "Property Inquiry",
+      "budget_range": "₹50,000 - ₹1,00,000",
+      "message": "I'm interested in the downtown apartment.",
+      "property": 42,
+      "property_title": "Luxury Apartment in Downtown",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: Validation errors
+
+### Delete Contact Message (Admin Only)
+- **URL**: `/api/properties/contacts/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Admin Only)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+**Note**: The Contact Us API follows these access rules:
+- POST (submit contact form): Public access — optional `property` (integer id) must reference an **approved** listing.
+- GET list / GET detail: **Staff** see all messages; **authenticated property owners** see only enquiries where `property.created_by` is that user (general enquiries with `property` null remain staff-only).
+- DELETE: Admin (staff) only.
+- PUT/PATCH (update) methods are not allowed — contact messages cannot be edited.
+- The budget_range field should follow a consistent format (e.g., '₹50,000 - ₹1,00,000' or '$500 - $1000')
+
+---
+
+## Quick reference — owner & platform flows
+
+Canonical detail lives in the sections above. This table lists **required request fields** and **success response** shape per endpoint.
+
+### Authentication & profile
+
+| Endpoint | Method | Required body | Success response |
+|----------|--------|---------------|------------------|
+| `/api/accounts/register/owner/init/` | POST | `full_name`, `email`, `phone`, `whatsapp_number`, `password`, `password2` (+ optional `avatar`) | **201** `{ "success", "message", "otp" }` |
+| `/api/accounts/register/owner/verify/` | POST | `email`, `otp` | **200** `{ "success", "message", "otp", "token", "user" }` |
+| `/api/accounts/login/otp/request/` | POST | `email` | **200** `{ "success", "message", "otp" }` |
+| `/api/accounts/login/otp/verify/` | POST | `email`, `otp` | **200** `{ "success", "message", "otp", "token", "user" }` |
+| `/api/accounts/profile/` | GET | — (header: `Authorization: Token …`) | **200** `user` object |
+| `/api/accounts/profile/` | PATCH | any of: `full_name`, `phone`, `whatsapp_number`, `address`, password trio, `email`+`email_otp` | **200** `user` object, or `{ "success", "message", "otp", "user" }` when email changed |
+| `/api/accounts/profile/email-change/request/` | POST | `new_email` | **200** `{ "success", "message", "otp" }` |
+
+### Property listings (owner / staff)
+
+| Endpoint | Method | Required body | Success response |
+|----------|--------|---------------|------------------|
+| `/api/properties/properties/` | POST | See **Create Property** required table | **201** full property JSON |
+| `/api/properties/properties/mine/` | GET | — (token) | **200** paginated `{ count, next, previous, results }` |
+| `/api/properties/properties/{id_or_slug}/` | PATCH | any updatable fields (all optional) | **200** full property JSON |
+| `/api/properties/properties/{id_or_slug}/` | DELETE | — (token) | **204** |
+| `/api/properties/properties/{id}/approve/` | POST | — (staff token) | **200** property with `moderation_status: approved` |
+| `/api/properties/properties/{id}/reject/` | POST | — (staff token) | **200** property with `moderation_status: rejected` |
+| `/api/properties/properties/{id}/delete_image/` | DELETE | `image_id` (body or query) | **204** |
+
+**Create property — minimum required:** `property_for`, `property_ownership`, `contact_name`, `whatsapp_number`, `phone_number`, `email`, `state`, `district`, `city`, `title`, `price`, `property_type`, `area`, `description`; plus `bedrooms`, `bathrooms`, `furnishing` when `area_unit` is `sqft` (default). `built_year` is always optional; for `area_unit=cent`, `bedrooms`, `bathrooms`, and `furnishing` are also optional.
+
+### Advertisements (admin & public)
+
+| Endpoint | Method | Required body | Success response |
+|----------|--------|---------------|------------------|
+| `/api/advertisements/` | GET | — (staff token); optional filters | **200** paginated admin ad objects |
+| `/api/advertisements/` | POST | `title`, `ad_type`, `media_type`, `redirect_type`, `state`, `district`, `city`, `placements` + media/redirect fields | **201** admin ad object |
+| `/api/advertisements/{id}/` | PATCH | any fields (multipart) | **200** admin ad object |
+| `/api/advertisements/{id}/` | DELETE | — (staff token) | **204** |
+| `/api/advertisements/active/` | GET | query: `placement` (required); optional `lat`/`lng` or location IDs | **200** array of public ad objects |
+| `/api/properties/properties/?include_ads=true` | GET | same property filters as list | **200** mixed `{ type, data }` feed |
+
+### Enquiries & public contact
+
+| Endpoint | Method | Required body | Success response |
+|----------|--------|---------------|------------------|
+| `/api/properties/contacts/` | POST | `name`, `email`, `phone_number`, `subject`, `message` (+ optional `property`, `budget_range`) | **201** contact object |
+| `/api/properties/contacts/` | GET | — (owner/staff token) | **200** array of contact objects |
+| `/api/properties/company-contact/` | GET | — | **200** `{ phone, email, address, whatsapp }` |
+| `/api/properties/site-contact/` | GET | — | **200** `{ admin_phone, admin_whatsapp, email, address }` |
+| `/api/properties/company-settings/` | GET/PATCH | PATCH: optional `phone`, `whatsapp`, `email`, `address` (admin) | **200** company fields |
+
+**Migrations (2026-05-15):** `accounts.0002_owner_buyer_enquiry`, `accounts.0003_profile_address_pending_email`, `properties.0019_owner_buyer_enquiry`, `properties.0020_property_slug`, `properties.0021_testimonial_and_section_settings`.
+
+**Migrations (2026-06-02):** `advertisements.0001_initial`.
+
+---
+
+## Advertisement Management APIs
+
+Base path: `/api/advertisements/`
+
+Admin CRUD requires **staff** (`is_staff`) token. Media uploads use `multipart/form-data`. Images are auto-compressed (WebP/JPEG, target ≤ 800 KB). Videos are re-encoded synchronously via **ffmpeg** (H.264, max 720p, AAC 128k) — the server must have `ffmpeg` installed.
+
+### Advertisement object (admin response shape)
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `id` | integer | Primary key |
+| `title` | string | Required; max 200 |
+| `subtitle` | string | Optional; max 300 |
+| `ad_type` | string | `property` (Property Ad) \| `generic` (Generic Ad) |
+| `media_type` | string | `image` \| `video` |
+| `is_active` | boolean | Toggle to enable/pause |
+| `desktop_image` | string \| null | Absolute URL when set; required for image ads |
+| `mobile_image` | string \| null | Optional mobile banner |
+| `video_file` | string \| null | Absolute URL when set; required for video ads |
+| `video_thumbnail` | string \| null | Read-only; auto-generated from `video_file` after upload (ffmpeg frame + image compression) |
+| `processing_status` | string | `pending` \| `ready` \| `failed` (read-only; video compression) |
+| `redirect_type` | string | `property` \| `external_url` |
+| `linked_property` | integer \| null | Property PK when `redirect_type` = `property`; must be **approved** |
+| `external_url` | string | Required when `redirect_type` = `external_url` |
+| `country` | string | Default `India` |
+| `state` | integer | State FK (required) |
+| `district` | integer | District FK (required) |
+| `city` | integer | City FK (required) |
+| `area` | string | Optional neighbourhood/locality |
+| `latitude` | string \| null | Decimal as string; **property ads only** (generic ads ignore location) |
+| `longitude` | string \| null | Decimal as string; **property ads only** |
+| `radius_km` | integer | Geo targeting radius for property ads (default 25) |
+| `placements` | string[] | Non-empty subset of placement keys (see below) |
+| `max_display_per_user` | integer \| null | Stored only; **not enforced** in v1 |
+| `start_date` | string \| null | `YYYY-MM-DD`; optional schedule start |
+| `end_date` | string \| null | `YYYY-MM-DD`; optional schedule end |
+| `priority` | integer | Higher = preferred when multiple ads qualify (default 1) |
+| `created_by` | integer \| null | Staff user who created the ad |
+| `created_at`, `updated_at` | string | ISO datetimes |
+
+**Placement keys** (`placements` array):
+
+| Key | Label |
+|-----|--------|
+| `homepage_feed` | Homepage Feed |
+| `property_listing_feed` | Property Listing Feed |
+| `search_results` | Search Results |
+| `property_details_page` | Property Details Page |
+| `featured_section` | Featured Section |
+
+**Media upload limits**
+
+| Media | Formats | Max upload size |
+|-------|---------|-----------------|
+| Images (desktop, mobile) | jpg, jpeg, png, webp | 10 MB (compressed on save) |
+| Video | mp4, webm | 50 MB (re-encoded on save; thumbnail auto-generated) |
+
+### Advertisement public object (user-facing)
+
+Returned by `GET /api/advertisements/active/` and inside property list `type: "ad"` items.
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `id` | integer | |
+| `title` | string | |
+| `subtitle` | string | |
+| `ad_type` | string | `property` \| `generic` |
+| `media_type` | string | `image` \| `video` |
+| `desktop_image_url` | string \| null | |
+| `mobile_image_url` | string \| null | |
+| `video_file_url` | string \| null | |
+| `video_thumbnail_url` | string \| null | Auto-generated preview of `video_file` |
+| `redirect_type` | string | `property` \| `external_url` |
+| `linked_property` | integer \| null | Property PK for in-app navigation |
+| `external_url` | string | Landing URL when `redirect_type` = `external_url` |
+| `priority` | integer | Higher = preferred when multiple ads qualify (default 1) |
+
+Feed injection cadence is **global** via `PATCH /api/properties/site-settings/` field `ad_inject_after_every_n_properties` (default 5, min 1). It is not set per ad.
+
+---
+
+### List advertisements (admin)
+- **URL**: `/api/advertisements/`
+- **Method**: GET
+- **Auth Required**: Yes — **staff** (`is_staff`)
+- **Headers**: `Authorization: Token <token>`
+- **Pagination**: `page`, `page_size` (default 10, max 100)
+- **Query Parameters**:
+  | Param | Type | Notes |
+  |-------|------|--------|
+  | `ad_type` | string | `property` \| `generic` |
+  | `media_type` | string | `image` \| `video` |
+  | `is_active` | boolean | `true` / `false` / `1` / `0` |
+  | `placement` | string | Filter ads whose `placements` contains this key |
+  | `state_id` | integer | Filter by state FK |
+- **Success Response** — **200 OK**:
+  ```json
+  {
+    "count": 12,
+    "next": "http://127.0.0.1:8844/api/advertisements/?page=2",
+    "previous": null,
+    "results": [ "<Advertisement admin object>", "..." ]
+  }
+  ```
+
+### Get advertisement detail (admin)
+- **URL**: `/api/advertisements/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes — staff
+- **Success Response** — **200 OK**: Single **Advertisement admin object**
+
+### Create advertisement (admin)
+- **URL**: `/api/advertisements/`
+- **Method**: POST
+- **Auth Required**: Yes — staff
+- **Headers**: `Authorization: Token <token>`
+- **Content-Type**: `multipart/form-data`
+
+**Required fields (POST)**
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `title` | string | |
+| `ad_type` | string | `property` \| `generic` |
+| `media_type` | string | `image` \| `video` |
+| `redirect_type` | string | `property` \| `external_url` |
+| `state` | integer | State PK |
+| `district` | integer | District PK |
+| `city` | integer | City PK |
+| `placements` | JSON string or array | e.g. `["property_listing_feed","homepage_feed"]` |
+| `desktop_image` | file | **Required** when `media_type` = `image` |
+| `video_file` | file | **Required** when `media_type` = `video` |
+| `linked_property` | integer | **Required** when `redirect_type` = `property` (must be approved) |
+| `external_url` | string | **Required** when `redirect_type` = `external_url` |
+
+**Optional fields (POST)**
+
+| Field | Type | Default / notes |
+|-------|------|-----------------|
+| `subtitle` | string | |
+| `is_active` | boolean | `true` |
+| `mobile_image` | file | Image ads only |
+| `country` | string | `India` |
+| `area` | string | |
+| `latitude`, `longitude` | decimal | Property ads only; generic ads ignore location |
+| `radius_km` | integer | `25` |
+| `max_display_per_user` | integer | null = unlimited (not enforced in v1) |
+| `start_date`, `end_date` | date | `YYYY-MM-DD` |
+| `priority` | integer | `1` |
+
+- **Note on `video_thumbnail`**: The field is **read-only**. Any client-supplied `video_thumbnail` is ignored. When `media_type=video`, the server runs ffmpeg on the uploaded `video_file` and stores the resulting JPEG; the absolute URL is returned in `video_thumbnail` (admin) and `video_thumbnail_url` (public).
+- **Example multipart** (image ad, property redirect):
+  ```
+  title=Summer Property Promo
+  subtitle=Best deals in Kochi
+  ad_type=property
+  media_type=image
+  redirect_type=property
+  linked_property=42
+  state=1
+  district=2
+  city=3
+  area=Marine Drive
+  latitude=9.931233
+  longitude=76.267303
+  radius_km=25
+  placements=["property_listing_feed","homepage_feed"]
+  priority=1
+  is_active=true
+  desktop_image=<file>
+  mobile_image=<file>
+  ```
+- **Example multipart** (video ad, external URL redirect):
+  ```
+  title=Brand Showreel
+  ad_type=generic
+  media_type=video
+  redirect_type=external_url
+  external_url=https://example.com/landing
+  state=1
+  district=2
+  city=3
+  placements=["homepage_feed"]
+  video_file=<file.mp4>
+  ```
+  Response includes the auto-generated thumbnail:
+  ```json
+  {
+    "id": 7,
+    "title": "Brand Showreel",
+    "ad_type": "generic",
+    "media_type": "video",
+    "video_file": "http://127.0.0.1:8844/media/ads/videos/showreel_a1b2.mp4",
+    "video_thumbnail": "http://127.0.0.1:8844/media/ads/videos/thumbs/showreel_a1b2_thumb_c3d4.jpg",
+    "processing_status": "ready",
+    "redirect_type": "external_url",
+    "external_url": "https://example.com/landing",
+    "placements": ["homepage_feed"]
+  }
+  ```
+- **Success Response** — **201 CREATED**: Full **Advertisement admin object**
+- **Error Response** — **400** (examples):
+  ```json
+  { "desktop_image": ["This field is required for image ads."] }
+  ```
+  ```json
+  { "linked_property": ["Linked property must be approved."] }
+  ```
+  ```json
+  { "placements": ["Provide at least one placement."] }
+  ```
+  ```json
+  { "video_file": ["ffmpeg not installed on server."] }
+  ```
+
+### Update advertisement (admin)
+- **URL**: `/api/advertisements/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes — staff
+- **Content-Type**: `multipart/form-data`
+- **Request Body**: Any subset of create fields (all optional on PATCH). Conditional rules still apply (e.g. cannot clear `desktop_image` on an image ad without providing a replacement).
+- **Success Response** — **200 OK**: Updated **Advertisement admin object**
+- **Note**: `PUT` is supported by the viewset but prefer **PATCH** for partial updates.
+
+### Delete advertisement (admin)
+- **URL**: `/api/advertisements/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes — staff
+- **Success Response** — **204 NO CONTENT**
+
+---
+
+### List active advertisements (public)
+- **URL**: `/api/advertisements/active/`
+- **Method**: GET
+- **Auth Required**: No
+- **Query Parameters**:
+  | Param | Type | Notes |
+  |-------|------|--------|
+  | `placement` | string | **Required** — one of the placement keys |
+  | `latitude` or `lat` | decimal | User location for geo filter |
+  | `longitude` or `lng` | decimal | User location for geo filter |
+  | `state_id` | integer | Fallback / additional location filter |
+  | `district_id` | integer | |
+  | `city_id` | integer | |
+- **Filtering rules**:
+  1. `is_active` = true
+  2. `processing_status` = `ready`
+  3. Today within `start_date` / `end_date` window (null dates = open-ended)
+  4. `placement` ∈ ad's `placements` array
+  5. **Location**: If `latitude` + `longitude` provided → ads with coordinates within `radius_km` (Haversine); ads without coordinates fall back to `city_id` / `district_id` / `state_id` match. If only location IDs provided → exact FK match.
+  6. Ordered by `priority` DESC, `created_at` DESC
+- **Example**: `/api/advertisements/active/?placement=property_listing_feed&latitude=11.2588&longitude=75.7804`
+- **Success Response** — **200 OK**:
+  ```json
+  [
+    {
+      "id": 1,
+      "title": "Summer Property Promo",
+      "subtitle": "Best deals in Kochi",
+      "ad_type": "property",
+      "media_type": "image",
+      "desktop_image_url": "http://127.0.0.1:8844/media/ads/images/desktop/promo_a1b2.webp",
+      "mobile_image_url": "http://127.0.0.1:8844/media/ads/images/mobile/promo_m1b2.webp",
+      "video_file_url": null,
+      "video_thumbnail_url": null,
+      "redirect_type": "property",
+      "linked_property": 42,
+      "external_url": "",
+      "priority": 1
+    },
+    {
+      "id": 7,
+      "title": "Brand Showreel",
+      "subtitle": "",
+      "ad_type": "generic",
+      "media_type": "video",
+      "desktop_image_url": null,
+      "mobile_image_url": null,
+      "video_file_url": "http://127.0.0.1:8844/media/ads/videos/showreel_a1b2.mp4",
+      "video_thumbnail_url": "http://127.0.0.1:8844/media/ads/videos/thumbs/showreel_a1b2_thumb_c3d4.jpg",
+      "redirect_type": "external_url",
+      "linked_property": null,
+      "external_url": "https://example.com/landing",
+      "priority": 1
+    }
+  ]
+  ```
+- **Error Response** — **400**:
+  ```json
+  { "detail": "placement is required." }
+  ```
+
+---
+
+### Property feed with injected ads
+
+When `include_ads=true` on `GET /api/properties/properties/`, each page of `results` may contain interleaved ads. Default is plain property objects (no ads).
+
+**Mixed result item shapes**
+
+```json
+{
+  "count": 27,
+  "next": "http://127.0.0.1:8844/api/properties/properties/?page=2",
+  "previous": null,
+  "results": [
+    { "type": "property", "data": { "id": 1, "title": "...", "...": "..." } },
+    { "type": "property", "data": { "id": 2, "title": "...", "...": "..." } },
+    { "type": "property", "data": { "id": 3, "title": "...", "...": "..." } },
+    { "type": "property", "data": { "id": 4, "title": "...", "...": "..." } },
+    { "type": "property", "data": { "id": 5, "title": "...", "...": "..." } },
+    {
+      "type": "ad",
+      "data": {
+        "id": 1,
+        "title": "Summer Property Promo",
+        "ad_type": "property",
+        "media_type": "image",
+        "desktop_image_url": "http://127.0.0.1:8844/media/ads/images/desktop/promo.webp",
+        "redirect_type": "property",
+        "linked_property": 42
+      }
+    },
+    { "type": "property", "data": { "id": 6, "...": "..." } }
+  ]
+}
+```
+
+- `count`, `next`, and `previous` still refer to **properties only** (ads do not affect pagination totals).
+- Ads are selected from active ads eligible for the property listing feed. Without location params: property ads first, then generic. With location params: generic ads always included; property ads filtered by radius/region; property ads ordered before generic.
+- One ad is inserted per slot, rotating through eligible ads (property ads before generic, then priority and creation order). The gap between slots uses the global `ad_inject_after_every_n_properties` from site settings (default 5).
+- Default / legacy clients: `GET /api/properties/properties/` without `include_ads=true` returns plain property objects in `results`.
+
+---
+
+### Advertisement quick reference
+
+| Endpoint | Method | Auth | Notes |
+|----------|--------|------|--------|
+| `/api/advertisements/` | GET | Staff | List/filter ads |
+| `/api/advertisements/` | POST | Staff | Create (multipart) |
+| `/api/advertisements/{id}/` | GET | Staff | Detail |
+| `/api/advertisements/{id}/` | PATCH | Staff | Update (multipart) |
+| `/api/advertisements/{id}/` | DELETE | Staff | Delete |
+| `/api/advertisements/active/` | GET | Public | Active ads by placement + location |
+| `/api/properties/properties/?include_ads=true` | GET | Public | Mixed property + ad feed |
+
+

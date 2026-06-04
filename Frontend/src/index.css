@@ -1,0 +1,259 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800;900&family=Cormorant+Garamond:wght@300;400;500;600;700&family=Great+Vibes&family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Premiova Properties — Pure white + Logo Blue design system. All HSL. */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;           /* pure white */
+    --foreground: 30 12% 12%;          /* deep espresso */
+
+    --card: 0 0% 100%;
+    --card-foreground: 30 12% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 12% 12%;
+
+    --primary: 30 14% 14%;             /* near-black */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 95%;
+    --secondary-foreground: 30 14% 14%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 30 8% 38%;
+
+    --accent: 215 75% 45%;             /* LOGO BLUE — #1d65c8 */
+    --accent-foreground: 0 0% 100%;
+
+    /* Brand blue palette (the var names stay `gold-*` for backward
+       compatibility — the site now reads them as the brand blue.) */
+    --gold: 215 75% 45%;               /* main brand blue — #1d65c8 */
+    --gold-soft: 215 85% 80%;          /* light brand blue (highlights) */
+    --gold-deep: 218 80% 24%;          /* deep brand blue (shadows) */
+
+    --destructive: 0 70% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 18% 88%;
+    --input: 215 18% 88%;
+    --ring: 215 75% 45%;
+
+    --radius: 0.75rem;
+
+    /* Brand blue gradient — anchored on #0e305d with logo-like highlights */
+    --gradient-gold: linear-gradient(
+      135deg,
+      #0e305d 0%,
+      #1c5fa8 55%,
+      #3a8dd6 100%
+    );
+    --gradient-cream: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(0 0% 100%) 100%);
+    --gradient-overlay: linear-gradient(180deg, hsla(30,14%,8%,0) 0%, hsla(30,14%,8%,0.75) 100%);
+
+    --shadow-luxe: 0 20px 60px -20px hsla(215, 75%, 38%, 0.30);
+    --shadow-soft: 0 10px 30px -12px hsla(30, 14%, 14%, 0.12);
+    --shadow-card: 0 4px 20px -8px hsla(30, 14%, 14%, 0.08);
+
+    --sidebar-background: 30 14% 10%;
+    --sidebar-foreground: 215 33% 92%;
+    --sidebar-primary: 215 75% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 30 14% 16%;
+    --sidebar-accent-foreground: 215 33% 92%;
+    --sidebar-border: 30 14% 18%;
+    --sidebar-ring: 215 75% 52%;
+  }
+
+  .dark {
+    --background: 30 14% 8%;
+    --foreground: 215 33% 94%;
+    --card: 30 14% 12%;
+    --card-foreground: 215 33% 94%;
+    --popover: 30 14% 12%;
+    --popover-foreground: 215 33% 94%;
+    --primary: 215 75% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 14% 16%;
+    --secondary-foreground: 215 33% 94%;
+    --muted: 30 14% 16%;
+    --muted-foreground: 215 15% 65%;
+    --accent: 215 75% 58%;
+    --accent-foreground: 0 0% 100%;
+    --border: 30 14% 20%;
+    --input: 30 14% 20%;
+    --ring: 215 75% 58%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { scroll-behavior: smooth; }
+  /* Native momentum on touch devices feels best without CSS smooth-scroll
+     fighting in-page anchor jumps. */
+  @media (hover: none) and (pointer: coarse) {
+    html { scroll-behavior: auto; }
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', sans-serif;
+    font-feature-settings: "ss01", "cv11";
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Cormorant Garamond', serif;
+    @apply tracking-tight;
+  }
+}
+
+@layer utilities {
+  .font-serif { font-family: 'Cormorant Garamond', serif; }
+  .font-display { font-family: 'Source Serif 4', 'Source Serif Pro', 'Cormorant Garamond', serif; }
+  .font-script { font-family: 'Great Vibes', cursive; }
+  .font-cinzel { font-family: 'Cinzel', 'Cormorant Garamond', serif; letter-spacing: 0.02em; }
+  .text-gold { color: hsl(var(--gold)); }
+  .bg-gold { background-color: hsl(var(--gold)); }
+  .border-gold { border-color: hsl(var(--gold)); }
+  .gradient-gold { background: var(--gradient-gold); }
+  .gradient-cream { background: var(--gradient-cream); }
+  .gradient-overlay { background: var(--gradient-overlay); }
+  .shadow-luxe { box-shadow: var(--shadow-luxe); }
+  .shadow-soft { box-shadow: var(--shadow-soft); }
+  .shadow-card { box-shadow: var(--shadow-card); }
+
+  .text-gold-gradient {
+    background: linear-gradient(
+      135deg,
+      hsl(215 100% 88%) 0%,
+      hsl(215 85% 68%) 20%,
+      hsl(215 75% 45%) 44%,
+      hsl(215 90% 78%) 70%,
+      hsl(218 85% 24%) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .hover-lift {
+    @apply transition-all duration-500;
+  }
+  .hover-lift:hover {
+    transform: translateY(-6px);
+    box-shadow: var(--shadow-luxe);
+  }
+
+  .story-link {
+    @apply relative inline-block;
+  }
+  .story-link::after {
+    content: '';
+    @apply absolute left-0 bottom-0 h-[2px] w-full rounded-sm bg-gold origin-bottom-right scale-x-0 transition-transform duration-300;
+  }
+  .story-link:hover::after {
+    @apply origin-bottom-left scale-x-100;
+  }
+  /* Active route (React Router NavLink sets aria-current="page") — gold line matches text width */
+  .story-link[aria-current="page"]::after {
+    @apply origin-bottom-left scale-x-100;
+  }
+}
+
+@layer base {
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in-down {
+    from { opacity: 0; transform: translateY(-16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(40px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-8px); }
+  }
+  @keyframes ken-burns {
+    0%   { transform: scale(1); }
+    100% { transform: scale(1.08); }
+  }
+
+  .animate-fade-in       { animation: fade-in 0.7s ease-out both; }
+  .animate-fade-in-down  { animation: fade-in-down 0.6s ease-out both; }
+  .animate-scale-in      { animation: scale-in 0.5s ease-out both; }
+  .animate-slide-in-right{ animation: slide-in-right 0.6s ease-out both; }
+  .animate-float         { animation: float 4s ease-in-out infinite; }
+  .animate-ken-burns     { animation: ken-burns 18s ease-out forwards; }
+
+  @keyframes feature-card-rise {
+    from {
+      opacity: 0;
+      transform: translateY(32px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  .animate-feature-card {
+    opacity: 0;
+  }
+  .animate-feature-card--play {
+    animation: feature-card-rise 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation-delay: var(--feature-stagger, 0ms);
+  }
+
+  /* Scroll-triggered section reveal (see useInViewOnce + revealFadeUpClass) */
+  .reveal-fade-up {
+    opacity: 0;
+    transform: translate3d(0, 2rem, 0);
+    will-change: opacity, transform;
+  }
+  .reveal-fade-up.reveal-fade-up-visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    transition:
+      opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-feature-card--play {
+      animation: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+      animation-delay: 0ms !important;
+    }
+    .award-card-flip-inner {
+      transform: none !important;
+      transition: none !important;
+    }
+    .award-card-flip-wrap:is(:hover, :focus-within) .award-card-flip-inner {
+      transform: none !important;
+    }
+    .reveal-fade-up {
+      opacity: 1 !important;
+      transform: none !important;
+      transition: none !important;
+      will-change: auto !important;
+    }
+  }
+  .animate-shimmer {
+    background: linear-gradient(90deg, transparent, hsla(215,75%,52%,0.30), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 2.5s linear infinite;
+  }
+}
