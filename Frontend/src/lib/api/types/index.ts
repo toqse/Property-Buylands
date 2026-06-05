@@ -214,6 +214,8 @@ export interface ApiContact {
   name: string;
   email: string;
   phone?: string;
+  phone_number?: string;
+  subject?: string;
   message?: string;
   budget_range?: string;
   property?: number | null;

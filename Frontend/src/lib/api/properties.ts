@@ -12,7 +12,10 @@ export function buildPropertyListParams(filters: {
   priceMax?: number;
   propertyType?: number;
   bedroomsMin?: number;
+  bedroomsMax?: number;
   bathroomsMin?: number;
+  bathroomsMax?: number;
+  features?: number[];
   stateId?: number;
   districtId?: number;
   cityId?: number;
@@ -34,8 +37,11 @@ export function buildPropertyListParams(filters: {
   if (filters.priceMin != null) p.price_min = filters.priceMin;
   if (filters.priceMax != null) p.price_max = filters.priceMax;
   if (filters.propertyType) p.property_type = filters.propertyType;
-  if (filters.bedroomsMin) p.bedrooms_min = filters.bedroomsMin;
-  if (filters.bathroomsMin) p.bathrooms_min = filters.bathroomsMin;
+  if (filters.bedroomsMin != null) p.bedrooms_min = filters.bedroomsMin;
+  if (filters.bedroomsMax != null) p.bedrooms_max = filters.bedroomsMax;
+  if (filters.bathroomsMin != null) p.bathrooms_min = filters.bathroomsMin;
+  if (filters.bathroomsMax != null) p.bathrooms_max = filters.bathroomsMax;
+  if (filters.features && filters.features.length) p.features = filters.features.join(",");
   if (filters.stateId) p.state_id = filters.stateId;
   if (filters.districtId) p.district_id = filters.districtId;
   if (filters.cityId) p.city_id = filters.cityId;

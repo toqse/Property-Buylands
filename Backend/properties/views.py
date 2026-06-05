@@ -32,6 +32,7 @@ from .models import (
 from .api_responses import error_response, success_response
 from .pagination import (
     AdminPanelImagePagination,
+    CatalogPagination,
     LocationPagination,
     PropertyPagination,
     TestimonialLimitPagination,
@@ -74,6 +75,13 @@ class StateViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
 
+    def get_queryset(self):
+        queryset = State.objects.all().order_by('name')
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(name__icontains=search.strip())
+        return queryset
+
 class DistrictViewSet(viewsets.ModelViewSet):
     """
     API endpoint that allows districts to be viewed or edited.
@@ -90,10 +98,13 @@ class DistrictViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
     def get_queryset(self):
-        queryset = District.objects.all()
+        queryset = District.objects.select_related('state').all().order_by('name')
         state_id = self.request.query_params.get('state_id')
         if state_id:
             queryset = queryset.filter(state_id=state_id)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(name__icontains=search.strip())
         return queryset
 
 class CityViewSet(viewsets.ModelViewSet):
@@ -126,6 +137,14 @@ class FeatureViewSet(viewsets.ModelViewSet):
     """
     queryset = Feature.objects.all()
     serializer_class = FeatureSerializer
+    pagination_class = CatalogPagination
+
+    def get_queryset(self):
+        qs = Feature.objects.all().order_by("name")
+        search = self.request.query_params.get("search")
+        if search:
+            qs = qs.filter(name__icontains=search.strip())
+        return qs
     
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -154,6 +173,14 @@ class PropertyTypeViewSet(viewsets.ModelViewSet):
     """
     queryset = PropertyType.objects.all()
     serializer_class = PropertyTypeSerializer
+    pagination_class = CatalogPagination
+
+    def get_queryset(self):
+        qs = PropertyType.objects.all().order_by("name")
+        search = self.request.query_params.get("search")
+        if search:
+            qs = qs.filter(name__icontains=search.strip())
+        return qs
     
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -715,6 +742,31 @@ class PropertyViewSet(viewsets.ModelViewSet):
         bathrooms_max_value = convert_int(bathrooms_max)
         if bathrooms_max_value is not None:
             queryset = queryset.filter(bathrooms__lte=bathrooms_max_value)
+
+        # Feature filtering (IDs): supports
+        #   ?features=1
+        #   ?features=1,2
+        #   ?features=1&features=2
+        # Each selected feature must be present (AND) by feature FK id.
+        feature_ids = None
+        features_param = params.get("features")
+        if features_param is not None:
+            # getlist handles repeated params: ?features=1&features=2
+            raw_values = self.request.query_params.getlist("features") or [features_param]
+            parsed: list[int] = []
+            for raw in raw_values:
+                for part in str(raw).split(","):
+                    part = part.strip()
+                    if part:
+                        fid = convert_int(part)
+                        if fid is not None:
+                            parsed.append(fid)
+            if parsed:
+                feature_ids = list(dict.fromkeys(parsed))  # unique, preserve order
+        if feature_ids is not None:
+            for feature_id in feature_ids:
+                queryset = queryset.filter(features__id=feature_id)
+            search_needs_distinct = True
 
         state_value = convert_int(state_id)
         if state_value is not None:

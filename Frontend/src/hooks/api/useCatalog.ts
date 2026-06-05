@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { catalogApi } from "@/lib/api/catalog";
 import { contentApi } from "@/lib/api/content";
 import { advertisementsApi } from "@/lib/api/advertisements";
@@ -14,21 +14,35 @@ import { queryKeys } from "./queryKeys";
 export function usePropertyTypes() {
   return useQuery({
     queryKey: queryKeys.propertyTypes,
-    queryFn: () => catalogApi.propertyTypes.listPublic(),
+    queryFn: () => catalogApi.propertyTypes.listPublic({ page_size: 1000 }),
   });
 }
 
 export function useAdminPropertyTypes() {
   return useQuery({
     queryKey: [...queryKeys.propertyTypes, "admin"],
-    queryFn: () => catalogApi.propertyTypes.list(),
+    queryFn: () => catalogApi.propertyTypes.list({ page_size: 1000 }),
+  });
+}
+
+export function useAdminPropertyTypesPaged(params: Record<string, string | number> = {}) {
+  return useQuery({
+    queryKey: [...queryKeys.propertyTypes, "admin", params],
+    queryFn: () => catalogApi.propertyTypes.list(params),
   });
 }
 
 export function useFeatures() {
   return useQuery({
     queryKey: queryKeys.features,
-    queryFn: () => catalogApi.features.list(),
+    queryFn: () => catalogApi.features.list({ page_size: 1000 }),
+  });
+}
+
+export function useFeaturesPaged(params: Record<string, string | number> = {}) {
+  return useQuery({
+    queryKey: [...queryKeys.features, params],
+    queryFn: () => catalogApi.features.list(params),
   });
 }
 
@@ -126,12 +140,35 @@ export function useStates() {
   });
 }
 
-export function useDistricts(stateId?: number) {
+/** Server-side paginated + searchable states list, for admin tables. */
+export function useStatesPaged(params: Record<string, string | number> = {}) {
   return useQuery({
-    queryKey: queryKeys.districts(stateId),
+    queryKey: [...queryKeys.states, "paged", params],
+    queryFn: () => catalogApi.states.list(params),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useDistricts(stateId?: number, search?: string) {
+  return useQuery({
+    queryKey: [...queryKeys.districts(stateId), "search", search ?? ""],
     queryFn: () =>
-      catalogApi.districts.list({ state_id: stateId!, page_size: 100 }),
+      catalogApi.districts.list({
+        state_id: stateId!,
+        page_size: 100,
+        ...(search ? { search } : {}),
+      }),
     enabled: !!stateId,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Server-side paginated + searchable districts list, for admin tables. */
+export function useDistrictsPaged(params: Record<string, string | number> = {}) {
+  return useQuery({
+    queryKey: [...queryKeys.districts(), "paged", params],
+    queryFn: () => catalogApi.districts.list(params),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -244,6 +281,7 @@ export function useCatalogMutations() {
     }),
     submitContact: useMutation({
       mutationFn: contactsApi.submit,
+      onSuccess: () => inv(["contacts"]),
     }),
     deleteContact: useMutation({
       mutationFn: (id: number) => contactsApi.delete(id),

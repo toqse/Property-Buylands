@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "@/lib/router";
 import { usePathname } from "next/navigation";
@@ -10,17 +10,18 @@ import { PropertyCard } from "@/components/PropertyCard";
 import { MobilePropertyCard } from "@/components/MobilePropertyCard";
 import { MobileAdvertisementCard } from "@/components/MobileAdvertisementCard";
 import { AdvertisementCard } from "@/components/AdvertisementCard";
-import { CATEGORIES } from "@/data/mockData";
 import { usePropertyList, usePropertyLocations } from "@/hooks/api/useProperties";
-import { usePropertyTypes } from "@/hooks/api/useCatalog";
+import { usePropertyTypes, useFeatures } from "@/hooks/api/useCatalog";
 import { useUserLocation } from "@/context/UserLocationContext";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, SlidersHorizontal, MapPin, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
+import { Search, SlidersHorizontal, MapPin, ChevronLeft, ChevronRight, ChevronDown, Check, LocateFixed, X } from "lucide-react";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { cn } from "@/lib/utils";
 import {
@@ -48,11 +49,115 @@ const PRICE_RANGES: { value: string; label: string; min: number; max: number }[]
   { value: "10000000-100000000", label: "₹1 Crore+", min: 10000000, max: 100000000 },
 ];
 
-const FEATURE_PILLS: { key: string; label: string }[] = [
-  { key: "Parking", label: "Car Parking" },
-  { key: "Gym", label: "Gym" },
-  { key: "Swimming Pool", label: "Swimming Pool" },
+type FeatureOption = { id: number; name: string };
+
+const ROOM_OPTIONS = ["Any", "1", "2", "3", "4", "5"];
+
+const PROPERTY_FOR_PILLS: { value: string; label: string }[] = [
+  { value: "Any", label: "All" },
+  { value: "For Sale", label: "Buy" },
+  { value: "For Rent", label: "Rent" },
 ];
+
+const roomLabel = (b: string) => (b === "Any" ? "Any" : b === "5" ? "5+" : b);
+
+const mobileFilterLabelClass =
+  "mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[hsl(30_10%_38%)]";
+
+/** Pill toggle used by the mobile filter sheet (Property For / Bedrooms / Bathrooms). */
+function FilterChip({
+  active,
+  onClick,
+  children,
+  className,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "h-10 rounded-xl border px-3 text-sm font-semibold transition-all duration-200 active:scale-[0.97]",
+        active
+          ? "border-transparent bg-gradient-to-br from-[#0e305d] to-[#2f7bc4] text-white shadow-[0_10px_20px_-12px_rgba(14,48,93,0.9)]"
+          : "border-border bg-white text-foreground/75 hover:border-foreground/30 hover:text-foreground",
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Inline multi-select for property features. Rendered in-DOM (not a portaled
+ * popover) so it never conflicts with the drawer's drag/outside-press handling.
+ */
+function FeaturesField({
+  options,
+  selected,
+  onToggle,
+}: {
+  options: FeatureOption[];
+  selected: number[];
+  onToggle: (value: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedNames = selected
+    .map((id) => options.find((o) => o.id === id)?.name)
+    .filter((x): x is string => !!x);
+
+  const label =
+    selected.length === 0 ? "All features" : selected.length === 1 ? selectedNames[0] ?? "1 feature" : `${selected.length} features selected`;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-11 w-full items-center justify-between rounded-xl border border-border bg-white px-3.5 text-left text-sm text-[hsl(30_14%_20%)]"
+      >
+        <span className={cn("min-w-0 truncate", selected.length === 0 && "text-muted-foreground")}>{label}</span>
+        <ChevronDown
+          className={cn("h-4 w-4 shrink-0 opacity-60 transition-transform duration-200", open && "rotate-180")}
+        />
+      </button>
+      {open && (
+        <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-border bg-white p-1.5 shadow-sm">
+          {options.length === 0 ? (
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">No features available</div>
+          ) : (
+            options.map((opt) => {
+              const checked = selected.includes(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => onToggle(opt.id)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted"
+                >
+                  <span
+                    className={cn(
+                      "grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border transition-colors",
+                      checked ? "border-[#1c5fa8] bg-[#1c5fa8] text-white" : "border-foreground/30 bg-white",
+                    )}
+                  >
+                    {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                  </span>
+                  <span className="min-w-0 break-words">{opt.name}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } = {}) => {
   const [searchParams] = useSearchParams();
@@ -86,14 +191,28 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   const [pendingCurrentLocation, setPendingCurrentLocation] = useState(false);
   const [category, setCategory] = useState<string>(initialCategory);
   const [type, setType] = useState<string>(initialType);
-  const [bedrooms, setBedrooms] = useState<string>("Any");
-  const [bathrooms, setBathrooms] = useState<string>("Any");
+  const [bedrooms, setBedrooms] = useState<string>(searchParams.get("bedrooms") || "Any");
+  const [bathrooms, setBathrooms] = useState<string>(searchParams.get("bathrooms") || "Any");
   const [price, setPrice] = useState<number[]>([initialMin, initialMax]);
   const [priceRange, setPriceRange] = useState<string>("any");
-  const [features, setFeatures] = useState<string[]>([]);
+  const [features, setFeatures] = useState<number[]>(() => {
+    const f = searchParams.get("features");
+    return f
+      ? f
+          .split(",")
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isFinite(n))
+      : [];
+  });
 
   const [sort, setSort] = useState("newest");
+  const isMobile = useIsMobile();
   const { data: propertyTypesData } = usePropertyTypes();
+  const { data: featuresData } = useFeatures();
+  const featureOptions = useMemo(
+    () => (featuresData?.results ?? []).map((f) => ({ id: f.id, name: f.name })),
+    [featuresData],
+  );
   const propertyForFilter =
     type === "For Rent"
       ? ("rent" as const)
@@ -110,8 +229,12 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   });
   const categoryOptions = useMemo(() => {
     const names = propertyTypesData?.results?.map((t) => t.name) ?? [];
-    return ["All", ...Array.from(new Set([...CATEGORIES.filter((c) => c !== "All"), ...names]))];
-  }, [propertyTypesData]);
+    const options = ["All", ...names];
+    // Keep a URL-provided category selectable even if it isn't (yet) in the
+    // backend list, so the Select shows the active value instead of going blank.
+    if (category !== "All" && !names.includes(category)) options.push(category);
+    return options;
+  }, [propertyTypesData, category]);
   const locationOptions = useMemo(
     () => uniqueLocationLabels(locationData?.results ?? []),
     [locationData?.results],
@@ -157,6 +280,17 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setSearchInput(qParam);
     setCategory(categoryParam);
     setType(typeParam);
+    setBedrooms(searchParams.get("bedrooms") || "Any");
+    setBathrooms(searchParams.get("bathrooms") || "Any");
+    const featuresRaw = searchParams.get("features");
+    setFeatures(
+      featuresRaw
+        ? featuresRaw
+            .split(",")
+            .map((s) => Number(s.trim()))
+            .filter((n) => Number.isFinite(n))
+        : [],
+    );
     if (minPriceRaw !== null || maxPriceRaw !== null) {
       const min = minPriceRaw !== null ? Math.max(0, Number(minPriceRaw) || 0) : 0;
       const max = maxPriceRaw !== null ? Math.max(min, Number(maxPriceRaw) || 5000000) : 5000000;
@@ -408,8 +542,12 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       priceMin: price[0] > 0 ? price[0] : undefined,
       priceMax: price[1] < 5000000 ? price[1] : undefined,
       propertyType: propertyTypeId,
+      // Exact match for 1–4 (min == max); "5" means 5+ so only a minimum is sent.
       bedroomsMin: bedrooms !== "Any" ? Number(bedrooms) : undefined,
+      bedroomsMax: bedrooms !== "Any" && bedrooms !== "5" ? Number(bedrooms) : undefined,
       bathroomsMin: bathrooms !== "Any" ? Number(bathrooms) : undefined,
+      bathroomsMax: bathrooms !== "Any" && bathrooms !== "5" ? Number(bathrooms) : undefined,
+      features: features.length ? features : undefined,
       location: activeGeo ? undefined : textLocationQuery,
       latitude: activeGeo?.latitude,
       longitude: activeGeo?.longitude,
@@ -424,7 +562,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
               ? "distance"
               : "-created_at",
     }),
-    [page, pageSize, q, type, defaultType, price, propertyTypeId, bedrooms, bathrooms, textLocationQuery, activeGeo, sort],
+    [page, pageSize, q, type, defaultType, price, propertyTypeId, bedrooms, bathrooms, features, textLocationQuery, activeGeo, sort],
   );
 
   const { data, isLoading, isError } = usePropertyList(listFilters);
@@ -433,7 +571,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setPage(1);
   }, [q, location, category, type, bedrooms, bathrooms, price, features, sort, pageSize, searchRadius]);
 
-  const toggleFeature = (f: string) => setFeatures(p => p.includes(f) ? p.filter(x => x !== f) : [...p, f]);
+  const toggleFeature = (f: number) => setFeatures((p) => (p.includes(f) ? p.filter((x) => x !== f) : [...p, f]));
   const handlePriceRange = (value: string) => {
     setPriceRange(value);
     const opt = PRICE_RANGES.find((o) => o.value === value);
@@ -467,6 +605,19 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setShowFilters(false);
   };
 
+  const resetFilters = () => {
+    setQ("");
+    setSearchInput("");
+    clearLocationFilter();
+    setCategory("All");
+    setType("Any");
+    setBedrooms("Any");
+    setBathrooms("Any");
+    setPrice([0, 5000000]);
+    setPriceRange("any");
+    setFeatures([]);
+  };
+
   const feedItems = data?.items ?? [];
   const propertyCount = data?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(propertyCount / pageSize));
@@ -487,11 +638,11 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     <div className="min-h-screen flex flex-col">
       <Navbar />
 
-      <section className="bg-black text-white py-16">
+      <section className="bg-black text-white py-7 sm:py-12 md:py-16">
         <RevealOnScroll className="container">
-          <div className="text-xs uppercase tracking-[0.25em] text-white">Listings</div>
-          <h1 className="font-serif text-5xl md:text-6xl mt-3 text-white">Browse properties</h1>
-          <p className="mt-3 text-white/85 max-w-2xl">Filter by location, price, features, and bedrooms. Switch to map view for nearby search.</p>
+          <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.25em] text-white">Listings</div>
+          <h1 className="font-serif text-3xl sm:text-5xl md:text-6xl mt-1.5 sm:mt-3 text-white">Browse properties</h1>
+          <p className="mt-2 sm:mt-3 text-sm sm:text-base text-white/85 max-w-2xl">Filter by location, price, features, and bedrooms. Switch to map view for nearby search.</p>
         </RevealOnScroll>
       </section>
 
@@ -527,6 +678,161 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
             </div>
           </div>
 
+          {isMobile ? (
+            <Drawer open={showFilters} onOpenChange={setShowFilters}>
+              <DrawerContent className="bottom-[60px] z-50 mt-0 max-h-[calc(100dvh-5rem)] rounded-t-3xl">
+                <div className="flex shrink-0 items-center justify-between px-5 pb-2.5 pt-1.5">
+                  <DrawerTitle className="text-lg font-semibold tracking-tight text-foreground">
+                    Filter Properties
+                  </DrawerTitle>
+                  <DrawerDescription className="sr-only">
+                    Refine your property search by location, type, rooms, price, and features.
+                  </DrawerDescription>
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="text-sm font-semibold text-[#1c5fa8] transition active:opacity-60"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="h-px shrink-0 bg-border/70" />
+
+                <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
+                  {/* Location */}
+                  <div>
+                    <Label className={mobileFilterLabelClass}>Location</Label>
+                    <div className="relative">
+                      <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#1c5fa8]" />
+                      <Select value={location} onValueChange={handleLocationChange}>
+                        <SelectTrigger className="h-12 rounded-xl border-border bg-white pl-9 text-left text-[hsl(30_14%_20%)]">
+                          <SelectValue placeholder="Select location" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Any">No location filter</SelectItem>
+                          <SelectItem value={CURRENT_LOCATION_VALUE}>My current location</SelectItem>
+                          {visibleLocationOptions.map((loc) => (
+                            <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleLocationChange(CURRENT_LOCATION_VALUE)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#1c5fa8]/60 bg-white px-4 py-2.5 text-[13px] font-semibold text-[#1c5fa8] transition hover:bg-[#1c5fa8]/5 active:scale-[0.99]"
+                  >
+                    <LocateFixed className="h-4 w-4" /> Use my current location
+                  </button>
+
+                  {showRadiusFilter && (
+                    <div>
+                      <Label className={mobileFilterLabelClass}>Search Radius</Label>
+                      <Select value={searchRadius} onValueChange={setSearchRadius}>
+                        <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
+                          <SelectValue placeholder="Within 10 km" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {RADIUS_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Property For */}
+                  <div>
+                    <Label className={mobileFilterLabelClass}>Property For</Label>
+                    <div className="flex gap-2.5">
+                      {PROPERTY_FOR_PILLS.map((p) => (
+                        <FilterChip
+                          key={p.value}
+                          active={type === p.value}
+                          onClick={() => setType(p.value)}
+                          className="flex-1"
+                        >
+                          {p.label}
+                        </FilterChip>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Property Type */}
+                  <div>
+                    <Label className={mobileFilterLabelClass}>Property Type</Label>
+                    <Select value={category} onValueChange={setCategory}>
+                      <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
+                        <SelectValue placeholder="All types" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categoryOptions.map((c) => (
+                          <SelectItem key={c} value={c}>{c === "All" ? "All types" : c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Bedrooms */}
+                  <div>
+                    <Label className={mobileFilterLabelClass}>Bedrooms</Label>
+                    <div className="grid grid-cols-6 gap-2">
+                      {ROOM_OPTIONS.map((b) => (
+                        <FilterChip key={b} active={bedrooms === b} onClick={() => setBedrooms(b)} className="px-0">
+                          {roomLabel(b)}
+                        </FilterChip>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bathrooms */}
+                  <div>
+                    <Label className={mobileFilterLabelClass}>Bathrooms</Label>
+                    <div className="grid grid-cols-6 gap-2">
+                      {ROOM_OPTIONS.map((b) => (
+                        <FilterChip key={b} active={bathrooms === b} onClick={() => setBathrooms(b)} className="px-0">
+                          {roomLabel(b)}
+                        </FilterChip>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Price Range */}
+                  <div>
+                    <Label className={mobileFilterLabelClass}>Price Range</Label>
+                    <Select value={priceRange} onValueChange={handlePriceRange}>
+                      <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
+                        <SelectValue placeholder="Any price" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRICE_RANGES.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Features */}
+                  <div>
+                    <Label className={mobileFilterLabelClass}>Features</Label>
+                    <FeaturesField options={featureOptions} selected={features} onToggle={toggleFeature} />
+                  </div>
+                </div>
+
+                <div className="shrink-0 border-t border-border/70 px-4 py-3">
+                  <Button
+                    type="button"
+                    onClick={applyFilters}
+                    className="h-11 w-full rounded-xl bg-gradient-to-r from-[#0e305d] to-[#2f7bc4] text-base font-semibold text-white shadow-[0_12px_24px_-12px_rgba(14,48,93,0.85)] transition hover:opacity-95 active:scale-[0.99]"
+                  >
+                    Apply Filters
+                  </Button>
+                </div>
+              </DrawerContent>
+            </Drawer>
+          ) : (
           <Dialog open={showFilters} onOpenChange={setShowFilters}>
             <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl gap-0 overflow-hidden rounded-3xl border-white/70 bg-white p-0 shadow-[0_28px_80px_-28px_rgba(15,23,42,0.45)] sm:w-[calc(100vw-3rem)]">
               <DialogHeader className="border-b border-border/70 px-5 pb-4 pt-5 text-left md:px-7 md:pt-6">
@@ -639,7 +945,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                       <Select value={bedrooms} onValueChange={setBedrooms}>
                         <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {["Any", "1", "2", "3", "4", "5"].map(b => <SelectItem key={b} value={b}>{b === "Any" ? "Any" : `${b}+`}</SelectItem>)}
+                          {["Any", "1", "2", "3", "4", "5"].map(b => <SelectItem key={b} value={b}>{b === "Any" ? "Any" : b === "5" ? "5+" : b}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
@@ -650,7 +956,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                       <Select value={bathrooms} onValueChange={setBathrooms}>
                         <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {["Any", "1", "2", "3", "4", "5"].map(b => <SelectItem key={b} value={b}>{b === "Any" ? "Any" : `${b}+`}</SelectItem>)}
+                          {["Any", "1", "2", "3", "4", "5"].map(b => <SelectItem key={b} value={b}>{b === "Any" ? "Any" : b === "5" ? "5+" : b}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
@@ -679,13 +985,13 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                       Features
                     </Label>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      {FEATURE_PILLS.map(({ key, label }) => {
-                        const active = features.includes(key);
+                      {featureOptions.map((opt) => {
+                        const active = features.includes(opt.id);
                         return (
                           <button
-                            key={key}
+                            key={opt.id}
                             type="button"
-                            onClick={() => toggleFeature(key)}
+                            onClick={() => toggleFeature(opt.id)}
                             aria-pressed={active}
                             className={cn(
                               "flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium transition-all",
@@ -702,7 +1008,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                             >
                               {active && <span className="h-2 w-2 rounded-full bg-white" />}
                             </span>
-                            {label}
+                            {opt.name}
                           </button>
                         );
                       })}
@@ -715,18 +1021,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                 <Button
                   type="button"
                   className="h-11 rounded-xl border border-border bg-white px-6 text-sm font-semibold text-foreground hover:bg-muted"
-                  onClick={() => {
-                    setQ("");
-                    setSearchInput("");
-                    clearLocationFilter();
-                    setCategory("All");
-                    setType("Any");
-                    setBedrooms("Any");
-                    setBathrooms("Any");
-                    setPrice([0, 5000000]);
-                    setPriceRange("any");
-                    setFeatures([]);
-                  }}
+                  onClick={resetFilters}
                 >
                   Reset filters
                 </Button>
@@ -740,6 +1035,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
               </div>
             </DialogContent>
           </Dialog>
+          )}
 
           <div>
           <div className="flex flex-wrap items-center justify-between gap-4 mb-8">

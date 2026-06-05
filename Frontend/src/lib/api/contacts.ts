@@ -1,4 +1,4 @@
-import { apiRequest, toQueryString, unwrapPaginated, type PaginatedResponse } from "@/lib/api/client";
+import { apiRequest, asList, toQueryString, type PaginatedResponse } from "@/lib/api/client";
 import type { ApiContact } from "@/lib/api/types";
 
 export const contactsApi = {
@@ -15,10 +15,10 @@ export const contactsApi = {
   },
 
   list(params: Record<string, string | number> = {}) {
-    return apiRequest<PaginatedResponse<ApiContact>>(
+    return apiRequest<ApiContact[] | PaginatedResponse<ApiContact>>(
       `properties/contacts/${toQueryString(params)}`,
       { auth: true },
-    ).then(unwrapPaginated);
+    ).then(asList);
   },
 
   delete(id: number | string) {

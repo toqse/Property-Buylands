@@ -113,8 +113,8 @@ class Property(models.Model):
     property_type = models.ForeignKey(PropertyType, on_delete=models.CASCADE, related_name='properties')
     
     # Location Coordinates
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    latitude = models.DecimalField(max_digits=13, decimal_places=10, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=13, decimal_places=10, null=True, blank=True)
     
     # Property Details (nullable for area_unit=cent plot listings)
     bedrooms = models.PositiveIntegerField(null=True, blank=True)

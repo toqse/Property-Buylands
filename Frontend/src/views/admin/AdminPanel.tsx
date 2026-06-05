@@ -28,10 +28,13 @@ import {
   useOwners,
   useContacts,
   usePropertyTypes,
-  useAdminPropertyTypes,
+  useAdminPropertyTypesPaged,
   useFeatures,
+  useFeaturesPaged,
   useStates,
+  useStatesPaged,
   useDistricts,
+  useDistrictsPaged,
   useCities,
   useAllDistricts,
   useAllCities,
@@ -1168,11 +1171,53 @@ const DEFAULT_CATEGORY_ICONS: Record<string, ComponentType<SVGProps<SVGSVGElemen
 };
 
 const Categories = () => {
-  const { data: catsData, refetch: refetchCats } = useAdminPropertyTypes();
-  const { data: featsData, refetch: refetchFeats } = useFeatures();
+  const PAGE_SIZE = 20;
+  const [catSearch, setCatSearch] = useState("");
+  const [debouncedCatSearch, setDebouncedCatSearch] = useState("");
+  const [catPage, setCatPage] = useState(1);
+  const [featSearch, setFeatSearch] = useState("");
+  const [debouncedFeatSearch, setDebouncedFeatSearch] = useState("");
+  const [featPage, setFeatPage] = useState(1);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedCatSearch(catSearch), 350);
+    return () => clearTimeout(t);
+  }, [catSearch]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedFeatSearch(featSearch), 350);
+    return () => clearTimeout(t);
+  }, [featSearch]);
+
+  useEffect(() => {
+    setCatPage(1);
+  }, [debouncedCatSearch]);
+
+  useEffect(() => {
+    setFeatPage(1);
+  }, [debouncedFeatSearch]);
+
+  const catQueryParams = useMemo(() => {
+    const params: Record<string, string | number> = { page: catPage, page_size: PAGE_SIZE };
+    if (debouncedCatSearch.trim()) params.search = debouncedCatSearch.trim();
+    return params;
+  }, [catPage, debouncedCatSearch]);
+
+  const featQueryParams = useMemo(() => {
+    const params: Record<string, string | number> = { page: featPage, page_size: PAGE_SIZE };
+    if (debouncedFeatSearch.trim()) params.search = debouncedFeatSearch.trim();
+    return params;
+  }, [featPage, debouncedFeatSearch]);
+
+  const { data: catsData, refetch: refetchCats } = useAdminPropertyTypesPaged(catQueryParams);
+  const { data: featsData, refetch: refetchFeats } = useFeaturesPaged(featQueryParams);
   const catalogMutations = useCatalogMutations();
   const cats = catsData?.results ?? [];
   const feats = featsData?.results ?? [];
+  const catTotal = catsData?.count ?? 0;
+  const featTotal = featsData?.count ?? 0;
+  const catTotalPages = Math.max(1, Math.ceil(catTotal / PAGE_SIZE));
+  const featTotalPages = Math.max(1, Math.ceil(featTotal / PAGE_SIZE));
 
   const [newCat, setNewCat] = useState("");
   const [newFeat, setNewFeat] = useState("");
@@ -1311,6 +1356,16 @@ const Categories = () => {
               </Button>
             </div>
 
+            <div className="relative mb-5 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                value={catSearch}
+                onChange={(e) => setCatSearch(e.target.value)}
+                placeholder="Search categories…"
+                className="pl-9 rounded-lg"
+              />
+            </div>
+
             <div className="mb-6 max-w-md">
               <Label className="text-xs font-medium text-foreground/80">
                 Category icon <span className="text-rose-500">*</span>
@@ -1401,6 +1456,14 @@ const Categories = () => {
                 <div className="text-center text-sm text-muted-foreground py-8">No categories yet.</div>
               )}
             </div>
+
+            <PaginationFooter
+              page={catPage}
+              total={catTotal}
+              pageSize={PAGE_SIZE}
+              onPrev={() => setCatPage((p) => Math.max(1, p - 1))}
+              onNext={() => setCatPage((p) => Math.min(catTotalPages, p + 1))}
+            />
           </div>
         </TabsContent>
 
@@ -1426,6 +1489,16 @@ const Categories = () => {
               >
                 Add Feature
               </Button>
+            </div>
+
+            <div className="relative mb-5 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                value={featSearch}
+                onChange={(e) => setFeatSearch(e.target.value)}
+                placeholder="Search features…"
+                className="pl-9 rounded-lg"
+              />
             </div>
 
             <div className="space-y-2">
@@ -1472,6 +1545,14 @@ const Categories = () => {
                 <div className="text-center text-sm text-muted-foreground py-8">No features yet.</div>
               )}
             </div>
+
+            <PaginationFooter
+              page={featPage}
+              total={featTotal}
+              pageSize={PAGE_SIZE}
+              onPrev={() => setFeatPage((p) => Math.max(1, p - 1))}
+              onNext={() => setFeatPage((p) => Math.min(featTotalPages, p + 1))}
+            />
           </div>
         </TabsContent>
       </Tabs>
@@ -1886,16 +1967,18 @@ const Testimonials = () => {
     () => [...(data?.results ?? [])].sort((a, b) => a.order - b.order),
     [data?.results],
   );
-  const sectionDefaults = useMemo(
-    () => ({
-      tag: data?.section?.tag ?? "CLIENT STORIES",
-      heading: data?.section?.heading ?? "What our clients say",
-      description:
-        data?.section?.description ??
-        "Real experiences from people who found their perfect space with us.",
-    }),
-    [data?.section],
-  );
+  // Section heading defaults are unused while the admin "Section heading" form is
+  // hidden (these values are not rendered in the home page UI yet).
+  // const sectionDefaults = useMemo(
+  //   () => ({
+  //     tag: data?.section?.tag ?? "CLIENT STORIES",
+  //     heading: data?.section?.heading ?? "What our clients say",
+  //     description:
+  //       data?.section?.description ??
+  //       "Real experiences from people who found their perfect space with us.",
+  //   }),
+  //   [data?.section],
+  // );
 
   const [editing, setEditing] = useState<UiTestimonial | null>(null);
   const [open, setOpen] = useState(false);
@@ -1907,21 +1990,22 @@ const Testimonials = () => {
 
   const testimonialsPager = usePagination(list, 6);
 
-  const saveSection = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    try {
-      await catalogMutations.patchSiteSettings.mutateAsync({
-        testimonials_section_tag: String(fd.get("tag") ?? "").trim(),
-        testimonials_section_heading: String(fd.get("heading") ?? "").trim(),
-        testimonials_section_description: String(fd.get("description") ?? "").trim(),
-      });
-      void refetch();
-      toast.success("Section heading saved");
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    }
-  };
+  // Disabled together with the hidden "Section heading" form above.
+  // const saveSection = async (e: React.FormEvent<HTMLFormElement>) => {
+  //   e.preventDefault();
+  //   const fd = new FormData(e.currentTarget);
+  //   try {
+  //     await catalogMutations.patchSiteSettings.mutateAsync({
+  //       testimonials_section_tag: String(fd.get("tag") ?? "").trim(),
+  //       testimonials_section_heading: String(fd.get("heading") ?? "").trim(),
+  //       testimonials_section_description: String(fd.get("description") ?? "").trim(),
+  //     });
+  //     void refetch();
+  //     toast.success("Section heading saved");
+  //   } catch (err) {
+  //     toast.error(getErrorMessage(err));
+  //   }
+  // };
 
   const openNew = () => {
     setEditing({
@@ -2033,6 +2117,11 @@ const Testimonials = () => {
         <p className="text-sm text-muted-foreground mt-1">Manage testimonials shown on the home page.</p>
       </div>
 
+      {/*
+        Section heading form is hidden: the tag/heading/description values are not
+        currently rendered in the home page UI (the home testimonials header text is
+        hardcoded). Re-enable this block once those fields are wired into the UI.
+
       <form
         key={`section-${sectionDefaults.tag}-${sectionDefaults.heading}`}
         onSubmit={saveSection}
@@ -2060,6 +2149,7 @@ const Testimonials = () => {
         </div>
         <Button type="submit" variant="luxe" className="mt-5">Save section</Button>
       </form>
+      */}
 
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <h2 className="font-serif text-xl">Testimonials</h2>
@@ -2256,13 +2346,15 @@ const Testimonials = () => {
 type LocationView = "states" | "districts" | "cities";
 
 const LocationManagement = ({ view }: { view: LocationView }) => {
+  const LOCATION_PAGE_SIZE = 10;
   const { data: statesData, refetch: refetchStates } = useStates();
   const { data: districtsData, refetch: refetchDistricts } = useAllDistricts();
   const { data: citiesData, refetch: refetchCities } = useAllCities();
   const catalogMutations = useCatalogMutations();
-  const states = statesData?.results ?? [];
-  const districts = districtsData?.results ?? [];
-  const cities = citiesData?.results ?? [];
+  // Full lists power the dropdowns (add/edit dialogs) and name resolution.
+  const states = useMemo(() => statesData?.results ?? [], [statesData?.results]);
+  const districts = useMemo(() => districtsData?.results ?? [], [districtsData?.results]);
+  const cities = useMemo(() => citiesData?.results ?? [], [citiesData?.results]);
 
   // Add dialog states
   const [stateDialogOpen, setStateDialogOpen] = useState(false);
@@ -2277,6 +2369,60 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
   // Filters
   const [stateFilter, setStateFilter] = useState("");
   const [districtFilter, setDistrictFilter] = useState("");
+
+  // Server-side search + pagination for the states & districts tables.
+  const [stateSearch, setStateSearch] = useState("");
+  const [debouncedStateSearch, setDebouncedStateSearch] = useState("");
+  const [statesPage, setStatesPage] = useState(1);
+  const [districtSearch, setDistrictSearch] = useState("");
+  const [debouncedDistrictSearch, setDebouncedDistrictSearch] = useState("");
+  const [districtsPage, setDistrictsPage] = useState(1);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedStateSearch(stateSearch), 350);
+    return () => clearTimeout(t);
+  }, [stateSearch]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedDistrictSearch(districtSearch), 350);
+    return () => clearTimeout(t);
+  }, [districtSearch]);
+
+  useEffect(() => {
+    setStatesPage(1);
+  }, [debouncedStateSearch]);
+
+  useEffect(() => {
+    setDistrictsPage(1);
+  }, [debouncedDistrictSearch, stateFilter]);
+
+  const stateQueryParams = useMemo(() => {
+    const params: Record<string, string | number> = {
+      page: statesPage,
+      page_size: LOCATION_PAGE_SIZE,
+    };
+    if (debouncedStateSearch.trim()) params.search = debouncedStateSearch.trim();
+    return params;
+  }, [statesPage, debouncedStateSearch]);
+
+  const districtQueryParams = useMemo(() => {
+    const params: Record<string, string | number> = {
+      page: districtsPage,
+      page_size: LOCATION_PAGE_SIZE,
+    };
+    if (debouncedDistrictSearch.trim()) params.search = debouncedDistrictSearch.trim();
+    if (stateFilter) params.state_id = Number(stateFilter);
+    return params;
+  }, [districtsPage, debouncedDistrictSearch, stateFilter]);
+
+  const { data: statesPageData } = useStatesPaged(stateQueryParams);
+  const { data: districtsPageData } = useDistrictsPaged(districtQueryParams);
+  const pagedStates = statesPageData?.results ?? [];
+  const pagedDistricts = districtsPageData?.results ?? [];
+  const statesTotal = statesPageData?.count ?? 0;
+  const districtsTotal = districtsPageData?.count ?? 0;
+  const statesTotalPages = Math.max(1, Math.ceil(statesTotal / LOCATION_PAGE_SIZE));
+  const districtsTotalPages = Math.max(1, Math.ceil(districtsTotal / LOCATION_PAGE_SIZE));
 
   // Delete confirmations
   const [pendingStateDelete, setPendingStateDelete] = useState<PendingDelete>(null);
@@ -2440,17 +2586,11 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
     }
   };
 
-  // Derived sorted/filtered lists
+  // Derived sorted/filtered lists (used for dropdowns and the cities table)
   const sortedStates = useMemo(
     () => [...states].sort((a, b) => a.name.localeCompare(b.name)),
     [states],
   );
-
-  const sortedDistricts = useMemo(() => {
-    const filterStateId = stateFilter ? Number(stateFilter) : 0;
-    const filtered = filterStateId ? districts.filter((d) => d.state === filterStateId) : districts;
-    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
-  }, [districts, stateFilter]);
 
   const sortedCities = useMemo(() => {
     const filterDistrictId = districtFilter ? Number(districtFilter) : 0;
@@ -2460,8 +2600,6 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
     return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
   }, [cities, districtFilter]);
 
-  const statesPager = usePagination(sortedStates, 10);
-  const districtsPager = usePagination(sortedDistricts, 10);
   const citiesPager = usePagination(sortedCities, 10);
 
   // Common cell action buttons
@@ -2500,6 +2638,16 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
             </Button>
           </div>
 
+          <div className="relative mb-5 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              value={stateSearch}
+              onChange={(e) => setStateSearch(e.target.value)}
+              placeholder="Search states…"
+              className="pl-9 rounded-lg"
+            />
+          </div>
+
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[520px]">
@@ -2511,12 +2659,14 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                 </tr>
               </thead>
               <tbody>
-                {sortedStates.length === 0 ? (
+                {pagedStates.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="p-12 text-center text-muted-foreground">No states yet.</td>
+                    <td colSpan={3} className="p-12 text-center text-muted-foreground">
+                      {debouncedStateSearch.trim() ? "No states match your search." : "No states yet."}
+                    </td>
                   </tr>
                 ) : (
-                  statesPager.paginated.map((s) => (
+                  pagedStates.map((s) => (
                     <tr key={s.id} className="border-t border-border hover:bg-muted/30">
                       <td className="p-4 text-muted-foreground">{s.id}</td>
                       <td className="p-4 font-medium">{s.name}</td>
@@ -2534,13 +2684,13 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
             </div>
           </div>
 
-          {sortedStates.length > 0 && (
+          {statesTotal > 0 && (
             <PaginationFooter
-              page={statesPager.page}
-              total={sortedStates.length}
-              pageSize={10}
-              onPrev={statesPager.goPrev}
-              onNext={statesPager.goNext}
+              page={statesPage}
+              total={statesTotal}
+              pageSize={LOCATION_PAGE_SIZE}
+              onPrev={() => setStatesPage((p) => Math.max(1, p - 1))}
+              onNext={() => setStatesPage((p) => Math.min(statesTotalPages, p + 1))}
             />
           )}
 
@@ -2593,6 +2743,18 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
             <h1 className="font-serif text-3xl md:text-4xl">Districts</h1>
             <div className="flex items-end gap-3 flex-wrap">
               <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={districtSearch}
+                    onChange={(e) => setDistrictSearch(e.target.value)}
+                    placeholder="Search districts…"
+                    className="h-10 w-56 pl-9 rounded-full"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Filter by state</Label>
                 <select
                   className="h-10 w-48 rounded-full border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:border-gold"
@@ -2623,12 +2785,16 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                 </tr>
               </thead>
               <tbody>
-                {sortedDistricts.length === 0 ? (
+                {pagedDistricts.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="p-12 text-center text-muted-foreground">No districts yet.</td>
+                    <td colSpan={4} className="p-12 text-center text-muted-foreground">
+                      {debouncedDistrictSearch.trim() || stateFilter
+                        ? "No districts match your search."
+                        : "No districts yet."}
+                    </td>
                   </tr>
                 ) : (
-                  districtsPager.paginated.map((d) => {
+                  pagedDistricts.map((d) => {
                     const state = states.find((s) => s.id === d.state);
                     return (
                       <tr key={d.id} className="border-t border-border hover:bg-muted/30">
@@ -2650,13 +2816,13 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
             </div>
           </div>
 
-          {sortedDistricts.length > 0 && (
+          {districtsTotal > 0 && (
             <PaginationFooter
-              page={districtsPager.page}
-              total={sortedDistricts.length}
-              pageSize={10}
-              onPrev={districtsPager.goPrev}
-              onNext={districtsPager.goNext}
+              page={districtsPage}
+              total={districtsTotal}
+              pageSize={LOCATION_PAGE_SIZE}
+              onPrev={() => setDistrictsPage((p) => Math.max(1, p - 1))}
+              onNext={() => setDistrictsPage((p) => Math.min(districtsTotalPages, p + 1))}
             />
           )}
 
@@ -3114,7 +3280,26 @@ const AD_SUBMIT_MESSAGES = [
 type AdImageKey = "desktopBanner" | "mobileBanner" | "videoThumbnail";
 
 const AdvertisementsAdmin = () => {
-  const { data: adsData, refetch } = useAdminAds({ page_size: 100 });
+  const [adSearch, setAdSearch] = useState("");
+  const [debouncedAdSearch, setDebouncedAdSearch] = useState("");
+  const [adTypeFilter, setAdTypeFilter] = useState<"all" | AdType>("all");
+  const [adStatusFilter, setAdStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [adSort, setAdSort] = useState<"newest" | "oldest" | "priority">("newest");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedAdSearch(adSearch), 350);
+    return () => clearTimeout(t);
+  }, [adSearch]);
+
+  const adQueryParams = useMemo(() => {
+    const params: Record<string, string | number> = { page_size: 100, ordering: adSort };
+    if (adTypeFilter !== "all") params.ad_type = adTypeFilter;
+    if (adStatusFilter !== "all") params.is_active = adStatusFilter === "active" ? "true" : "false";
+    if (debouncedAdSearch.trim()) params.search = debouncedAdSearch.trim();
+    return params;
+  }, [adSort, adTypeFilter, adStatusFilter, debouncedAdSearch]);
+
+  const { data: adsData, refetch, isFetching: adsFetching } = useAdminAds(adQueryParams);
   const { data: siteSettings } = useSiteSettings();
   const [linkedPropertySearch, setLinkedPropertySearch] = useState("");
   const [linkedPropertyPage, setLinkedPropertyPage] = useState(1);
@@ -3127,7 +3312,7 @@ const AdvertisementsAdmin = () => {
     search: linkedPropertySearch.trim() || undefined,
   }, { auth: true });
   const catalogMutations = useCatalogMutations();
-  const list = adsData?.items ?? [];
+  const list = useMemo(() => adsData?.items ?? [], [adsData?.items]);
   const linkedPropertyTotalPages = Math.max(1, Math.ceil((propsForLink?.count ?? 0) / 20));
   const linkableProperties = useMemo(
     () =>
@@ -3325,6 +3510,20 @@ const AdvertisementsAdmin = () => {
     }
   };
 
+  const totalAds = adsData?.count ?? list.length;
+  const hasActiveFilters =
+    adSearch.trim() !== "" || adTypeFilter !== "all" || adStatusFilter !== "all";
+
+  const clearAdFilters = () => {
+    setAdSearch("");
+    setAdTypeFilter("all");
+    setAdStatusFilter("all");
+    setAdSort("newest");
+  };
+
+  const filterSelectClass =
+    "h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+
   return (
     <div className="animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6 md:mb-8">
@@ -3366,12 +3565,88 @@ const AdvertisementsAdmin = () => {
         </div>
       </div>
 
-      {list.length === 0 ? (
-        <div className="bg-card border border-dashed rounded-2xl p-16 text-center text-muted-foreground">
-          No advertisements yet. Click "New advertisement" to add one.
+      {(list.length > 0 || hasActiveFilters) && (
+        <div className="mb-6 bg-card border border-border rounded-2xl p-4 shadow-sm">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={adSearch}
+                  onChange={(e) => setAdSearch(e.target.value)}
+                  placeholder="Search by title…"
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Ad type</Label>
+              <select
+                value={adTypeFilter}
+                onChange={(e) => setAdTypeFilter(e.target.value as "all" | AdType)}
+                className={filterSelectClass}
+              >
+                <option value="all">All types</option>
+                <option value="property">Property ads</option>
+                <option value="generic">Generic ads</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Status</Label>
+              <select
+                value={adStatusFilter}
+                onChange={(e) => setAdStatusFilter(e.target.value as "all" | "active" | "inactive")}
+                className={filterSelectClass}
+              >
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Sort by</Label>
+              <select
+                value={adSort}
+                onChange={(e) => setAdSort(e.target.value as "newest" | "oldest" | "priority")}
+                className={filterSelectClass}
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="priority">Priority</option>
+              </select>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              {adsFetching ? "Updating…" : `${totalAds} ad${totalAds === 1 ? "" : "s"}`}
+            </p>
+            {hasActiveFilters && (
+              <Button type="button" variant="ghost" size="sm" onClick={clearAdFilters}>
+                Clear filters
+              </Button>
+            )}
+          </div>
         </div>
+      )}
+
+      {list.length === 0 ? (
+        hasActiveFilters ? (
+          <div className="bg-card border border-dashed rounded-2xl p-16 text-center text-muted-foreground">
+            No advertisements match your filters.
+            <div className="mt-3">
+              <Button type="button" variant="outline" size="sm" onClick={clearAdFilters}>
+                Clear filters
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-card border border-dashed rounded-2xl p-16 text-center text-muted-foreground">
+            No advertisements yet. Click "New advertisement" to add one.
+          </div>
+        )
       ) : (
-        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {list.map((ad) => {
             const preview = ad.desktopBanner || ad.mobileBanner || ad.videoThumbnail;
             const linkedProperty = linkableProperties.find((p) => p.id === ad.linkedPropertyId);
@@ -3394,16 +3669,33 @@ const AdvertisementsAdmin = () => {
                   {ad.subtitle && (
                     <p className="text-xs text-muted-foreground line-clamp-2">{ad.subtitle}</p>
                   )}
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    {ad.adType === "property" ? "Property ad" : "Generic ad"} · {ad.mediaType}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]",
+                        ad.adType === "property"
+                          ? "bg-sky-100 text-sky-700"
+                          : "bg-amber-100 text-amber-700",
+                      )}
+                    >
+                      {ad.adType === "property" ? "Property" : "Generic"}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      {ad.mediaType}
+                    </span>
                   </div>
                   {ad.redirectType === "property" && ad.linkedPropertyId && (
                     <div className="text-xs text-foreground/80 truncate">
                       Linked: {linkedProperty?.title ?? `Property #${ad.linkedPropertyId}`}
                     </div>
                   )}
-                  <div className="text-xs text-muted-foreground">
-                    {ad.priority ? `Priority ${ad.priority}` : "Default priority"}
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span>{ad.priority ? `Priority ${ad.priority}` : "Default priority"}</span>
+                    {ad.createdAt && (
+                      <span title={`Created ${new Date(ad.createdAt).toLocaleString()}`}>
+                        {new Date(ad.createdAt).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-auto pt-3 flex items-center justify-end gap-2 border-t border-border">
                     <Button size="sm" variant="outline" onClick={() => openEdit(ad)}>

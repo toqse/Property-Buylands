@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { useCompanyContact, useCatalogMutations } from "@/hooks/api/useCatalog";
 import { getErrorMessage } from "@/lib/api/errors";
+import { openCompanyEmail } from "@/lib/mailto";
 
 const WhatsAppGlyph = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 32 32" className={className} fill="currentColor" aria-hidden="true">
@@ -28,67 +30,123 @@ type ContactCard = {
   detail: React.ReactNode;
 };
 
-const CONTACT_CARDS: ContactCard[] = [
-  {
-    key: "visit",
-    Icon: MapPin,
-    label: "Visit us",
-    detail: (
-      <span className="leading-relaxed">
-        City Height Developers,<br />
-        Silver City Complex, NGO Quarters,<br />
-        Merikunnu (PO), Kozhikode &mdash; 673012
-      </span>
-    ),
-  },
-  {
-    key: "call",
-    Icon: Phone,
-    label: "Call",
-    detail: (
-      <a href="tel:+919349708090" className="hover:text-gold transition-colors">
-        +91 93497 08090
-      </a>
-    ),
-  },
-  { key: "email", Icon: Mail, label: "Email", detail: "hello@buylandsindia.com" },
-  {
-    key: "whatsapp",
-    Icon: WhatsAppGlyph,
-    label: "WhatsApp",
-    detail: (
-      <a
-        href="https://wa.me/919349708090"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="hover:text-gold transition-colors underline-offset-2 hover:underline"
-      >
-        +91 93497 08090
-      </a>
-    ),
-  },
-  { key: "hours", Icon: Clock, label: "Hours", detail: "Mon - Sat · 9:00 to 19:00" },
-];
+const INTEREST_OPTIONS = [
+  { value: "buy", label: "Buy" },
+  { value: "rent", label: "Rent" },
+  { value: "sell", label: "Sell / list" },
+  { value: "general", label: "General inquiry" },
+] as const;
+
+const BUDGET_OPTIONS = [
+  { value: "under-500k", label: "Under ₹500,000" },
+  { value: "500k-1.5m", label: "₹500,000 – ₹1,500,000" },
+  { value: "1.5m-3m", label: "₹1,500,000 – ₹3,000,000" },
+  { value: "3m-5m", label: "₹3,000,000 – ₹5,000,000" },
+  { value: "5m-plus", label: "₹5,000,000+" },
+  { value: "undisclosed", label: "Prefer not to say" },
+] as const;
 
 const Contact = () => {
   const { data: company } = useCompanyContact();
   const { submitContact } = useCatalogMutations();
+  const [interest, setInterest] = useState("");
+  const [budget, setBudget] = useState("");
+
+  const address = (company?.address || company?.company_address || "").trim();
+  const phone = (company?.phone || company?.admin_phone || "").trim();
+  const email = (company?.email || company?.company_email || "").trim();
+  const whatsapp = (company?.whatsapp || company?.admin_whatsapp || "").trim();
+  const phoneHref = phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : "";
+  const whatsappHref = whatsapp ? `https://wa.me/${whatsapp.replace(/\D/g, "")}` : "";
+
+  const contactCards: ContactCard[] = [];
+  if (address) {
+    contactCards.push({
+      key: "visit",
+      Icon: MapPin,
+      label: "Visit us",
+      detail: <span className="leading-relaxed whitespace-pre-line">{address}</span>,
+    });
+  }
+  if (phone) {
+    contactCards.push({
+      key: "call",
+      Icon: Phone,
+      label: "Call",
+      detail: (
+        <a href={phoneHref} className="hover:text-gold transition-colors">
+          {phone}
+        </a>
+      ),
+    });
+  }
+  if (email) {
+    contactCards.push({
+      key: "email",
+      Icon: Mail,
+      label: "Email",
+      detail: (
+        <a href={`mailto:${email}`} className="hover:text-gold transition-colors">
+          {email}
+        </a>
+      ),
+    });
+  }
+  if (whatsapp) {
+    contactCards.push({
+      key: "whatsapp",
+      Icon: WhatsAppGlyph,
+      label: "WhatsApp",
+      detail: (
+        <a
+          href={whatsappHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-gold transition-colors underline-offset-2 hover:underline"
+        >
+          {whatsapp}
+        </a>
+      ),
+    });
+  }
+  contactCards.push({
+    key: "hours",
+    Icon: Clock,
+    label: "Hours",
+    detail: "Mon - Sat · 9:00 to 19:00",
+  });
 
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
     const fd = new FormData(form);
+    const interestLabel = INTEREST_OPTIONS.find((o) => o.value === interest)?.label;
+    const budgetLabel = BUDGET_OPTIONS.find((o) => o.value === budget)?.label;
+    const name = String(fd.get("name") || "");
+    const senderEmail = String(fd.get("email") || "");
+    const phone = String(fd.get("phone") || "");
+    const message = String(fd.get("message") || "");
+    const subject = interestLabel ? `${interestLabel} enquiry` : "General enquiry";
     try {
       await submitContact.mutateAsync({
-        name: String(fd.get("name") || ""),
-        email: String(fd.get("email") || ""),
-        phone_number: String(fd.get("phone") || ""),
-        subject: "General enquiry",
-        message: String(fd.get("message") || ""),
-        budget_range: String(fd.get("budget") || ""),
+        name,
+        email: senderEmail,
+        phone_number: phone,
+        subject,
+        message,
+        budget_range: budgetLabel || "",
       });
       toast.success("Message sent — we'll be in touch within 24h");
       form.reset();
+      setInterest("");
+      setBudget("");
+      openCompanyEmail(email, subject, {
+        name,
+        email: senderEmail,
+        phone,
+        budget: budgetLabel || "",
+        message,
+      });
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -119,7 +177,7 @@ const Contact = () => {
 
         <div className="container relative z-10 grid lg:grid-cols-[0.95fr_1.6fr] gap-6 md:gap-8">
           <RevealOnScroll className="space-y-4">
-            {CONTACT_CARDS.map((c) => (
+            {contactCards.map((c) => (
               <div key={c.key} className="rounded-2xl border border-gold/25 bg-card p-5 md:p-6 shadow-soft">
                 <div className="flex items-center gap-4">
                   <div className="h-14 w-14 rounded-xl gradient-gold grid place-items-center shadow-[0_12px_24px_-14px_rgba(197,157,95,0.9)]">
@@ -154,33 +212,28 @@ const Contact = () => {
                   </div>
                   <div>
                     <Label>Property interest</Label>
-                    <Select>
+                    <Select value={interest} onValueChange={setInterest}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select interest" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="buy">Buy</SelectItem>
-                        <SelectItem value="rent">Rent</SelectItem>
-                        <SelectItem value="sell">Sell / list</SelectItem>
-                        <SelectItem value="invest">Investment</SelectItem>
-                        <SelectItem value="general">General inquiry</SelectItem>
+                        {INTEREST_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
                 <div>
                   <Label>Budget range</Label>
-                  <Select>
+                  <Select value={budget} onValueChange={setBudget}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select range" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="under-500k">Under ₹500,000</SelectItem>
-                      <SelectItem value="500k-1.5m">₹500,000 – ₹1,500,000</SelectItem>
-                      <SelectItem value="1.5m-3m">₹1,500,000 – ₹3,000,000</SelectItem>
-                      <SelectItem value="3m-5m">₹3,000,000 – ₹5,000,000</SelectItem>
-                      <SelectItem value="5m-plus">₹5,000,000+</SelectItem>
-                      <SelectItem value="undisclosed">Prefer not to say</SelectItem>
+                      {BUDGET_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -188,8 +241,8 @@ const Contact = () => {
                   <Label>Message</Label>
                   <Textarea name="message" rows={4} required placeholder="Type your message here..." className="min-h-[120px] resize-y" />
                 </div>
-                <Button type="submit" variant="luxe" size="lg" className="w-full">
-                  <Send className="h-4 w-4" /> Send message
+                <Button type="submit" variant="luxe" size="lg" className="w-full" disabled={submitContact.isPending}>
+                  <Send className="h-4 w-4" /> {submitContact.isPending ? "Sending…" : "Send message"}
                 </Button>
               </div>
             </form>

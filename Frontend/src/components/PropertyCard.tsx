@@ -71,16 +71,20 @@ export const PropertyCard = ({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <div className="flex items-center justify-center gap-1.5 rounded-lg bg-foreground/[0.04] px-2 py-2 text-[12px] font-medium text-foreground/80 ring-1 ring-black/[0.04]">
-            <Bed className="h-3.5 w-3.5 text-gold" />
-            {property.bedrooms > 0 ? `${property.bedrooms} Beds` : "—"}
-          </div>
-          <div className="flex items-center justify-center gap-1.5 rounded-lg bg-foreground/[0.04] px-2 py-2 text-[12px] font-medium text-foreground/80 ring-1 ring-black/[0.04]">
-            <Bath className="h-3.5 w-3.5 text-gold" />
-            {property.bathrooms} Baths
-          </div>
-          <div className="flex items-center justify-center gap-1.5 rounded-lg bg-foreground/[0.04] px-2 py-2 text-[12px] font-medium text-foreground/80 ring-1 ring-black/[0.04]">
+        <div className="mt-4 flex gap-2">
+          {property.bedrooms > 0 && (
+            <div className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-foreground/[0.04] px-2 py-2 text-[12px] font-medium text-foreground/80 ring-1 ring-black/[0.04]">
+              <Bed className="h-3.5 w-3.5 text-gold" />
+              {property.bedrooms} Beds
+            </div>
+          )}
+          {property.bathrooms > 0 && (
+            <div className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-foreground/[0.04] px-2 py-2 text-[12px] font-medium text-foreground/80 ring-1 ring-black/[0.04]">
+              <Bath className="h-3.5 w-3.5 text-gold" />
+              {property.bathrooms} Baths
+            </div>
+          )}
+          <div className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-foreground/[0.04] px-2 py-2 text-[12px] font-medium text-foreground/80 ring-1 ring-black/[0.04]">
             <Maximize className="h-3.5 w-3.5 text-gold" />
             {fmt.format(property.area)} {property.areaUnit === "cents" ? "cents" : "ft²"}
           </div>

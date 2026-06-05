@@ -6,10 +6,10 @@ export function mapApiContactToEnquiry(c: ApiContact): Enquiry {
     id: String(c.id),
     fromName: c.name,
     fromEmail: c.email,
-    fromPhone: c.phone || "",
+    fromPhone: c.phone_number || c.phone || "",
     message: c.message || "",
     propertyId: c.property != null ? String(c.property) : "",
-    propertyTitle: c.property_title || "",
+    propertyTitle: c.property_title || c.subject || "General enquiry",
     createdAt: c.created_at?.slice(0, 10) || "",
     status: "New",
   };

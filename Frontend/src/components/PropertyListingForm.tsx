@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -185,7 +186,7 @@ function sanitizeAreaValue(raw: string, maxLen = 14): string {
   return s.slice(0, maxLen);
 }
 
-/** Lat / lng: optional leading minus, digits, one decimal point. */
+/** Lat / lng: optional leading minus, digits, one decimal point, up to 10 decimal places. */
 function sanitizeCoordinate(raw: string): string {
   let s = raw.replace(/[^\d.\-]/g, "");
   if (s.startsWith("-")) {
@@ -194,8 +195,10 @@ function sanitizeCoordinate(raw: string): string {
     s = s.replace(/-/g, "");
   }
   const parts = s.split(".");
-  if (parts.length <= 1) return s.slice(0, 12);
-  return `${parts[0]}.${parts.slice(1).join("").replace(/\./g, "")}`.slice(0, 14);
+  if (parts.length <= 1) return s.slice(0, 4); // ±DDD
+  const intPart = parts[0].slice(0, 4);
+  const decPart = parts.slice(1).join("").replace(/\./g, "").slice(0, 10);
+  return `${intPart}.${decPart}`;
 }
 
 function parseMoneyValue(raw: string): number | null {
@@ -247,7 +250,6 @@ export function propertyToDraft(p: Property): AddPropertyDraft {
   const district = p.district ?? "";
   const city = p.city ?? "";
   const parkingFromFeat = parkingSpacesFromFeatures(p.features, p.parkingSpaces);
-  const isCentListing = p.areaUnit === "cents";
 
   return {
     propertyFor: p.type,
@@ -268,8 +270,8 @@ export function propertyToDraft(p: Property): AddPropertyDraft {
     propertyCategory: p.category,
     area: p.area ? String(p.area) : "",
     areaUnit: p.areaUnit ?? "sqft",
-    bedrooms: isCentListing && !p.bedrooms ? "" : String(p.bedrooms ?? ""),
-    bathrooms: isCentListing && !p.bathrooms ? "" : String(p.bathrooms ?? ""),
+    bedrooms: p.bedrooms ? String(p.bedrooms) : "",
+    bathrooms: p.bathrooms ? String(p.bathrooms) : "",
     description: p.description ?? "",
     youtubeLink: p.youtubeUrl ?? "",
     builtYear: p.builtYear ?? "",
@@ -638,7 +640,7 @@ export function ListingFormFields({
         <div className="grid sm:grid-cols-3 gap-4">
           <div className="space-y-2" data-field="state">
             <Label>State</Label>
-            <Select
+            <SearchableSelect
               value={draft.stateId || undefined}
               onValueChange={(id) => {
                 const st = states.find((s) => String(s.id) === id);
@@ -651,18 +653,15 @@ export function ListingFormFields({
                   city: "",
                 }));
               }}
-            >
-              <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
-              <SelectContent>
-                {states.map((st) => (
-                  <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              options={states.map((st) => ({ value: String(st.id), label: st.name }))}
+              placeholder="Select state"
+              searchPlaceholder="Search states…"
+              emptyText="No states found."
+            />
           </div>
           <div className="space-y-2" data-field="district">
             <Label>District</Label>
-            <Select
+            <SearchableSelect
               value={draft.districtId || undefined}
               disabled={!draft.stateId}
               onValueChange={(id) => {
@@ -674,18 +673,12 @@ export function ListingFormFields({
                   city: "",
                 }));
               }}
-            >
-              <SelectTrigger className={cn(!draft.stateId && "opacity-60")}>
-                <SelectValue
-                  placeholder={draft.stateId ? "Select district" : "Select state first"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {districts.map((dist) => (
-                  <SelectItem key={dist.id} value={String(dist.id)}>{dist.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              options={districts.map((dist) => ({ value: String(dist.id), label: dist.name }))}
+              placeholder={draft.stateId ? "Select district" : "Select state first"}
+              searchPlaceholder="Search districts…"
+              emptyText="No districts found."
+              className={cn(!draft.stateId && "opacity-60")}
+            />
           </div>
           <div className="space-y-2" data-field="city">
             <Label>City</Label>

@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
 from django.db import connection
+from django.db.models import Q
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -44,6 +45,8 @@ class AdvertisementViewSet(viewsets.ModelViewSet):
         placement = (params.get("placement") or "").strip()
         state_id = _parse_int(params.get("state_id"))
         is_active = params.get("is_active")
+        search = (params.get("search") or "").strip()
+        ordering = (params.get("ordering") or "").strip().lower()
 
         if ad_type in dict(Advertisement.AD_TYPE_CHOICES):
             queryset = queryset.filter(ad_type=ad_type)
@@ -62,6 +65,18 @@ class AdvertisementViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(is_active=True)
             elif v in ("0", "false", "no"):
                 queryset = queryset.filter(is_active=False)
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search) | Q(subtitle__icontains=search)
+            )
+
+        ordering_map = {
+            "newest": ("-created_at",),
+            "oldest": ("created_at",),
+            "priority": ("-priority", "-created_at"),
+        }
+        if ordering in ordering_map:
+            queryset = queryset.order_by(*ordering_map[ordering])
         return queryset
 
     def perform_create(self, serializer):

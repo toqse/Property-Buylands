@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "@/lib/router";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { useProperty } from "@/hooks/api/useProperties";
 import { useCatalogMutations, useCompanyContact } from "@/hooks/api/useCatalog";
 import { getErrorMessage } from "@/lib/api/errors";
+import { openCompanyEmail } from "@/lib/mailto";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,9 +36,12 @@ const PropertyDetail = () => {
   const { data: company } = useCompanyContact();
   const [active, setActive] = useState(0); // index into combined media (video first, then photos)
   const [enquiry, setEnquiry] = useState(false);
-  const [video, setVideo] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0); // index into gallery photos only
+  const mainVideoRef = useRef<HTMLVideoElement | null>(null);
+  // Inline property video does not autoplay: show the thumbnail with a centered
+  // play button until the viewer chooses to start it.
+  const [videoStarted, setVideoStarted] = useState(false);
   const fmt = new Intl.NumberFormat("en-US");
   const builtYear = Number.parseInt(property?.createdAt?.slice(0, 4) || "", 10) || "N/A";
   const furnishing = property?.features.some((f) => /smart home|concierge|maid room/i.test(f)) ? "Furnished" : "Unfurnished";
@@ -47,6 +51,11 @@ const PropertyDetail = () => {
   const totalMedia = totalPhotos + (hasVideo ? 1 : 0);
   const thumbVisibleCount = 4;
   const extraMedia = Math.max(0, totalMedia - thumbVisibleCount);
+
+  // Reset to the thumbnail/play-button state whenever the active media changes.
+  useEffect(() => {
+    setVideoStarted(false);
+  }, [active]);
 
   const prevMedia = () => {
     if (totalMedia === 0) return;
@@ -113,22 +122,29 @@ const PropertyDetail = () => {
     ? `https://wa.me/${contactWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in "${property.title}" listed on Buylands India.`)}`
     : "";
 
+  const companyEmail = (company?.email || company?.company_email || "").trim();
   const submitEnquiry = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
     const fd = new FormData(form);
+    const name = String(fd.get("name") || "");
+    const email = String(fd.get("email") || "");
+    const phone = String(fd.get("phone") || "");
+    const message = String(fd.get("message") || "");
+    const subject = `Enquiry about "${property.title}"`;
     try {
       await submitContact.mutateAsync({
-        name: String(fd.get("name") || ""),
-        email: String(fd.get("email") || ""),
-        phone_number: String(fd.get("phone") || ""),
-        subject: `Enquiry about "${property.title}"`,
-        message: String(fd.get("message") || ""),
+        name,
+        email,
+        phone_number: phone,
+        subject,
+        message,
         property: Number(property.id),
       });
       toast.success("Enquiry sent — our team will connect you shortly");
       setEnquiry(false);
       form.reset();
+      openCompanyEmail(companyEmail, subject, { name, email, phone, message });
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -211,27 +227,47 @@ const PropertyDetail = () => {
     <div className="min-h-screen flex flex-col">
       <Navbar />
 
-      <div className="container pt-8">
+      <div className="container pt-5 md:pt-8">
         <button onClick={() => navigate(-1)} className="text-sm text-muted-foreground hover:text-gold inline-flex items-center gap-1">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       </div>
 
-      <section className="container py-8">
+      <section className="container py-5 md:py-8">
         <RevealOnScroll>
           <div className="rounded-3xl border border-border bg-card p-3 md:p-6 shadow-soft">
             <div className="min-w-0">
               <div className="relative rounded-2xl overflow-hidden">
                 {activeItem?.kind === "video" ? (
-                  <video
-                    key={activeItem.src}
-                    src={activeItem.src}
-                    poster={activeItem.poster}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="h-[220px] sm:h-[300px] md:h-[480px] w-full bg-black object-contain"
-                  />
+                  <div className="relative h-[220px] sm:h-[300px] md:h-[480px] w-full bg-black">
+                    <video
+                      key={activeItem.src}
+                      ref={mainVideoRef}
+                      src={activeItem.src}
+                      poster={activeItem.poster}
+                      controls={videoStarted}
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full bg-black object-contain"
+                    />
+                    {!videoStarted && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVideoStarted(true);
+                          requestAnimationFrame(() => {
+                            void mainVideoRef.current?.play();
+                          });
+                        }}
+                        className="absolute inset-0 z-10 grid place-items-center bg-black/15 transition-colors hover:bg-black/25"
+                        aria-label="Play video"
+                      >
+                        <span className="grid h-16 w-16 place-items-center rounded-full bg-white/90 text-[#0e305d] shadow-lg transition-transform hover:scale-105 md:h-20 md:w-20">
+                          <Play className="h-7 w-7 translate-x-0.5 fill-current md:h-9 md:w-9" />
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <button
                     type="button"
@@ -272,8 +308,8 @@ const PropertyDetail = () => {
                   </>
                 )}
                 {activeItem?.kind !== "video" && (
-                  <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/65 via-black/25 to-transparent">
-                    <div className="flex justify-center gap-3">
+                  <div className="absolute inset-x-0 bottom-0 p-2.5 sm:p-4 bg-gradient-to-t from-black/65 via-black/25 to-transparent">
+                    <div className="flex justify-center gap-2 sm:gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       {media.slice(0, thumbVisibleCount).map((m, i) => (
                         <button
                           key={i}
@@ -285,7 +321,7 @@ const PropertyDetail = () => {
                               setActive(i);
                             }
                           }}
-                          className={`relative rounded-xl overflow-hidden border-2 transition-all ${
+                          className={`relative shrink-0 rounded-lg sm:rounded-xl overflow-hidden border-2 transition-all ${
                             safeActive === i ? "border-gold scale-[1.02]" : "border-white/40 hover:border-white/80"
                           }`}
                           aria-label={
@@ -296,7 +332,7 @@ const PropertyDetail = () => {
                                 : `View image ${i + 1}`
                           }
                         >
-                          <img src={m.kind === "video" ? m.poster || "" : m.src} alt="" className="h-10 w-16 sm:h-14 sm:w-24 md:h-16 md:w-28 object-cover" />
+                          <img src={m.kind === "video" ? m.poster || "" : m.src} alt="" className="h-9 w-14 sm:h-14 sm:w-24 md:h-16 md:w-28 object-cover" />
                           {m.kind === "video" && (
                             <span className="absolute inset-0 grid place-items-center bg-black/35 text-white">
                               <Play className="h-4 w-4 fill-current" />
@@ -321,9 +357,10 @@ const PropertyDetail = () => {
                   <Badge className="bg-[#16a34a] text-white hover:bg-[#16a34a]">{property.type}</Badge>
                   <Badge variant="secondary">{property.category}</Badge>
                 </div>
-                <h1 className="font-sans text-2xl md:text-3xl font-semibold tracking-tight text-foreground">{property.title}</h1>
-                <div className="mt-2 text-sm text-muted-foreground inline-flex items-center gap-1.5">
-                  <MapPin className="h-4 w-4 text-gold" /> {property.location}, {property.city}
+                <h1 className="font-sans text-2xl md:text-3xl font-semibold tracking-tight text-foreground break-words">{property.title}</h1>
+                <div className="mt-2 text-sm text-muted-foreground flex items-start gap-1.5">
+                  <MapPin className="h-4 w-4 text-gold shrink-0 mt-0.5" />
+                  <span className="min-w-0 break-words">{property.location}, {property.city}</span>
                 </div>
               </div>
 
@@ -367,101 +404,82 @@ const PropertyDetail = () => {
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="features">Features</TabsTrigger>
                 <TabsTrigger value="location">Location</TabsTrigger>
-                <TabsTrigger value="video">Video</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="overview" className="mt-4 rounded-2xl border border-border bg-background p-5">
+              <TabsContent value="overview" className="mt-4 rounded-2xl border border-border bg-background p-4 md:p-5">
                 <h2 className="font-sans text-base md:text-lg font-medium text-foreground mb-4 tracking-tight">Property Overview</h2>
-                <p className="mb-5 text-sm text-foreground/80 leading-relaxed">{property.description}</p>
+                <p className="mb-5 text-sm text-foreground/80 leading-relaxed break-words whitespace-pre-line">{property.description}</p>
                 <div className="grid md:grid-cols-2 gap-4 text-sm">
-                  <div className="rounded-2xl border border-border bg-card p-5">
+                  <div className="rounded-2xl border border-border bg-card p-4 md:p-5">
                     <h3 className="font-sans text-sm md:text-base font-medium text-foreground mb-3 tracking-tight">Property Details</h3>
                     <div>
                       <div className="flex items-center justify-between py-3 border-b border-border/70">
                         <span className="text-muted-foreground">Property Type</span>
-                        <span className="font-medium">{property.type === "For Sale" ? "House for sale" : "House for rent"}</span>
+                        <span className="font-medium text-right break-words min-w-0 pl-3">{property.type === "For Sale" ? "House for sale" : "House for rent"}</span>
                       </div>
                       <div className="flex items-center justify-between py-3 border-b border-border/70">
                         <span className="text-muted-foreground">Built Year</span>
-                        <span className="font-medium">{builtYear}</span>
+                        <span className="font-medium text-right break-words min-w-0 pl-3">{builtYear}</span>
                       </div>
                       <div className="flex items-center justify-between py-3 border-b border-border/70">
                         <span className="text-muted-foreground">Furnishing</span>
-                        <span className="font-medium">{furnishing}</span>
+                        <span className="font-medium text-right break-words min-w-0 pl-3">{furnishing}</span>
                       </div>
                       <div className="flex items-center justify-between pt-3">
                         <span className="text-muted-foreground">Area</span>
-                        <span className="font-medium">{fmt.format(property.area)} sq.ft</span>
+                        <span className="font-medium text-right break-words min-w-0 pl-3">{fmt.format(property.area)} sq.ft</span>
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-border bg-card p-5">
+                  <div className="rounded-2xl border border-border bg-card p-4 md:p-5">
                     <h3 className="font-sans text-sm md:text-base font-medium text-foreground mb-3 tracking-tight">Additional Info</h3>
                     <div>
-                      <div className="flex items-center justify-between py-3 border-b border-border/70">
-                        <span className="text-muted-foreground">Bedrooms</span>
-                        <span className="font-medium">{property.bedrooms > 0 ? property.bedrooms : "N/A"}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-3 border-b border-border/70">
-                        <span className="text-muted-foreground">Bathrooms</span>
-                        <span className="font-medium">{property.bathrooms}</span>
-                      </div>
-                      <div className="flex items-center justify-between pt-3">
+                      {property.bedrooms > 0 && (
+                        <div className="flex items-center justify-between py-3 border-b border-border/70">
+                          <span className="text-muted-foreground">Bedrooms</span>
+                          <span className="font-medium text-right break-words min-w-0 pl-3">{property.bedrooms}</span>
+                        </div>
+                      )}
+                      {property.bathrooms > 0 && (
+                        <div className="flex items-center justify-between py-3 border-b border-border/70">
+                          <span className="text-muted-foreground">Bathrooms</span>
+                          <span className="font-medium text-right break-words min-w-0 pl-3">{property.bathrooms}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between py-3">
                         <span className="text-muted-foreground">Parking</span>
-                        <span className="font-medium">{parking}</span>
+                        <span className="font-medium text-right break-words min-w-0 pl-3">{parking}</span>
                       </div>
                     </div>
                   </div>
                 </div>
               </TabsContent>
 
-              <TabsContent value="features" className="mt-4 rounded-2xl border border-border bg-background p-5">
+              <TabsContent value="features" className="mt-4 rounded-2xl border border-border bg-background p-4 md:p-5">
                 <h2 className="font-sans text-base md:text-lg font-medium text-foreground mb-4 tracking-tight">Features & Amenities</h2>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {property.features.map(f => (
-                    <div key={f} className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
-                      <Check className="h-4 w-4 text-gold" /> {f}
+                    <div key={f} className="flex items-start gap-2 rounded-lg border border-border p-3 text-sm">
+                      <Check className="h-4 w-4 text-gold shrink-0 mt-0.5" />
+                      <span className="min-w-0 break-words">{f}</span>
                     </div>
                   ))}
                 </div>
               </TabsContent>
 
-              <TabsContent value="location" className="mt-4 rounded-2xl border border-border bg-background p-5">
+              <TabsContent value="location" className="mt-4 rounded-2xl border border-border bg-background p-4 md:p-5">
                 <h2 className="font-sans text-base md:text-lg font-medium text-foreground mb-4 tracking-tight">Location</h2>
                 <div className="rounded-2xl overflow-hidden border border-border h-[250px] bg-muted relative">
                   <div className="absolute inset-0 grid place-items-center text-muted-foreground">
                     <div className="text-center">
                       <MapPin className="h-10 w-10 mx-auto text-gold mb-2 animate-float" />
-                      <div className="font-medium">{property.location}, {property.city}</div>
+                      <div className="font-medium break-words">{property.location}, {property.city}</div>
                       <div className="text-xs mt-1">{property.lat.toFixed(4)}, {property.lng.toFixed(4)}</div>
                     </div>
                   </div>
                 </div>
               </TabsContent>
 
-              <TabsContent value="video" className="mt-4 rounded-2xl border border-border bg-background p-5">
-                <h2 className="font-sans text-base md:text-lg font-medium text-foreground mb-4 tracking-tight">Property Video</h2>
-                {property.videoUrl ? (
-                  <button
-                    onClick={() => setVideo(true)}
-                    className="group relative w-full overflow-hidden rounded-2xl border border-border h-[220px] bg-muted"
-                    aria-label="Watch video tour"
-                  >
-                    {property.videoThumbnail && (
-                      <img src={property.videoThumbnail} alt="" className="absolute inset-0 h-full w-full object-cover" />
-                    )}
-                    <span className="absolute inset-0 grid place-items-center bg-black/35 text-white transition-colors group-hover:bg-black/45">
-                      <span className="inline-flex items-center gap-2 rounded-full bg-black/55 px-4 py-2 text-sm font-medium backdrop-blur-sm">
-                        <Play className="h-5 w-5 fill-current" /> Watch video tour
-                      </span>
-                    </span>
-                  </button>
-                ) : (
-                  <div className="grid h-[160px] place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">
-                    No video available for this property.
-                  </div>
-                )}
-              </TabsContent>
             </Tabs>
           </div>
         </RevealOnScroll>
@@ -484,30 +502,6 @@ const PropertyDetail = () => {
             <div><Label>Message</Label><Textarea name="message" rows={4} defaultValue={`I'd like more information about ${property.title}.`} /></div>
             <Button type="submit" variant="luxe" className="w-full">Send enquiry</Button>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Video dialog */}
-      <Dialog open={video} onOpenChange={setVideo}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>Video Tour · {property.title}</DialogTitle></DialogHeader>
-          {property.videoUrl ? (
-            <video
-              src={property.videoUrl}
-              poster={property.videoThumbnail}
-              controls
-              autoPlay
-              playsInline
-              className="aspect-video w-full rounded-lg bg-black"
-            />
-          ) : (
-            <div className="aspect-video bg-black rounded-lg grid place-items-center text-background/70">
-              <div className="text-center">
-                <Play className="h-16 w-16 mx-auto text-gold mb-3" />
-                <p>No video available</p>
-              </div>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 

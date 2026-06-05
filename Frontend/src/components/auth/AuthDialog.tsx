@@ -121,7 +121,7 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
         toast.message(`Dev OTP: ${res.otp}`);
       }
       toast.success(res.message || `Verification code sent to ${email}`);
-      setOtp("");
+      setOtp(res.otp ?? "");
       setMode("login-verify");
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -180,7 +180,7 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
         toast.message(`Dev OTP: ${res.otp}`);
       }
       toast.success(res.message || `Verification code sent to ${email}`);
-      setOtp("");
+      setOtp(res.otp ?? "");
       setMode("register-verify");
     } catch (err) {
       toast.error(getErrorMessage(err));

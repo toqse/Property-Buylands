@@ -33,9 +33,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PropertyCard } from "@/components/PropertyCard";
 import { CountUp } from "@/components/CountUp";
-import { CATEGORIES } from "@/data/mockData";
 import { usePropertyList, usePropertyLocations } from "@/hooks/api/useProperties";
-import { useHeroBanners, usePropertyTypes, useTestimonials } from "@/hooks/api/useCatalog";
+import { useHeroBanners, usePropertyTypes, useTestimonials, useFeatures } from "@/hooks/api/useCatalog";
 import { useUserLocation } from "@/context/UserLocationContext";
 import { imageSrc } from "@/lib/image";
 import {
@@ -56,14 +55,9 @@ const HERO_FALLBACK = "/new%20banner.png";
 
 const ALL_CATEGORY_IMAGE = "/heromain.png";
 
-const AREA_OPTIONS: { value: string; label: string; min?: number; max?: number }[] = [
-  { value: "any", label: "Any sq.ft" },
-  { value: "0-1000", label: "Under 1,000 sq.ft", min: 0, max: 1000 },
-  { value: "1000-2000", label: "1,000 – 2,000 sq.ft", min: 1000, max: 2000 },
-  { value: "2000-3000", label: "2,000 – 3,000 sq.ft", min: 2000, max: 3000 },
-  { value: "3000-5000", label: "3,000 – 5,000 sq.ft", min: 3000, max: 5000 },
-  { value: "5000-", label: "5,000+ sq.ft", min: 5000 },
-];
+type FeaturePill = { id: number; name: string };
+
+const ROOM_OPTIONS = ["Any", "1", "2", "3", "4", "5"];
 
 const PRICE_OPTIONS: { value: string; label: string; min?: number; max?: number }[] = [
   { value: "any", label: "Any price" },
@@ -83,8 +77,18 @@ const Home = () => {
   const [autoCurrentLocationDismissed, setAutoCurrentLocationDismissed] = useState(true);
   const [pendingCurrentLocation, setPendingCurrentLocation] = useState(false);
   const [cat, setCat] = useState("any");
-  const [area, setArea] = useState("any");
+  const [bedrooms, setBedrooms] = useState("Any");
+  const [bathrooms, setBathrooms] = useState("Any");
+  const [features, setFeatures] = useState<number[]>([]);
   const [priceRange, setPriceRange] = useState("any");
+
+  const { data: featuresData } = useFeatures();
+  const featurePills = useMemo<FeaturePill[]>(() => {
+    return (featuresData?.results ?? []).map((f) => ({ id: f.id, name: f.name }));
+  }, [featuresData]);
+
+  const toggleFeature = (id: number) =>
+    setFeatures((prev) => (prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]));
   const [showFilters, setShowFilters] = useState(false);
   const {
     coords,
@@ -289,11 +293,9 @@ const Home = () => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (cat !== "any") params.set("category", cat);
-    if (area !== "any") {
-      const opt = AREA_OPTIONS.find((o) => o.value === area);
-      if (opt?.min !== undefined) params.set("minArea", String(opt.min));
-      if (opt?.max !== undefined) params.set("maxArea", String(opt.max));
-    }
+    if (bedrooms !== "Any") params.set("bedrooms", bedrooms);
+    if (bathrooms !== "Any") params.set("bathrooms", bathrooms);
+    if (features.length) params.set("features", features.join(","));
     if (priceRange !== "any") {
       const opt = PRICE_OPTIONS.find((o) => o.value === priceRange);
       if (opt?.min !== undefined) params.set("minPrice", String(opt.min));
@@ -498,7 +500,7 @@ const Home = () => {
               Refine your search
             </DialogTitle>
             <DialogDescription>
-              Choose your property intent, location, search radius, area, type, and budget.
+              Choose your property intent, location, search radius, type, bedrooms, bathrooms, features, and budget.
             </DialogDescription>
           </DialogHeader>
 
@@ -607,24 +609,6 @@ const Home = () => {
               <div className="grid gap-4 md:grid-cols-2 md:gap-5">
                 <div>
                   <Label className="mb-2 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
-                    Area
-                  </Label>
-                  <Select value={area} onValueChange={setArea}>
-                    <SelectTrigger className="h-11 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
-                      <SelectValue placeholder="Any sq.ft" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AREA_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label className="mb-2 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
                     Property type
                   </Label>
                   <Select value={cat} onValueChange={setCat}>
@@ -633,9 +617,9 @@ const Home = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="any">All Property Types</SelectItem>
-                      {CATEGORIES.filter((c) => c !== "All").map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
+                      {(propertyTypesData?.results ?? []).map((t) => (
+                        <SelectItem key={t.id} value={t.name}>
+                          {t.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -658,6 +642,77 @@ const Home = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div>
+                  <Label className="mb-2 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
+                    Bedrooms
+                  </Label>
+                  <Select value={bedrooms} onValueChange={setBedrooms}>
+                    <SelectTrigger className="h-11 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
+                      <SelectValue placeholder="Any" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROOM_OPTIONS.map((b) => (
+                        <SelectItem key={b} value={b}>
+                          {b === "Any" ? "Any" : b === "5" ? "5+" : b}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="mb-2 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
+                    Bathrooms
+                  </Label>
+                  <Select value={bathrooms} onValueChange={setBathrooms}>
+                    <SelectTrigger className="h-11 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
+                      <SelectValue placeholder="Any" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROOM_OPTIONS.map((b) => (
+                        <SelectItem key={b} value={b}>
+                          {b === "Any" ? "Any" : b === "5" ? "5+" : b}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label className="mb-3 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
+                  Features
+                </Label>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {featurePills.map((opt) => {
+                    const active = features.includes(opt.id);
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => toggleFeature(opt.id)}
+                        aria-pressed={active}
+                        className={cn(
+                          "flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium transition-all",
+                          active
+                            ? "border-[#1c5fa8] text-[#0e305d] shadow-[0_0_0_3px_rgba(28,95,168,0.12)]"
+                            : "border-border text-foreground/80 hover:border-foreground/30",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors",
+                            active ? "border-[#1c5fa8] bg-[#1c5fa8]" : "border-foreground/30 bg-white",
+                          )}
+                        >
+                          {active && <span className="h-2 w-2 rounded-full bg-white" />}
+                        </span>
+                        {opt.name}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -682,7 +737,9 @@ const Home = () => {
                 clearLocationFilter();
                 setSearchRadius(String(radiusKm));
                 setCat("any");
-                setArea("any");
+                setBedrooms("Any");
+                setBathrooms("Any");
+                setFeatures([]);
                 setPriceRange("any");
               }}
             >
@@ -924,9 +981,12 @@ const Home = () => {
                       "linear-gradient(270deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.78) 40%, rgba(255,255,255,0.45) 75%, transparent 100%)",
                   }}
                 />
+                {/* Mobile: single-column layout spans full width over the image,
+                    so apply a near-opaque wash to keep all text legible. */}
+                <div className="absolute inset-0 bg-white/90 md:hidden" aria-hidden />
               </div>
 
-              <div className="relative z-10 grid gap-10 px-6 py-8 md:grid-cols-2 md:gap-12 md:px-12 md:py-14 lg:px-16 lg:py-16">
+              <div className="relative z-10 grid gap-7 px-5 py-7 sm:px-6 sm:py-8 md:grid-cols-2 md:gap-12 md:px-12 md:py-14 lg:px-16 lg:py-16">
                 {/* LEFT — eyebrow + heading + stats */}
                 <div>
                   <div className="mb-5 inline-flex items-center gap-3">

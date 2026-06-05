@@ -34,9 +34,9 @@ function crudPaginated<T>(base: string) {
 
 export const catalogApi = {
   features: {
-    list: () =>
-      apiRequest<ApiFeature[]>("properties/features/", { auth: true }).then((arr) =>
-        asList(arr),
+    list: (params: Record<string, string | number> = {}) =>
+      apiRequest<ApiFeature[]>(`properties/features/${toQueryString(params)}`, { auth: true }).then(
+        (arr) => asList(arr),
       ),
     get: (id: number | string) =>
       apiRequest<ApiFeature>(`properties/features/${id}/`, { auth: true }),
@@ -56,12 +56,14 @@ export const catalogApi = {
       apiRequest<void>(`properties/features/${id}/`, { method: "DELETE", auth: true }),
   },
   propertyTypes: {
-    list: () =>
-      apiRequest<ApiPropertyType[]>("properties/property-types/", { auth: true }).then((arr) =>
-        asList(arr),
+    list: (params: Record<string, string | number> = {}) =>
+      apiRequest<ApiPropertyType[]>(`properties/property-types/${toQueryString(params)}`, {
+        auth: true,
+      }).then((arr) => asList(arr)),
+    listPublic: (params: Record<string, string | number> = {}) =>
+      apiRequest<ApiPropertyType[]>(`properties/property-types/${toQueryString(params)}`).then(
+        (arr) => asList(arr),
       ),
-    listPublic: () =>
-      apiRequest<ApiPropertyType[]>("properties/property-types/").then((arr) => asList(arr)),
     get: (id: number | string) =>
       apiRequest<ApiPropertyType>(`properties/property-types/${id}/`, { auth: true }),
     create: (form: FormData) =>

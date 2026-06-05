@@ -25,9 +25,11 @@ class StateSerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 class DistrictSerializer(serializers.ModelSerializer):
+    state_name = serializers.CharField(source='state.name', read_only=True)
+
     class Meta:
         model = District
-        fields = ['id', 'name', 'state']
+        fields = ['id', 'name', 'state', 'state_name']
 
 class CitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -297,9 +299,9 @@ class PropertySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(str(e)) from e
 
     BUILT_FIELDS = ("bedrooms", "bathrooms", "built_year", "furnishing")
-    BUILT_REQUIRED_FIELDS_SQFT = ("bedrooms", "bathrooms", "furnishing")
+    BUILT_REQUIRED_FIELDS_SQFT = ("furnishing",)
     BUILT_INT_FIELDS = ("bedrooms", "bathrooms", "built_year")
-    OPTIONAL_BUILT_INT_FIELDS = ("built_year",)
+    OPTIONAL_BUILT_INT_FIELDS = ("built_year", "bedrooms", "bathrooms")
     VALID_AREA_UNITS = frozenset({"sqft", "cent"})
     MAX_PROPERTY_IMAGES = 4
 
@@ -384,9 +386,10 @@ class PropertySerializer(serializers.ModelSerializer):
                     attrs[field] = str(value).strip()
 
         # built_year is optional on every area_unit; validate format only when supplied.
+        # bedrooms/bathrooms are optional too: blank or 0 means "not specified" -> None.
         for field in self.OPTIONAL_BUILT_INT_FIELDS:
             value = self._merged_built_value(attrs, field)
-            if self._is_blank_value(value):
+            if self._is_blank_value(value) or str(value).strip() == "0":
                 if field in attrs or self.instance is None:
                     attrs[field] = None
                 continue
@@ -832,8 +835,8 @@ class CompanySettingsSerializer(serializers.Serializer):
 class PropertyLocationSerializer(serializers.Serializer):
     """Serializer for the property locations list endpoint (name + coordinates)."""
     location_name = serializers.CharField()
-    latitude = serializers.DecimalField(max_digits=9, decimal_places=6)
-    longitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+    latitude = serializers.DecimalField(max_digits=13, decimal_places=10)
+    longitude = serializers.DecimalField(max_digits=13, decimal_places=10)
     state = serializers.CharField(required=False, allow_blank=True)
     district = serializers.CharField(required=False, allow_blank=True)
     city = serializers.CharField(required=False, allow_blank=True)

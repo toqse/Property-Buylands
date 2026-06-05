@@ -132,8 +132,8 @@ class Advertisement(models.Model):
         null=True,
         blank=True,
     )
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    latitude = models.DecimalField(max_digits=13, decimal_places=10, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=13, decimal_places=10, null=True, blank=True)
     radius_km = models.PositiveIntegerField(default=25)
 
     placements = models.JSONField(default=list)
