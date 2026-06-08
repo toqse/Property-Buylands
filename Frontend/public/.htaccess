@@ -15,5 +15,12 @@ RewriteRule ^(.+)$ $1.html [L]
 RewriteCond %{REQUEST_FILENAME}/index.html -f
 RewriteRule ^(.+)$ $1/ [L,R=301]
 
+# Client-rendered property detail pages: any /properties/<slug>/ that wasn't
+# pre-generated at build time falls back to the shared detail shell, which reads
+# the slug from the URL and fetches the property client-side.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^properties/[^/]+/?$ /properties/__detail__/index.html [L]
+
 # Show exported 404 page for unknown routes
 ErrorDocument 404 /404.html

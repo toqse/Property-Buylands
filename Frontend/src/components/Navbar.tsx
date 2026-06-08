@@ -52,7 +52,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
         "z-40 w-full overflow-visible animate-none md:animate-fade-in-down transition-[background-color,box-shadow,border-color] duration-300",
         isTransparent
           ? "fixed inset-x-0 top-0 bg-transparent"
-          : "sticky top-0 border-b border-border/60 bg-white/95 backdrop-blur-xl shadow-sm",
+          : "sticky top-0 border-b border-border/60 bg-white shadow-sm",
       )}
     >
       <div className="container flex h-24 items-center justify-between gap-4 overflow-visible">

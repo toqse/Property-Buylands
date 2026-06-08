@@ -256,4 +256,47 @@
     background-size: 200% 100%;
     animation: shimmer 2.5s linear infinite;
   }
+
+  /* GPay-style loading shimmer: solid grey placeholder shapes with a single
+     light band sweeping across the whole container. Put `.skeleton-shimmer`
+     on the card wrapper and `.skeleton-block` on each grey placeholder. */
+  @keyframes shimmer-sweep {
+    100% { transform: translateX(100%); }
+  }
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .skeleton-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsla(0, 0%, 100%, 0.65) 50%,
+      transparent 100%
+    );
+    animation: shimmer-sweep 1.5s ease-in-out infinite;
+  }
+  .skeleton-block {
+    background-color: hsl(214 16% 90%);
+  }
+  .dark .skeleton-block {
+    background-color: hsl(30 14% 18%);
+  }
+  .dark .skeleton-shimmer::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsla(0, 0%, 100%, 0.08) 50%,
+      transparent 100%
+    );
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-shimmer::after {
+      animation: none !important;
+    }
+  }
 }

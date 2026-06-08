@@ -139,6 +139,22 @@ function countPhoneDigits(s: string): number {
   return s.replace(/\D/g, "").length;
 }
 
+/** WhatsApp local part: digits only (country code +91 is shown as a fixed prefix). */
+const WHATSAPP_LOCAL_MAX = 15;
+function localWhatsappDigits(raw: string): string {
+  return raw.replace(/\D/g, "").slice(0, WHATSAPP_LOCAL_MAX);
+}
+/** Strip an existing +91 / 91 country code from a stored number to get the local digits. */
+function stripIndiaCountryCode(raw: string): string {
+  let digits = (raw || "").replace(/\D/g, "");
+  if (digits.length > 10 && digits.startsWith("91")) digits = digits.slice(2);
+  return digits.slice(0, WHATSAPP_LOCAL_MAX);
+}
+/** Prepend the +91 country code for the local WhatsApp digits (empty stays empty). */
+function withIndiaCountryCode(digits: string): string {
+  return digits ? `+91${digits}` : "";
+}
+
 /** Phone / WhatsApp: digits 10–18; allows + at start and spaces / () / -; blocks extra digits beyond 18. */
 function sanitizePhoneLike(raw: string, maxLen = MAX_PHONE_FIELD_LEN): string {
   let out = "";
@@ -256,7 +272,7 @@ export function propertyToDraft(p: Property): AddPropertyDraft {
     ownership: normalizeOwnership(p.ownership),
     contactName: p.ownerName,
     contactEmail: p.ownerEmail,
-    whatsapp: p.contactWhatsApp ?? "",
+    whatsapp: stripIndiaCountryCode(p.contactWhatsApp ?? ""),
     phone: p.ownerPhone,
     stateId: p.stateId != null ? String(p.stateId) : "",
     state,
@@ -429,7 +445,7 @@ export function buildPropertyFromValidatedDraft(
     ownership: draft.ownership.trim() || undefined,
     state: draft.state || undefined,
     district: draft.district || undefined,
-    contactWhatsApp: draft.whatsapp.trim() || undefined,
+    contactWhatsApp: withIndiaCountryCode(draft.whatsapp.trim()) || undefined,
     youtubeUrl: parsed.youtubeTrim || undefined,
     googleMapUrl: draft.googleMapUrl.trim() || undefined,
     googleEmbedHtml: draft.googleEmbedHtml.trim(),
@@ -600,19 +616,24 @@ export function ListingFormFields({
             </div>
             <div className="space-y-2 min-w-0" data-field="whatsapp_number">
               <Label>WhatsApp Number</Label>
-              <Input
-                className="w-full min-w-0 max-w-full"
-                placeholder="+91 …"
-                inputMode="tel"
-                autoComplete="tel"
-                value={draft.whatsapp}
-                maxLength={MAX_PHONE_FIELD_LEN}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    whatsapp: sanitizePhoneLike(e.target.value),
-                  }))}
-              />
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                  +91
+                </span>
+                <Input
+                  className="w-full min-w-0 max-w-full pl-12"
+                  placeholder="98765 43210"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  value={draft.whatsapp}
+                  maxLength={WHATSAPP_LOCAL_MAX}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      whatsapp: localWhatsappDigits(e.target.value),
+                    }))}
+                />
+              </div>
             </div>
             <div className="space-y-2 min-w-0" data-field="phone_number">
               <Label>Phone Number</Label>

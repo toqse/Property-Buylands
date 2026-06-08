@@ -35,7 +35,7 @@ import { PropertyCard } from "@/components/PropertyCard";
 import { CountUp } from "@/components/CountUp";
 import { usePropertyList, usePropertyLocations } from "@/hooks/api/useProperties";
 import { useHeroBanners, usePropertyTypes, useTestimonials, useFeatures } from "@/hooks/api/useCatalog";
-import { useUserLocation } from "@/context/UserLocationContext";
+import { useUserLocation, type LocationStatus } from "@/context/UserLocationContext";
 import { imageSrc } from "@/lib/image";
 import {
   CURRENT_LOCATION_VALUE,
@@ -219,6 +219,24 @@ const Home = () => {
       setSearchRadius(String(radiusKm));
     }
   }, [coords, autoCurrentLocationDismissed, location, radiusKm]);
+
+  // When the user freshly grants location (status goes loading -> granted),
+  // take them straight to the listings sorted by proximity. We only react to a
+  // fresh acquisition (which always passes through "loading"); returning
+  // visitors whose coordinates are restored from storage land on "granted"
+  // directly and are NOT redirected, so the home page stays visible for them.
+  const prevLocationStatusRef = useRef<LocationStatus>(status);
+  useEffect(() => {
+    const prevStatus = prevLocationStatusRef.current;
+    prevLocationStatusRef.current = status;
+    if (prevStatus === "loading" && status === "granted" && coords) {
+      const params = new URLSearchParams();
+      params.set("lat", String(coords.latitude));
+      params.set("lng", String(coords.longitude));
+      params.set("radius", String(radiusKm));
+      navigate(`/properties?${params.toString()}`);
+    }
+  }, [status, coords, radiusKm, navigate]);
 
   const useMyCurrentLocation = () => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {

@@ -24,7 +24,7 @@ export function MobilePropertyCard({
   return (
     <article
       className={cn(
-        "aspect-square animate-fade-in overflow-hidden rounded-xl bg-white shadow-[0_4px_16px_-8px_rgba(15,23,42,0.15)] ring-1 ring-black/[0.06]",
+        "animate-fade-in overflow-hidden rounded-xl bg-white shadow-[0_4px_16px_-8px_rgba(15,23,42,0.15)] ring-1 ring-black/[0.06]",
         className,
       )}
       style={{ animationDelay: `${index * 40}ms` }}
@@ -33,7 +33,7 @@ export function MobilePropertyCard({
         to={`/properties/${property.slug || property.id}`}
         className="flex h-full flex-col"
       >
-        <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="relative aspect-square w-full overflow-hidden">
           <PropertyMediaThumb
             image={property.image}
             videoUrl={property.videoUrl}

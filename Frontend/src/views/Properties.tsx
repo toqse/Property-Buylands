@@ -8,13 +8,13 @@ import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { PropertyCard } from "@/components/PropertyCard";
 import { MobilePropertyCard } from "@/components/MobilePropertyCard";
+import { PropertyCardSkeleton, MobilePropertyCardSkeleton } from "@/components/PropertyCardSkeleton";
 import { MobileAdvertisementCard } from "@/components/MobileAdvertisementCard";
 import { AdvertisementCard } from "@/components/AdvertisementCard";
 import { usePropertyList, usePropertyLocations } from "@/hooks/api/useProperties";
 import { usePropertyTypes, useFeatures } from "@/hooks/api/useCatalog";
 import { useUserLocation } from "@/context/UserLocationContext";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -256,7 +256,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   );
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(10);
 
   const persistSectionLocationPrefs = useCallback(
     (prefs: SectionLocationPrefs) => {
@@ -505,6 +505,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   }, [searchParams, defaultRadiusKm]);
 
   const activeGeo = useMemo(() => {
+    if (searchParams.get("location") === "Any") return null;
     if (location === "Any") return null;
     const radius = Number(searchRadius) || defaultRadiusKm;
     const radiusKm = Number.isFinite(radius) ? radius : defaultRadiusKm;
@@ -648,7 +649,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
 
       <section className="container py-12">
         <RevealOnScroll className="space-y-6">
-          <div className="rounded-2xl border border-border bg-card/80 backdrop-blur p-3 md:p-4">
+          <div className="rounded-2xl border border-border bg-card p-3 md:p-4">
             <div className="flex items-stretch gap-2 md:grid md:grid-cols-[1fr_auto_auto] md:gap-3">
               <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#0e305d] md:h-4 md:w-4" />
@@ -1050,7 +1051,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
             {isLoading ? (
               <div className="grid grid-cols-2 gap-3">
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-[220px] w-full rounded-xl" />
+                  <MobilePropertyCardSkeleton key={i} />
                 ))}
               </div>
             ) : isError || feedItems.length === 0 ? (
@@ -1086,7 +1087,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
             <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {isLoading
                 ? Array.from({ length: pageSize }).map((_, i) => (
-                    <Skeleton key={i} className="h-[380px] rounded-2xl" />
+                    <PropertyCardSkeleton key={i} />
                   ))
                 : gridSlots.map((slot, i) =>
                 slot.kind === "property" ? (
@@ -1113,7 +1114,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[5, 10, 15, 20, 50].map((n) => (
+                    {[5, 10, 15, 20].map((n) => (
                       <SelectItem key={n} value={String(n)}>
                         {n}
                       </SelectItem>

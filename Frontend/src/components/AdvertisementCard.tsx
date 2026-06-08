@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@/lib/router";
-import { ArrowUpRight, Megaphone } from "lucide-react";
+import { ArrowUpRight, Megaphone, Volume2, VolumeX } from "lucide-react";
 import { Advertisement } from "@/data/advertisements";
+import { useInViewVideoAutoplay } from "@/hooks/useInViewVideoAutoplay";
 import { cn } from "@/lib/utils";
 
 type AdvertisementCardProps = {
@@ -39,7 +41,16 @@ function resolveAdLink(ad: Advertisement): AdLink {
 export const AdvertisementCard = ({ ad, index = 0, className }: AdvertisementCardProps) => {
   const link = resolveAdLink(ad);
   const preview = ad.desktopBanner || ad.mobileBanner || ad.videoThumbnail;
-  const showVideo = ad.mediaType === "video" && ad.videoUrl;
+  const showVideo = Boolean(ad.mediaType === "video" && ad.videoUrl);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(true);
+
+  useInViewVideoAutoplay(videoRef, showVideo);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = muted;
+  }, [muted, showVideo]);
 
   const outerClass = cn(
     "group relative block h-full min-h-[340px]",
@@ -54,19 +65,33 @@ export const AdvertisementCard = ({ ad, index = 0, className }: AdvertisementCar
   const inner = (
     <div className="relative h-full w-full overflow-hidden">
       {showVideo ? (
-        <video
-          key={ad.videoUrl}
-          src={ad.videoUrl}
-          poster={ad.videoThumbnail || undefined}
-          muted
-          autoPlay
-          loop
-          playsInline
-          preload="auto"
-          controls={false}
-          disablePictureInPicture
-          className="absolute inset-0 h-full w-full object-cover pointer-events-none"
-        />
+        <>
+          <video
+            ref={videoRef}
+            key={ad.videoUrl}
+            src={ad.videoUrl}
+            poster={ad.videoThumbnail || undefined}
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            controls={false}
+            disablePictureInPicture
+            className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+          />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMuted((m) => !m);
+            }}
+            aria-label={muted ? "Unmute video" : "Mute video"}
+            className="pointer-events-auto absolute top-3 right-3 z-30 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/40 transition hover:bg-black/65"
+          >
+            {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+          </button>
+        </>
       ) : preview ? (
         <img
           src={preview}

@@ -1,15 +1,25 @@
 "use client";
 
+import { useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { ListPropertyCta } from "@/components/ListPropertyCta";
+import { AuthDialog } from "@/components/auth/AuthDialog";
 import { Button } from "@/components/ui/button";
 import { Link, useNavigate } from "@/lib/router";
+import { useAuth } from "@/context/AuthContext";
 import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 
 const Sell = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [authOpen, setAuthOpen] = useState(false);
+
+  const handleGetStarted = () => {
+    if (user) navigate("/dashboard");
+    else setAuthOpen(true);
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -27,7 +37,7 @@ const Sell = () => {
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
-            <Button variant="luxe" size="lg" onClick={() => navigate("/dashboard")} className="rounded-full">
+            <Button variant="luxe" size="lg" onClick={handleGetStarted} className="rounded-full">
               Get started <ArrowRight className="h-4 w-4" />
             </Button>
             <Button
@@ -46,6 +56,7 @@ const Sell = () => {
 
       <ListPropertyCta className="mt-2" />
       <Footer />
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
     </div>
   );
 };

@@ -3,6 +3,17 @@ import { ApiError } from "@/lib/api/errors";
 
 export const TOKEN_STORAGE_KEY = "p4u_token";
 
+/**
+ * Dispatched on `window` when an authenticated request returns 401, signalling
+ * that the stored token is no longer valid and the session should be cleared.
+ */
+export const AUTH_UNAUTHORIZED_EVENT = "auth:unauthorized";
+
+function emitUnauthorized(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
+}
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface ApiRequestOptions {
@@ -124,6 +135,11 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
+    // Token-authenticated request rejected: the stored token is invalid/stale,
+    // so clear the session everywhere that listens for this event.
+    if (response.status === 401 && authToken) {
+      emitUnauthorized();
+    }
     const message =
       typeof parsed === "object" && parsed !== null && "detail" in parsed
         ? String((parsed as { detail: unknown }).detail)

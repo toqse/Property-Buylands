@@ -141,8 +141,12 @@ class OTPVerificationSerializer(serializers.Serializer):
 
 class ResetPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
+    otp = serializers.CharField(required=True, max_length=6)
     new_password = serializers.CharField(required=True, validators=[validate_password])
     confirm_password = serializers.CharField(required=True)
+
+    def validate_email(self, value):
+        return value.strip().lower()
 
     def validate(self, attrs):
         if attrs["new_password"] != attrs["confirm_password"]:

@@ -86,8 +86,13 @@ export const accountsApi = {
     });
   },
 
-  resetPassword(body: { email: string; otp: string; password: string; password2: string }) {
-    return apiRequest<OtpInitResponse>("accounts/reset-password/", {
+  resetPassword(body: {
+    email: string;
+    otp: string;
+    new_password: string;
+    confirm_password: string;
+  }) {
+    return apiRequest<{ message: string }>("accounts/reset-password/", {
       method: "POST",
       body,
     });

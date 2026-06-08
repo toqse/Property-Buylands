@@ -2,5 +2,9 @@
 /:path    /:path.html   200
 /:path/   /:path/index.html   200
 
+# Client-rendered property detail pages fall back to the shared detail shell
+# (the page reads the slug from the URL and fetches client-side).
+/properties/*   /properties/__detail__/index.html   200
+
 # Fallback to exported 404 page for unknown paths
 /*        /404.html     404

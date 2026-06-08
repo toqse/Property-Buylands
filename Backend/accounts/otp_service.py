@@ -59,6 +59,43 @@ def notify_admin_otp_delivery_failed(recipient: str, purpose: str = "") -> None:
         logger.exception("Failed to send OTP delivery failure notification to admin.")
 
 
+def deliver_otp_email(
+    *,
+    recipient: str,
+    subject: str,
+    otp_code: str,
+    body_prefix: str = "Your verification code is",
+) -> None:
+    """
+    Send OTP email only (no User / OTPVerification row).
+    Raises OTPDeliveryError on validation or delivery failure.
+    """
+    try:
+        recipient = normalize_email(recipient)
+    except ValidationError as exc:
+        logger.warning("Invalid email for OTP delivery: %s", recipient)
+        raise OTPDeliveryError(OTP_SEND_FAILURE_MESSAGE) from exc
+
+    message = f"{body_prefix}: {otp_code}"
+
+    try:
+        send_mail(
+            subject,
+            message,
+            _from_email(),
+            [recipient],
+            fail_silently=False,
+        )
+    except SMTPException:
+        logger.exception("SMTP failure sending OTP to %s", recipient)
+        notify_admin_otp_delivery_failed(recipient)
+        raise OTPDeliveryError(OTP_SEND_FAILURE_MESSAGE)
+    except Exception:
+        logger.exception("Unexpected error sending OTP to %s", recipient)
+        notify_admin_otp_delivery_failed(recipient)
+        raise OTPDeliveryError(OTP_SEND_FAILURE_MESSAGE)
+
+
 def send_otp_to_recipient(
     *,
     recipient: str,

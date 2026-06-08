@@ -1,7 +1,10 @@
 import re
+from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User
+from django.core.files import File
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -10,9 +13,11 @@ from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import OTPVerification, UserProfile
+from .models import OTPVerification, PendingOwnerRegistration, UserProfile
 from .otp_service import (
     OTPDeliveryError,
+    deliver_otp_email,
+    generate_otp_code,
     otp_send_failure,
     otp_send_success,
     otp_verify_success,
@@ -106,7 +111,7 @@ class RegisterView(APIView):
 
 
 class OwnerRegisterInitView(APIView):
-    """Step 1: create inactive owner + profile, send registration OTP (no token)."""
+    """Step 1: store pending registration and send OTP. No User until verify."""
 
     permission_classes = [permissions.AllowAny]
 
@@ -119,43 +124,41 @@ class OwnerRegisterInitView(APIView):
         if User.objects.filter(email__iexact=email).exists():
             return Response({"email": ["Email already in use."]}, status=status.HTTP_400_BAD_REQUEST)
 
-        first_name, last_name = _split_full_name(ser.validated_data["full_name"])
         avatar = request.FILES.get("avatar") or request.FILES.get("profile_photo")
+        otp_code = generate_otp_code()
 
         try:
             with transaction.atomic():
-                user = User.objects.create(
-                    username=_unique_username_from_email(email),
+                pending, _created = PendingOwnerRegistration.objects.update_or_create(
                     email=email,
-                    first_name=first_name,
-                    last_name=last_name,
-                    is_active=False,
-                    is_staff=False,
+                    defaults={
+                        "full_name": ser.validated_data["full_name"].strip(),
+                        "phone": (ser.validated_data.get("phone") or "").strip(),
+                        "whatsapp_number": (ser.validated_data.get("whatsapp_number") or "").strip(),
+                        "password": make_password(ser.validated_data["password"]),
+                        "otp": otp_code,
+                        "expires_at": timezone.now() + timedelta(minutes=10),
+                    },
                 )
-                user.set_password(ser.validated_data["password"])
-                user.save()
+                if avatar:
+                    if pending.avatar:
+                        pending.avatar.delete(save=False)
+                    pending.avatar = avatar
+                    pending.save(update_fields=["avatar"])
 
-                UserProfile.objects.create(
-                    user=user,
-                    phone=(ser.validated_data.get("phone") or "").strip(),
-                    whatsapp_number=(ser.validated_data.get("whatsapp_number") or "").strip(),
-                    avatar=avatar if avatar else None,
-                )
-
-                otp_obj = send_otp_to_recipient(
+                deliver_otp_email(
                     recipient=email,
                     subject="Verify your email",
-                    user=user,
-                    purpose=OTPVerification.PURPOSE_REGISTRATION,
+                    otp_code=otp_code,
                 )
         except OTPDeliveryError:
             return otp_send_failure()
 
-        return otp_send_success(otp=otp_obj.otp, http_status=status.HTTP_201_CREATED)
+        return otp_send_success(otp=otp_code, http_status=status.HTTP_201_CREATED)
 
 
 class OwnerRegisterVerifyView(APIView):
-    """Step 2: verify OTP, activate account, return token."""
+    """Step 2: verify OTP, create owner account, return token."""
 
     permission_classes = [permissions.AllowAny]
 
@@ -167,37 +170,54 @@ class OwnerRegisterVerifyView(APIView):
         email = ser.validated_data["email"].strip().lower()
         otp = ser.validated_data["otp"].strip()
 
-        try:
-            user = User.objects.select_related("profile").get(email__iexact=email)
-        except User.DoesNotExist:
-            return Response({"detail": "Invalid email or code."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if user.is_active:
+        if User.objects.filter(email__iexact=email).exists():
             return Response({"detail": "Account is already verified. Please log in."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not hasattr(user, "profile"):
-            return Response({"detail": "Invalid registration."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            pending = PendingOwnerRegistration.objects.get(email__iexact=email)
+        except PendingOwnerRegistration.DoesNotExist:
+            return Response({"detail": "Invalid email or code."}, status=status.HTTP_400_BAD_REQUEST)
 
-        otp_obj = (
-            OTPVerification.objects.filter(
-                user=user,
-                purpose=OTPVerification.PURPOSE_REGISTRATION,
-                otp=otp,
-                expires_at__gt=timezone.now(),
-            )
-            .order_by("-created_at")
-            .first()
-        )
-        if not otp_obj:
+        if pending.otp != otp or not pending.is_valid():
             return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
-        user.is_active = True
-        user.save(update_fields=["is_active"])
-        user.profile.email_verified_at = timezone.now()
-        user.profile.save(update_fields=["email_verified_at"])
-        OTPVerification.objects.filter(user=user, purpose=OTPVerification.PURPOSE_REGISTRATION).delete()
+        first_name, last_name = _split_full_name(pending.full_name)
+
+        try:
+            with transaction.atomic():
+                user = User(
+                    username=_unique_username_from_email(email),
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                    is_active=True,
+                    is_staff=False,
+                )
+                user.password = pending.password
+                user.save()
+
+                profile = UserProfile.objects.create(
+                    user=user,
+                    phone=pending.phone,
+                    whatsapp_number=pending.whatsapp_number,
+                    email_verified_at=timezone.now(),
+                )
+                if pending.avatar:
+                    profile.avatar.save(
+                        pending.avatar.name.split("/")[-1],
+                        File(pending.avatar.open("rb")),
+                        save=True,
+                    )
+
+                pending.delete()
+        except Exception:
+            return Response(
+                {"detail": "Could not complete registration. Please try again."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         token, _created = Token.objects.get_or_create(user=user)
+        user = User.objects.select_related("profile").get(pk=user.pk)
         return otp_verify_success(
             message="OTP verified successfully.",
             otp=otp,
@@ -226,13 +246,14 @@ class LoginOtpRequestView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
         email = ser.validated_data["email"]
+        invalid_email_message = "No user account found for this email address."
         try:
             user = User.objects.select_related("profile").get(email__iexact=email)
         except User.DoesNotExist:
-            return otp_send_failure()
+            return otp_send_failure(message=invalid_email_message)
 
         if not user.is_active or not hasattr(user, "profile") or user.is_staff:
-            return otp_send_failure()
+            return otp_send_failure(message=invalid_email_message)
 
         try:
             otp_obj = send_otp_to_recipient(
@@ -296,10 +317,11 @@ class ForgotPasswordView(APIView):
         serializer = ForgotPasswordSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data["email"]
+            invalid_email_message = "No user account found for this email address."
             try:
                 user = User.objects.get(email__iexact=email)
             except User.DoesNotExist:
-                return otp_send_failure()
+                return otp_send_failure(message=invalid_email_message)
 
             try:
                 otp_obj = send_otp_to_recipient(
@@ -327,13 +349,20 @@ class VerifyOTPView(APIView):
 
             try:
                 user = User.objects.get(email=email)
-                valid = OTPVerification.objects.filter(
-                    user=user,
-                    otp=otp,
-                    purpose=OTPVerification.PURPOSE_PASSWORD_RESET,
-                    expires_at__gt=timezone.now(),
-                ).exists()
-                if valid:
+                otp_obj = (
+                    OTPVerification.objects.filter(
+                        user=user,
+                        otp=otp,
+                        purpose=OTPVerification.PURPOSE_PASSWORD_RESET,
+                        expires_at__gt=timezone.now(),
+                        is_verified=False,
+                    )
+                    .order_by("-created_at")
+                    .first()
+                )
+                if otp_obj:
+                    otp_obj.is_verified = True
+                    otp_obj.save(update_fields=["is_verified"])
                     return otp_verify_success(message="OTP verified successfully.", otp=otp.strip())
                 return Response(
                     {"success": False, "message": "Invalid OTP or expired"},
@@ -355,15 +384,34 @@ class ResetPasswordView(APIView):
         serializer = ResetPasswordSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data["email"]
+            otp = serializer.validated_data["otp"].strip()
             new_password = serializer.validated_data["new_password"]
 
             try:
-                user = User.objects.get(email=email)
-                user.set_password(new_password)
-                user.save()
-                return Response({"message": "Password reset successful"}, status=status.HTTP_200_OK)
+                user = User.objects.get(email__iexact=email)
             except User.DoesNotExist:
                 return Response({"error": "User not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+            otp_valid = OTPVerification.objects.filter(
+                user=user,
+                purpose=OTPVerification.PURPOSE_PASSWORD_RESET,
+                otp=otp,
+                expires_at__gt=timezone.now(),
+                is_verified=True,
+            ).exists()
+            if not otp_valid:
+                return Response(
+                    {"detail": "Invalid or expired OTP."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user.set_password(new_password)
+            user.save()
+            OTPVerification.objects.filter(
+                user=user,
+                purpose=OTPVerification.PURPOSE_PASSWORD_RESET,
+            ).delete()
+            return Response({"message": "Password reset successful"}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

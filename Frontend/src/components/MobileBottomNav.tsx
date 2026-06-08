@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { NavLink } from "@/lib/router";
+import { NavLink, useLocation } from "@/lib/router";
 import { BadgeDollarSign, Building2, Home, KeyRound, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -13,11 +13,16 @@ declare global {
 
 export function MobileBottomNav() {
   const [visible, setVisible] = useState(true);
+  const { pathname } = useLocation();
+
+  // The admin panel has its own navigation; the public bottom bar should not
+  // appear there (especially on mobile, where it overlaps admin controls).
+  if (pathname.startsWith("/admin")) return null;
 
   if (!visible) return null;
 
   return (
-    <nav className="md:hidden fixed inset-x-0 bottom-0 z-[60] border-t border-border/60 bg-white/95 backdrop-blur-xl">
+    <nav className="md:hidden fixed inset-x-0 bottom-0 z-[60] border-t border-border/60 bg-white">
       <div className="mx-auto grid max-w-xl grid-cols-5 px-4 py-2">
         <NavLink
           to="/"

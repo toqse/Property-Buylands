@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   buildPropertyListParams,
   propertiesApi,
@@ -41,6 +41,10 @@ export function usePropertyList(
         .filter((x): x is ListingFeedItem => x !== null);
       return { ...page, items };
     },
+    // Keep the current list visible while params change (e.g. when the user's
+    // location resolves and the query switches to nearby results), so the grid
+    // doesn't flash back to skeletons.
+    placeholderData: keepPreviousData,
   });
 }
 

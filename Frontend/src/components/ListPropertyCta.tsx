@@ -1,6 +1,9 @@
-import { Link } from "@/lib/router";
+import { useState } from "react";
+import { Link, useNavigate } from "@/lib/router";
 import { Home, MessageCircleMore, ShieldCheck, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AuthDialog } from "@/components/auth/AuthDialog";
+import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { revealFadeUpClass } from "@/lib/revealFade";
 import { useInViewOnce } from "@/hooks/useInViewOnce";
@@ -55,6 +58,15 @@ function HomePlusIcon({ className }: { className?: string }) {
 
 export function ListPropertyCta({ className }: { className?: string }) {
   const { ref, active } = useInViewOnce<HTMLElement>();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [authOpen, setAuthOpen] = useState(false);
+
+  const handleListProperty = () => {
+    if (user) navigate("/dashboard");
+    else setAuthOpen(true);
+  };
+
   return (
     <section
       ref={ref}
@@ -164,20 +176,17 @@ export function ListPropertyCta({ className }: { className?: string }) {
             {/* Buttons */}
             <div className="mt-8 flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:gap-4">
               <Button
-                asChild
+                onClick={handleListProperty}
                 className="h-12 rounded-xl border-0 px-6 font-sans text-[14px] font-semibold text-white shadow-[0_14px_28px_-16px_rgba(14,48,93,0.7)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-18px_rgba(14,48,93,0.9)] md:text-[15px]"
                 style={{
                   background:
                     "linear-gradient(135deg,#0e305d 0%,#1c5fa8 55%,#2a6bb5 100%)",
                 }}
               >
-                <Link
-                  to="/dashboard"
-                  className="inline-flex items-center justify-center gap-2.5 leading-none"
-                >
+                <span className="inline-flex items-center justify-center gap-2.5 leading-none">
                   <HomePlusIcon />
                   <span className="leading-none">List a property</span>
-                </Link>
+                </span>
               </Button>
               <Button
                 asChild
@@ -243,6 +252,7 @@ export function ListPropertyCta({ className }: { className?: string }) {
           </div>
         </div>
       </div>
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
     </section>
   );
 }

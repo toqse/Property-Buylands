@@ -277,7 +277,9 @@ export function LocationSearch({
     (location: string) => {
       const params = new URLSearchParams();
 
-      if (location === CURRENT_LOCATION_VALUE && coords) {
+      if (location === "Any") {
+        params.set("location", "Any");
+      } else if (location === CURRENT_LOCATION_VALUE && coords) {
         params.set("lat", String(coords.latitude));
         params.set("lng", String(coords.longitude));
         params.set("radius", radius);

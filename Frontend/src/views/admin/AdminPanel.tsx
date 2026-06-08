@@ -61,6 +61,7 @@ import {
   TrendingUp, DollarSign, MessageSquare, Star, Upload,
   MapPin, ChevronDown, ChevronRight, Mail, Phone as PhoneIcon, Reply,
   Search, Store, Map as MapIcon, Home as HomeIcon, Landmark, Menu, Megaphone,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -386,6 +387,11 @@ const Overview = () => {
     .filter((x) => x.kind === "property")
     .map((x) => x.property);
   const enquiries = contactsPage?.items ?? [];
+  const [viewTarget, setViewTarget] = useState<Property | null>(null);
+
+  if (viewTarget) {
+    return <PropertyDetailView property={viewTarget} onBack={() => setViewTarget(null)} />;
+  }
 
   const stats = [
     { i: Building2, l: "Total Listings", v: allProps?.count ?? 0, c: "" },
@@ -395,7 +401,16 @@ const Overview = () => {
   ];
   return (
     <div className="animate-fade-in">
-      <h1 className="font-serif text-3xl md:text-4xl mb-6 md:mb-8">Overview</h1>
+      <div className="flex items-center justify-between gap-3 mb-6 md:mb-8">
+        <h1 className="font-serif text-3xl md:text-4xl">Overview</h1>
+        <NavLink
+          to="/"
+          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-xs sm:text-sm font-medium text-foreground hover:bg-muted transition-colors shrink-0"
+        >
+          <ExternalLink className="h-4 w-4" />
+          Go to website
+        </NavLink>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-8 md:mb-10">
         {stats.map((s, i) => (
           <div key={s.l} className="p-4 sm:p-6 rounded-2xl bg-card border border-border hover-lift animate-fade-in" style={{ animationDelay: `${i * 80}ms` }}>
@@ -414,14 +429,19 @@ const Overview = () => {
           <h2 className="font-serif text-2xl mb-4">Recent listings</h2>
           <div className="space-y-3">
             {recentList.map(p => (
-              <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted">
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setViewTarget(p)}
+                className="flex w-full items-center gap-3 p-3 rounded-lg text-left hover:bg-muted transition-colors"
+              >
                 <img src={p.image} className="h-12 w-16 object-cover rounded" alt="" />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{p.title}</div>
                   <div className="text-xs text-muted-foreground">{p.ownerName}</div>
                 </div>
                 <Badge variant={p.status === "Approved" ? "default" : "secondary"}>{p.status}</Badge>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -453,8 +473,38 @@ type PropertyDetailViewProps = {
 };
 
 const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
+  const fmt = (n: number) => n.toLocaleString("en-IN");
+  const galleryImages =
+    property.gallery && property.gallery.length
+      ? property.gallery
+      : property.image
+        ? [property.image]
+        : [];
+  const addressParts = [property.location, property.city, property.district, property.state]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean);
+  const address = Array.from(new Set(addressParts)).join(", ");
+
+  const detailRows: { label: string; value: ReactNode }[] = [
+    { label: "Listing type", value: property.type },
+    { label: "Category", value: property.category },
+    {
+      label: "Price",
+      value: `₹${fmt(property.price)}${property.priceUnit ? ` ${property.priceUnit}` : ""}`,
+    },
+    { label: "Area", value: `${fmt(property.area)} ${property.areaUnit ?? "sqft"}` },
+    ...(property.bedrooms ? [{ label: "Bedrooms", value: String(property.bedrooms) }] : []),
+    ...(property.bathrooms ? [{ label: "Bathrooms", value: String(property.bathrooms) }] : []),
+    ...(property.furnishing ? [{ label: "Furnishing", value: property.furnishing }] : []),
+    ...(property.parkingSpaces ? [{ label: "Parking", value: property.parkingSpaces }] : []),
+    ...(property.builtYear ? [{ label: "Built year", value: property.builtYear }] : []),
+    ...(property.ownership ? [{ label: "Ownership", value: property.ownership }] : []),
+    { label: "Featured", value: property.featured ? "Yes" : "No" },
+    ...(property.createdAt ? [{ label: "Listed on", value: property.createdAt }] : []),
+  ];
+
   return (
-    <div className="animate-fade-in max-w-2xl">
+    <div className="animate-fade-in max-w-3xl">
       <Button
         variant="outline"
         size="sm"
@@ -464,13 +514,28 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
         Back to properties
       </Button>
 
-      <div className="mt-6">
-        <h1 className="font-serif text-3xl md:text-4xl">{property.title}</h1>
-        <div className="text-gold-gradient font-semibold text-base md:text-lg mt-1">
-          ₹{property.price.toLocaleString("en-US")}
-          {property.priceUnit ? <span className="ml-1">{property.priceUnit}</span> : null}
+      <div className="mt-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-serif text-3xl md:text-4xl">{property.title}</h1>
+          <div className="text-gold-gradient font-semibold text-base md:text-lg mt-1">
+            ₹{fmt(property.price)}
+            {property.priceUnit ? <span className="ml-1">{property.priceUnit}</span> : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={property.status === "Approved" ? "default" : "secondary"}>
+            {property.status}
+          </Badge>
+          {property.featured ? <Badge variant="secondary">Featured</Badge> : null}
         </div>
       </div>
+
+      {address ? (
+        <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+          <MapPin className="h-4 w-4 text-gold" />
+          {address}
+        </p>
+      ) : null}
 
       <div className="mt-4 rounded-2xl overflow-hidden bg-muted border border-border">
         <img
@@ -480,26 +545,153 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
         />
       </div>
 
-      <div className="mt-6 bg-card border border-border rounded-2xl p-5 shadow-sm space-y-3">
-        <div className="space-y-1 text-sm">
-          <div>
-            <span className="font-semibold text-foreground">Owner:</span>{" "}
-            <span className="text-foreground/80">{property.ownerName}</span>
-          </div>
-          <div>
-            <span className="font-semibold text-foreground">Status:</span>{" "}
-            <span className="text-foreground/80">{property.status.toLowerCase()}</span>
-          </div>
+      {galleryImages.length > 1 ? (
+        <div className="mt-3 grid grid-cols-4 sm:grid-cols-6 gap-2">
+          {galleryImages.map((src, i) => (
+            <img
+              key={`${src}-${i}`}
+              src={src}
+              alt={`${property.title} ${i + 1}`}
+              className="h-16 w-full rounded-lg object-cover border border-border"
+            />
+          ))}
         </div>
+      ) : null}
 
-        <div>
-          <div className="text-sm font-semibold text-foreground mb-1">Description</div>
-          {property.description ? (
-            <p className="text-sm text-foreground/80 leading-relaxed">{property.description}</p>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">No description provided.</p>
-          )}
+      {property.videoUrl ? (
+        <div className="mt-4">
+          <div className="text-sm font-semibold text-foreground mb-2">Property video</div>
+          <video
+            src={property.videoUrl}
+            poster={property.videoThumbnail || property.image}
+            controls
+            playsInline
+            className="w-full rounded-xl border border-border bg-black"
+          />
         </div>
+      ) : null}
+
+      <div className="mt-6 bg-card border border-border rounded-2xl p-5 shadow-sm">
+        <div className="text-sm font-semibold text-foreground mb-3">Property details</div>
+        <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
+          {detailRows.map((row) => (
+            <div key={row.label}>
+              <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                {row.label}
+              </dt>
+              <dd className="text-sm text-foreground/90 mt-0.5 break-words">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
+        <div className="text-sm font-semibold text-foreground mb-3">Owner / contact</div>
+        <div className="space-y-2 text-sm">
+          <div>
+            <span className="font-semibold text-foreground">Name:</span>{" "}
+            <span className="text-foreground/80">{property.ownerName || "—"}</span>
+          </div>
+          <div>
+            <span className="font-semibold text-foreground">Phone:</span>{" "}
+            {property.ownerPhone ? (
+              <a href={`tel:${property.ownerPhone}`} className="text-gold hover:underline">
+                {property.ownerPhone}
+              </a>
+            ) : (
+              <span className="text-foreground/80">—</span>
+            )}
+          </div>
+          <div>
+            <span className="font-semibold text-foreground">Email:</span>{" "}
+            {property.ownerEmail ? (
+              <a href={`mailto:${property.ownerEmail}`} className="text-gold hover:underline">
+                {property.ownerEmail}
+              </a>
+            ) : (
+              <span className="text-foreground/80">—</span>
+            )}
+          </div>
+          {property.contactWhatsApp ? (
+            <div>
+              <span className="font-semibold text-foreground">WhatsApp:</span>{" "}
+              <span className="text-foreground/80">{property.contactWhatsApp}</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {property.features && property.features.length ? (
+        <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
+          <div className="text-sm font-semibold text-foreground mb-3">Features &amp; amenities</div>
+          <div className="flex flex-wrap gap-2">
+            {property.features.map((f) => (
+              <Badge key={f} variant="secondary">
+                {f}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {property.nearbyPlaces && property.nearbyPlaces.length ? (
+        <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
+          <div className="text-sm font-semibold text-foreground mb-3">Nearby places</div>
+          <ul className="space-y-1 text-sm text-foreground/80">
+            {property.nearbyPlaces.map((np, i) => (
+              <li key={`${np.name}-${i}`} className="flex justify-between gap-3">
+                <span>{np.name}</span>
+                <span className="text-muted-foreground">{np.distanceKm} km</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {(property.googleMapUrl || property.youtubeUrl || property.lat || property.lng) ? (
+        <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm space-y-2 text-sm">
+          <div className="text-sm font-semibold text-foreground mb-1">Location &amp; links</div>
+          {property.lat || property.lng ? (
+            <div className="text-foreground/80">
+              Coordinates: {property.lat}, {property.lng}
+            </div>
+          ) : null}
+          {property.googleMapUrl ? (
+            <div>
+              <a
+                href={property.googleMapUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-gold hover:underline"
+              >
+                Open in Google Maps
+              </a>
+            </div>
+          ) : null}
+          {property.youtubeUrl ? (
+            <div>
+              <a
+                href={property.youtubeUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-gold hover:underline"
+              >
+                YouTube video
+              </a>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
+        <div className="text-sm font-semibold text-foreground mb-1">Description</div>
+        {property.description ? (
+          <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
+            {property.description}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">No description provided.</p>
+        )}
       </div>
     </div>
   );
@@ -724,7 +916,69 @@ const PropertiesAdmin = () => {
         <Button variant="luxe" onClick={() => setAddOpen(true)} className="self-start sm:self-auto"><Plus className="h-4 w-4" /> Add property</Button>
       </div>
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile: stacked cards (the table is too wide for small screens) */}
+        <div className="md:hidden divide-y divide-border">
+          {propertiesPager.paginated.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">No properties yet.</div>
+          ) : (
+            propertiesPager.paginated.map((p) => (
+              <div key={p.id} className="p-3">
+                <div className="flex gap-3">
+                  <img
+                    src={p.image}
+                    className="h-16 w-20 shrink-0 rounded-lg object-cover"
+                    alt=""
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{p.title}</div>
+                    <div className="line-clamp-2 text-xs text-muted-foreground">{p.location}</div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground/80">Owner:</span> {p.ownerName}
+                    </div>
+                    <div className="text-gold-gradient mt-1 text-sm font-semibold">
+                      ₹{p.price.toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Badge variant={p.status === "Approved" ? "default" : "secondary"}>
+                      {p.status}
+                    </Badge>
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Switch
+                        checked={!!p.featured}
+                        disabled={featuredPendingId === p.id}
+                        onCheckedChange={() => toggleFeatured(p)}
+                      />
+                      Featured
+                    </label>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => setViewTarget(p)} title="View">
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(p)} title="Edit">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(p)}
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop: full table */}
+        <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm min-w-[760px]">
           <thead className="bg-muted text-xs uppercase tracking-wider text-muted-foreground">
             <tr>

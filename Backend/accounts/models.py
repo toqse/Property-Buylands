@@ -28,6 +28,7 @@ class OTPVerification(models.Model):
         default=PURPOSE_PASSWORD_RESET,
         db_index=True,
     )
+    is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
 
@@ -74,3 +75,41 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"Profile({self.user_id})"
+
+
+class PendingOwnerRegistration(models.Model):
+    """Holds owner signup data until email OTP is verified; no User row until then."""
+
+    email = models.EmailField(unique=True, db_index=True)
+    full_name = models.CharField(max_length=120)
+    phone = models.CharField(max_length=20, blank=True, default="")
+    whatsapp_number = models.CharField(max_length=20, blank=True, default="")
+    password = models.CharField(max_length=128)
+    avatar = models.ImageField(
+        upload_to="pending_avatars/",
+        blank=True,
+        null=True,
+        validators=[
+            FileExtensionValidator(allowed_extensions=["jpg", "jpeg", "png", "webp"]),
+            validate_avatar_max_size,
+        ],
+    )
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    def save(self, *args, **kwargs):
+        if not self.otp:
+            self.otp = "".join(secrets.choice("0123456789") for _ in range(6))
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(minutes=10)
+        super().save(*args, **kwargs)
+
+    def is_valid(self):
+        return timezone.now() <= self.expires_at
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"PendingOwner({self.email})"

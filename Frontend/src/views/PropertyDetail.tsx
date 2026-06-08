@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams, Link, useNavigate } from "@/lib/router";
+import { useParams, useLocation, Link, useNavigate } from "@/lib/router";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { useProperty } from "@/hooks/api/useProperties";
@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
+import { registerExclusiveVideo } from "@/lib/videoCoordinator";
 
 const WhatsAppIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
@@ -27,8 +28,15 @@ const WhatsAppIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
 );
 
 const PropertyDetail = () => {
-  const { id } = useParams();
+  const { id: routeId } = useParams();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
+  // This page is served as a static-export shell for many slugs (see
+  // generateStaticParams + .htaccess fallback), so the route param may be the
+  // shell placeholder. Always trust the actual URL: /properties/<slug>/.
+  const slugFromPath = pathname.split("/").filter(Boolean).pop();
+  const id =
+    slugFromPath && slugFromPath !== "properties" ? slugFromPath : routeId;
   const { data: property, isLoading, isError } = useProperty(id);
   const { submitContact } = useCatalogMutations();
   // All property enquiries route through the company/admin contact, not the
@@ -56,6 +64,12 @@ const PropertyDetail = () => {
   useEffect(() => {
     setVideoStarted(false);
   }, [active]);
+
+  useEffect(() => {
+    const el = mainVideoRef.current;
+    if (!el) return;
+    return registerExclusiveVideo(el);
+  }, [active, videoStarted, hasVideo]);
 
   const prevMedia = () => {
     if (totalMedia === 0) return;

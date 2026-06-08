@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@/lib/router";
-import { ArrowUpRight, Megaphone } from "lucide-react";
+import { ArrowUpRight, Megaphone, Volume2, VolumeX } from "lucide-react";
 import { Advertisement } from "@/data/advertisements";
+import { useInViewVideoAutoplay } from "@/hooks/useInViewVideoAutoplay";
 import { cn } from "@/lib/utils";
 
 type AdLink =
@@ -32,10 +34,19 @@ export function MobileAdvertisementCard({
 }) {
   const link = resolveAdLink(ad);
   const preview = ad.mobileBanner || ad.desktopBanner || ad.videoThumbnail;
-  const showVideo = ad.mediaType === "video" && ad.videoUrl;
+  const showVideo = Boolean(ad.mediaType === "video" && ad.videoUrl);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(true);
+
+  useInViewVideoAutoplay(videoRef, showVideo);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = muted;
+  }, [muted, showVideo]);
 
   const outerClass = cn(
-    "group relative aspect-square animate-fade-in overflow-hidden rounded-xl bg-black text-white shadow-[0_4px_16px_-8px_rgba(15,23,42,0.15)] ring-1 ring-gold/30",
+    "group relative h-full min-h-[220px] w-full animate-fade-in overflow-hidden rounded-xl bg-black text-white shadow-[0_4px_16px_-8px_rgba(15,23,42,0.15)] ring-1 ring-gold/30",
     className,
   );
   const style = { animationDelay: `${index * 40}ms` } as const;
@@ -43,19 +54,33 @@ export function MobileAdvertisementCard({
   const inner = (
     <div className="relative h-full w-full overflow-hidden">
       {showVideo ? (
-        <video
-          key={ad.videoUrl}
-          src={ad.videoUrl}
-          poster={ad.videoThumbnail || undefined}
-          muted
-          autoPlay
-          loop
-          playsInline
-          preload="auto"
-          controls={false}
-          disablePictureInPicture
-          className="absolute inset-0 h-full w-full object-cover pointer-events-none"
-        />
+        <>
+          <video
+            ref={videoRef}
+            key={ad.videoUrl}
+            src={ad.videoUrl}
+            poster={ad.videoThumbnail || undefined}
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            controls={false}
+            disablePictureInPicture
+            className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+          />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMuted((m) => !m);
+            }}
+            aria-label={muted ? "Unmute video" : "Mute video"}
+            className="pointer-events-auto absolute top-2 right-2 z-30 grid h-7 w-7 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/40 transition hover:bg-black/65"
+          >
+            {muted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+          </button>
+        </>
       ) : preview ? (
         <img
           src={preview}
@@ -76,14 +101,14 @@ export function MobileAdvertisementCard({
         Sponsored
       </span>
 
-      <div className="absolute inset-x-2.5 bottom-2.5 flex flex-col items-start gap-1.5">
+      <div className="absolute inset-x-3 bottom-3 flex flex-col items-start gap-1.5">
+        <h3 className="w-full min-w-0 break-words line-clamp-2 text-[15px] font-semibold leading-tight drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]">
+          {ad.title}
+        </h3>
         <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-[#1c5fa8] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-normal text-white shadow-sm">
           Learn more
           <ArrowUpRight className="h-3 w-3 shrink-0" />
         </span>
-        <h3 className="w-full min-w-0 break-words line-clamp-2 text-[14px] font-semibold leading-tight drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]">
-          {ad.title}
-        </h3>
       </div>
     </div>
   );

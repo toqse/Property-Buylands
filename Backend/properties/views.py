@@ -525,12 +525,34 @@ class PropertyViewSet(viewsets.ModelViewSet):
             user = self.request.user
             if not user.is_authenticated:
                 return Property.objects.none()
-            return (
+            queryset = (
                 Property.objects.filter(created_by=user)
                 .select_related("state", "district", "city", "property_type", "moderated_by")
                 .prefetch_related("images", "features")
-                .order_by("-created_at")
             )
+            search = (self.request.query_params.get("search") or "").strip()
+            if search:
+                search_terms = [term for term in search.split() if term.strip()]
+                combined_query = Q()
+                for term in search_terms:
+                    term_query = (
+                        Q(title__icontains=term)
+                        | Q(description__icontains=term)
+                        | Q(property_type__name__icontains=term)
+                        | Q(features__name__icontains=term)
+                        | Q(state__name__icontains=term)
+                        | Q(district__name__icontains=term)
+                        | Q(city__name__icontains=term)
+                        | Q(property_for__icontains=term)
+                        | Q(property_ownership__icontains=term)
+                        | Q(furnishing__icontains=term)
+                        | Q(moderation_status__icontains=term)
+                        | Q(price__icontains=term)
+                    )
+                    combined_query &= term_query if combined_query else term_query
+                if search_terms:
+                    queryset = queryset.filter(combined_query).distinct()
+            return queryset.order_by("-created_at")
 
         queryset = super().get_queryset()
         user = self.request.user

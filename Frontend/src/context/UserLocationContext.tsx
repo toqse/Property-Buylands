@@ -21,7 +21,12 @@ export type UserCoords = {
   updatedAt: string;
 };
 
-export type LocationStatus = "idle" | "prompting" | "granted" | "denied" | "loading";
+export type LocationStatus =
+  | "idle"
+  | "prompting"
+  | "granted"
+  | "denied"
+  | "loading";
 
 type UserLocationContextValue = {
   coords: UserCoords | null;
@@ -31,7 +36,9 @@ type UserLocationContextValue = {
   clearLocation: () => void;
 };
 
-const UserLocationContext = createContext<UserLocationContextValue | null>(null);
+const UserLocationContext = createContext<UserLocationContextValue | null>(
+  null,
+);
 
 function readStoredCoords(): UserCoords | null {
   if (typeof window === "undefined") return null;
@@ -90,7 +97,10 @@ export function UserLocationProvider({ children }: { children: ReactNode }) {
         setCoords(null);
         setStatus("denied");
       },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+      // Reuse a recent device fix (up to 30 min old) so the position resolves
+      // quickly instead of waiting for a fresh GPS lock; coarse accuracy is
+      // enough for "near you" sorting and is faster than high accuracy.
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 },
     );
   }, [persistCoords]);
 

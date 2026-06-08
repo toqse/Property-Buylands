@@ -9,7 +9,7 @@ import {
   useCallback,
   useEffect,
 } from "react";
-import { TOKEN_STORAGE_KEY } from "@/lib/api/client";
+import { TOKEN_STORAGE_KEY, AUTH_UNAUTHORIZED_EVENT } from "@/lib/api/client";
 import { accountsApi } from "@/lib/api/accounts";
 import { mapApiUserToSession } from "@/lib/api/mappers/user";
 import type { ApiUser, AuthTokenResponse } from "@/lib/api/types";
@@ -84,6 +84,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (u) localStorage.setItem(USER_KEY, JSON.stringify(u));
     else localStorage.removeItem(USER_KEY);
   }, []);
+
+  // When any authenticated API call returns 401, the token is no longer valid
+  // (deleted/rotated server-side). Clear the local session so the UI logs out.
+  useEffect(() => {
+    const handleUnauthorized = () => persist(null, "");
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
+    return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
+  }, [persist]);
 
   const loginWithToken = useCallback(
     (t: string, u: SessionUser) => {

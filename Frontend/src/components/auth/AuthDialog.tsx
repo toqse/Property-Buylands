@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { accountsApi } from "@/lib/api/accounts";
 import { getErrorMessage } from "@/lib/api/errors";
 import { display_console_logs } from "@/lib/config";
 import { toast } from "sonner";
-import { Mail, KeyRound, User, Phone, Lock } from "lucide-react";
+import { Mail, KeyRound, User, Lock, Eye, EyeOff } from "lucide-react";
 import { Logo } from "../Logo";
 import { useNavigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,12 @@ type AuthMode =
   | "login-otp"
   | "login-verify"
   | "register"
-  | "register-verify";
+  | "register-verify"
+  | "forgot-request"
+  | "forgot-verify"
+  | "forgot-reset";
+
+const RESEND_COOLDOWN_SEC = 60;
 
 const EMAIL_MAX = 48;
 const NAME_MAX = 48;
@@ -43,6 +48,7 @@ const normalizeName = (v: string) =>
   v.replace(/[^a-zA-Z\s.'-]/g, "").replace(/\s{2,}/g, " ").slice(0, NAME_MAX);
 const normalizeDigits = (v: string, max = PHONE_MAX) =>
   v.replace(/\D/g, "").slice(0, max);
+const withCountryCode = (digits: string) => (digits ? `+91${digits}` : "");
 
 export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" }: Props) => {
   const { loginFromApiResponse } = useAuth();
@@ -58,7 +64,16 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
   const [whatsapp, setWhatsapp] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [otp, setOtp] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const phoneWarnAtRef = useRef(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   const resetForm = () => {
     setEmail("");
@@ -123,6 +138,7 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
       toast.success(res.message || `Verification code sent to ${email}`);
       setOtp(res.otp ?? "");
       setMode("login-verify");
+      setResendCooldown(RESEND_COOLDOWN_SEC);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -171,8 +187,8 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
       const res = await accountsApi.registerOwnerInit({
         full_name: name.trim(),
         email: normalizeEmail(email),
-        phone,
-        whatsapp_number: whatsapp,
+        phone: withCountryCode(phone),
+        whatsapp_number: withCountryCode(whatsapp),
         password,
         password2: confirmPassword,
       });
@@ -182,6 +198,7 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
       toast.success(res.message || `Verification code sent to ${email}`);
       setOtp(res.otp ?? "");
       setMode("register-verify");
+      setResendCooldown(RESEND_COOLDOWN_SEC);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -198,6 +215,16 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
     setLoading(true);
     try {
       const normalized = normalizeEmail(email);
+      if (mode === "forgot-verify") {
+        const res = await accountsApi.verifyOtp(normalized, otp);
+        if (!res.success) {
+          toast.error(res.message || "Invalid or expired code");
+          return;
+        }
+        toast.success("Code verified — set your new password");
+        setMode("forgot-reset");
+        return;
+      }
       const res =
         mode === "register-verify"
           ? await accountsApi.registerOwnerVerify(normalized, otp)
@@ -217,11 +244,120 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
     }
   };
 
+  const resendOtp = async () => {
+    if (resendCooldown > 0 || loading) return;
+    setLoading(true);
+    try {
+      const normalized = normalizeEmail(email);
+      if (mode === "register-verify") {
+        const res = await accountsApi.registerOwnerInit({
+          full_name: name.trim(),
+          email: normalized,
+          phone: withCountryCode(phone),
+          whatsapp_number: withCountryCode(whatsapp),
+          password,
+          password2: confirmPassword,
+        });
+        if (display_console_logs && res.otp) toast.message(`Dev OTP: ${res.otp}`);
+        toast.success(res.message || "Verification code resent");
+        setOtp(res.otp ?? "");
+      } else if (mode === "login-verify") {
+        const res = await accountsApi.loginOtpRequest(normalized);
+        if (display_console_logs && res.otp) toast.message(`Dev OTP: ${res.otp}`);
+        toast.success(res.message || "Verification code resent");
+        setOtp(res.otp ?? "");
+      } else if (mode === "forgot-verify") {
+        const res = await accountsApi.forgotPassword(normalized);
+        if (display_console_logs && res.otp) toast.message(`Dev OTP: ${res.otp}`);
+        toast.success(res.message || "Reset code resent");
+        setOtp(res.otp ?? "");
+      }
+      setResendCooldown(RESEND_COOLDOWN_SEC);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValidEmail(email)) {
+      toast.error("Please enter a valid email");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await accountsApi.forgotPassword(normalizeEmail(email));
+      if (display_console_logs && res.otp) toast.message(`Dev OTP: ${res.otp}`);
+      toast.success(res.message || `Reset code sent to ${email}`);
+      setOtp(res.otp ?? "");
+      setMode("forgot-verify");
+      setResendCooldown(RESEND_COOLDOWN_SEC);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp.length !== 6) {
+      toast.error("Enter the 6-digit code");
+      return;
+    }
+    if (password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    setLoading(true);
+    try {
+      await accountsApi.resetPassword({
+        email: normalizeEmail(email),
+        otp,
+        new_password: password,
+        confirm_password: confirmPassword,
+      });
+      toast.success("Password reset — you can sign in now");
+      setPassword("");
+      setConfirmPassword("");
+      setOtp("");
+      setMode("login-password");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isCompactMode =
+    mode.startsWith("login") || mode.startsWith("forgot");
   const isLoginMode = mode.startsWith("login");
-  const headerTitle = isLoginMode ? "Owner sign in" : "Property owner registration";
-  const headerSubtitle = isLoginMode
-    ? "Sign in to manage your listings and property enquiries."
-    : "Create your owner account, then list from your dashboard.";
+  const headerTitle =
+    mode === "forgot-request"
+      ? "Reset password"
+      : mode === "forgot-verify"
+        ? "Verify reset code"
+        : mode === "forgot-reset"
+          ? "Set new password"
+          : isLoginMode
+            ? "Owner sign in"
+            : "Property owner registration";
+  const headerSubtitle =
+    mode === "forgot-request"
+      ? "We'll email a one-time code to reset your owner account password."
+      : mode === "forgot-verify"
+        ? "Enter the code we sent to your email."
+        : mode === "forgot-reset"
+          ? "Choose a strong new password for your account."
+          : isLoginMode
+            ? "Sign in to manage your listings and property enquiries."
+            : "Create your owner account, then list from your dashboard.";
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -230,35 +366,35 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
         onPointerDownOutside={(e) => e.preventDefault()}
         className={cn(
           "p-0 overflow-hidden border-gold/20 [&_.dialog-close]:text-background [&_.dialog-close]:opacity-90 [&_.dialog-close]:bg-black/30 [&_.dialog-close]:h-9 [&_.dialog-close]:w-9 [&_.dialog-close]:rounded-full [&_.dialog-close]:grid [&_.dialog-close]:place-items-center [&_.dialog-close]:top-3 [&_.dialog-close]:right-3",
-          isLoginMode ? "sm:max-w-md" : "sm:max-w-2xl",
+          isCompactMode ? "sm:max-w-md" : "sm:max-w-2xl",
         )}
       >
         {/* Dark header — same for login & register screens */}
         <div
           className={cn(
             "bg-[hsl(30_14%_10%)] text-background",
-            isLoginMode ? "p-6" : "px-6 py-4 sm:px-8",
+            isCompactMode ? "p-6" : "px-6 py-4 sm:px-8",
           )}
         >
-          <Logo variant="light" imgClassName={isLoginMode ? undefined : "h-10 md:h-10"} />
-          <DialogHeader className={isLoginMode ? "mt-5" : "mt-3"}>
+          <Logo variant="light" imgClassName={isCompactMode ? undefined : "h-10 md:h-10"} />
+          <DialogHeader className={isCompactMode ? "mt-5" : "mt-3"}>
             <DialogTitle
               className={cn(
                 "font-serif text-background",
-                isLoginMode ? "text-3xl" : "text-2xl",
+                isCompactMode ? "text-3xl" : "text-2xl",
               )}
             >
               {headerTitle}
             </DialogTitle>
             <DialogDescription
-              className={cn("text-background/70", isLoginMode ? undefined : "text-sm")}
+              className={cn("text-background/70", isCompactMode ? undefined : "text-sm")}
             >
               {headerSubtitle}
             </DialogDescription>
           </DialogHeader>
         </div>
 
-        <div className={isLoginMode ? "p-6" : "px-6 py-5 sm:px-8"}>
+        <div className={isCompactMode ? "p-6" : "px-6 py-5 sm:px-8"}>
           {/* ---------- Login: password ---------- */}
           {mode === "login-password" && (
             <form onSubmit={submitPasswordLogin} className="space-y-4 animate-fade-in">
@@ -283,13 +419,22 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
                 <div className="relative">
                   <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    className="pl-10"
-                    type="password"
+                    className="pl-10 pr-10"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     maxLength={PASSWORD_MAX}
                     onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX))}
                     placeholder="••••••••"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -300,7 +445,7 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
               <div className="flex flex-col items-center gap-2 text-sm">
                 <button
                   type="button"
-                  onClick={() => toast.info("Password reset is coming soon. Contact support@buylandsindia.com to reset.")}
+                  onClick={() => { setMode("forgot-request"); setPassword(""); setOtp(""); }}
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Forgot password?
@@ -375,8 +520,8 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
             </form>
           )}
 
-          {/* ---------- OTP verify (used by login-otp and register) ---------- */}
-          {(mode === "login-verify" || mode === "register-verify") && (
+          {/* ---------- OTP verify (login, register, forgot) ---------- */}
+          {(mode === "login-verify" || mode === "register-verify" || mode === "forgot-verify") && (
             <form onSubmit={verifyOtp} className="space-y-5 animate-scale-in">
               <div className="text-center">
                 <KeyRound className="mx-auto h-10 w-10 text-gold animate-float" />
@@ -393,15 +538,129 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
                   </InputOTPGroup>
                 </InputOTP>
               </div>
-              <Button type="submit" variant="luxe" size="lg" className="w-full">
-                {mode === "register-verify" ? "Activate account" : "Verify & continue"}
+              <Button type="submit" variant="luxe" size="lg" className="w-full" disabled={loading}>
+                {mode === "register-verify"
+                  ? "Activate account"
+                  : mode === "forgot-verify"
+                    ? "Verify code"
+                    : "Verify & continue"}
               </Button>
               <button
                 type="button"
-                onClick={() => setMode(mode === "register-verify" ? "register" : "login-otp")}
+                onClick={resendOtp}
+                disabled={resendCooldown > 0 || loading}
+                className="block w-full text-center text-sm text-gold hover:text-gold/80 disabled:text-muted-foreground disabled:cursor-not-allowed"
+              >
+                {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setMode(
+                    mode === "register-verify"
+                      ? "register"
+                      : mode === "forgot-verify"
+                        ? "forgot-request"
+                        : "login-otp",
+                  )
+                }
                 className="block w-full text-center text-xs text-muted-foreground hover:text-gold"
               >
                 ← Use a different email
+              </button>
+            </form>
+          )}
+
+          {/* ---------- Forgot: request code ---------- */}
+          {mode === "forgot-request" && (
+            <form onSubmit={submitForgotRequest} className="space-y-4 animate-fade-in">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-10"
+                    type="email"
+                    value={email}
+                    maxLength={EMAIL_MAX}
+                    onChange={(e) => setEmail(normalizeEmail(e.target.value))}
+                    placeholder="you@example.com"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <Button type="submit" variant="luxe" size="lg" className="w-full" disabled={loading}>
+                Send reset code
+              </Button>
+              <button
+                type="button"
+                onClick={() => setMode("login-password")}
+                className="block w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                ← Back to sign in
+              </button>
+            </form>
+          )}
+
+          {/* ---------- Forgot: set new password ---------- */}
+          {mode === "forgot-reset" && (
+            <form onSubmit={submitForgotReset} className="space-y-4 animate-fade-in">
+              <div className="space-y-2">
+                <Label>New password</Label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-10 pr-10"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    maxLength={PASSWORD_MAX}
+                    onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX))}
+                    placeholder="••••••••"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Confirm new password</Label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-10 pr-10"
+                    type={showConfirm ? "text" : "password"}
+                    value={confirmPassword}
+                    maxLength={PASSWORD_MAX}
+                    onChange={(e) => setConfirmPassword(e.target.value.slice(0, PASSWORD_MAX))}
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm((v) => !v)}
+                    tabIndex={-1}
+                    aria-label={showConfirm ? "Hide password" : "Show password"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <Button type="submit" variant="luxe" size="lg" className="w-full" disabled={loading}>
+                Reset password
+              </Button>
+              <button
+                type="button"
+                onClick={() => setMode("forgot-verify")}
+                className="block w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                ← Back to code entry
               </button>
             </form>
           )}
@@ -443,9 +702,11 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
                 <div className="space-y-2">
                   <Label>Phone (phone or WhatsApp required)</Label>
                   <div className="relative">
-                    <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                      +91
+                    </span>
                     <Input
-                      className="pl-10"
+                      className="pl-12"
                       value={phone}
                       inputMode="numeric"
                       pattern="[0-9]*"
@@ -461,22 +722,24 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
                         }
                         setPhone(digits);
                       }}
-                      placeholder="+91..."
+                      placeholder="98765 43210"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>WhatsApp (optional if phone provided)</Label>
                   <div className="relative">
-                    <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                      +91
+                    </span>
                     <Input
-                      className="pl-10"
+                      className="pl-12"
                       value={whatsapp}
                       inputMode="numeric"
                       pattern="[0-9]*"
                       maxLength={PHONE_MAX}
                       onChange={(e) => setWhatsapp(normalizeDigits(e.target.value))}
-                      placeholder="+91..."
+                      placeholder="98765 43210"
                     />
                   </div>
                 </div>
@@ -488,13 +751,22 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      className="pl-10"
-                      type="password"
+                      className="pl-10 pr-10"
+                      type={showPassword ? "text" : "password"}
                       value={password}
                       maxLength={PASSWORD_MAX}
                       onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX))}
                       placeholder="••••••••"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      tabIndex={-1}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -502,13 +774,22 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      className="pl-10"
-                      type="password"
+                      className="pl-10 pr-10"
+                      type={showConfirm ? "text" : "password"}
                       value={confirmPassword}
                       maxLength={PASSWORD_MAX}
                       onChange={(e) => setConfirmPassword(e.target.value.slice(0, PASSWORD_MAX))}
                       placeholder="••••••••"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirm((v) => !v)}
+                      tabIndex={-1}
+                      aria-label={showConfirm ? "Hide password" : "Show password"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
               </div>
