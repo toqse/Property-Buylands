@@ -55,6 +55,7 @@ def compress_ad_video(upload) -> ContentFile:
         raise ValidationError("No video file provided.")
 
     ffmpeg = _ensure_ffmpeg_available()
+    logger.info("Video compression started")
 
     input_suffix = os.path.splitext(getattr(upload, "name", ""))[1] or ".mp4"
     with tempfile.NamedTemporaryFile(delete=False, suffix=input_suffix) as in_tmp:
@@ -88,15 +89,19 @@ def compress_ad_video(upload) -> ContentFile:
     ]
 
     try:
+        logger.info("Running ffmpeg...")
         completed = subprocess.run(cmd, capture_output=True, check=False, text=True)
+        logger.info("ffmpeg finished")
         if completed.returncode != 0:
             err = (completed.stderr or completed.stdout or "").strip()
             raise ValidationError(f"Video compression failed: {err[:500] or 'ffmpeg error'}")
+        logger.info("Reading compressed file")
         with open(output_path, "rb") as fh:
             data = fh.read()
         original_name = getattr(upload, "name", "video") or "video"
         stem = original_name.rsplit(".", 1)[0][:80] if "." in original_name else original_name[:80]
         filename = f"{stem}_{uuid.uuid4().hex[:8]}.mp4"
+        logger.info("Compression complete")
         return ContentFile(data, name=filename)
     finally:
         for path in (input_path, output_path):
@@ -172,6 +177,7 @@ def generate_video_thumbnail(upload, *, capture_at: str = "00:00:01") -> Content
     """
     if not upload:
         return None
+    logger.info("Thumbnail generation started")
     ffmpeg = resolve_ffmpeg_binary()
     if not ffmpeg:
         logger.warning("ffmpeg not installed; skipping video thumbnail generation.")
@@ -185,7 +191,9 @@ def generate_video_thumbnail(upload, *, capture_at: str = "00:00:01") -> Content
         output_path = out_tmp.name
 
     try:
+        logger.info("Running thumbnail ffmpeg...")
         ok = _run_ffmpeg_thumbnail(ffmpeg, input_path, output_path, capture_at)
+        logger.info("Thumbnail generated")
         if not ok and capture_at != "00:00:00":
             ok = _run_ffmpeg_thumbnail(ffmpeg, input_path, output_path, "00:00:00")
         if not ok:
