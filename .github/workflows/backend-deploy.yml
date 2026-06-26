@@ -46,10 +46,11 @@ jobs:
             echo "Checking Django..."
             python manage.py check
 
-            echo "Restarting Gunicorn..."
-            sudo systemctl restart gunicorn
+            echo "Reloading systemd..."
+            sudo systemctl daemon-reload
 
-            echo "Restarting Nginx..."
+            echo "Restarting services..."
+            sudo systemctl restart buylands
             sudo systemctl restart nginx
 
-            echo "Backend deployment completed."
+            echo "Deployment completed successfully."
