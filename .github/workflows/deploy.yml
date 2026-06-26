@@ -1,13 +1,22 @@
-name: Deploy Frontend
+name: Frontend Deploy
 
 on:
   push:
     branches:
-      - main
+      - master
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy.yml'
+
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
 
     steps:
       - name: Checkout
@@ -21,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Next.js
+      - name: Build
         run: npm run build
 
       - name: Configure AWS
@@ -34,9 +43,3 @@ jobs:
       - name: Upload to S3
         run: |
           aws s3 sync out/ s3://buylands-frontend --delete
-
-      - name: Invalidate CloudFront
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id YOUR_DISTRIBUTION_ID \
-            --paths "/*"
