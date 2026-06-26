@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework',
     'rest_framework.authtoken',
+    'storages',  # ADD THIS
 
     # Local Apps
     'property_listing',
@@ -205,9 +206,22 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 # --------------------------------------------------
 # MEDIA FILES
 # --------------------------------------------------
-MEDIA_URL = "/media/"
+# --------------------------------------------------
+# MEDIA FILES (Amazon S3)
+# --------------------------------------------------
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME")
 
-MEDIA_ROOT = BASE_DIR / "media"
+AWS_DEFAULT_ACL = None
+AWS_QUERYSTRING_AUTH = False
+AWS_S3_FILE_OVERWRITE = False
+
+MEDIA_URL = (
+    f"https://{AWS_STORAGE_BUCKET_NAME}.s3."
+    f"{AWS_S3_REGION_NAME}.amazonaws.com/"
+)
 
 # --------------------------------------------------
 # STORAGES (WhiteNoise serves collected static in production)
@@ -215,7 +229,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 # --------------------------------------------------
 STORAGES = {
     "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "BACKEND": "storages.backends.s3.S3Storage",
     },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
