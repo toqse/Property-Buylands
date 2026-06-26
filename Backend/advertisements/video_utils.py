@@ -5,15 +5,48 @@ import subprocess
 import tempfile
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 
 logger = logging.getLogger(__name__)
 
+_FFMPEG_CANDIDATES = (
+    "/usr/bin/ffmpeg",
+    "/usr/local/bin/ffmpeg",
+    "/bin/ffmpeg",
+)
 
-def _ensure_ffmpeg_available():
-    if shutil.which("ffmpeg"):
-        return
+
+def resolve_ffmpeg_binary() -> str | None:
+    """
+    Locate the ffmpeg executable.
+
+    Gunicorn/systemd often run with a minimal PATH that omits /usr/bin, so
+    shutil.which alone can fail even when ffmpeg is installed.
+    """
+    configured = getattr(settings, "FFMPEG_BINARY", None) or os.getenv("FFMPEG_BINARY")
+    if configured:
+        path = configured.strip()
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+        logger.warning("Configured FFMPEG_BINARY is not executable: %s", path)
+
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+
+    for candidate in _FFMPEG_CANDIDATES:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+
+    return None
+
+
+def _ensure_ffmpeg_available() -> str:
+    binary = resolve_ffmpeg_binary()
+    if binary:
+        return binary
     raise ValidationError("ffmpeg not installed on server.")
 
 
@@ -21,7 +54,7 @@ def compress_ad_video(upload) -> ContentFile:
     if not upload:
         raise ValidationError("No video file provided.")
 
-    _ensure_ffmpeg_available()
+    ffmpeg = _ensure_ffmpeg_available()
 
     input_suffix = os.path.splitext(getattr(upload, "name", ""))[1] or ".mp4"
     with tempfile.NamedTemporaryFile(delete=False, suffix=input_suffix) as in_tmp:
@@ -33,7 +66,7 @@ def compress_ad_video(upload) -> ContentFile:
         output_path = out_tmp.name
 
     cmd = [
-        "ffmpeg",
+        ffmpeg,
         "-y",
         "-i",
         input_path,
@@ -99,9 +132,11 @@ def _materialize_video_to_temp(upload) -> tuple[str, bool]:
     return input_path, True
 
 
-def _run_ffmpeg_thumbnail(input_path: str, output_path: str, capture_at: str) -> bool:
+def _run_ffmpeg_thumbnail(
+    ffmpeg: str, input_path: str, output_path: str, capture_at: str
+) -> bool:
     cmd = [
-        "ffmpeg",
+        ffmpeg,
         "-y",
         "-ss",
         capture_at,
@@ -133,7 +168,8 @@ def generate_video_thumbnail(upload, *, capture_at: str = "00:00:01") -> Content
     """
     if not upload:
         return None
-    if not shutil.which("ffmpeg"):
+    ffmpeg = resolve_ffmpeg_binary()
+    if not ffmpeg:
         logger.warning("ffmpeg not installed; skipping video thumbnail generation.")
         return None
 
@@ -145,9 +181,9 @@ def generate_video_thumbnail(upload, *, capture_at: str = "00:00:01") -> Content
         output_path = out_tmp.name
 
     try:
-        ok = _run_ffmpeg_thumbnail(input_path, output_path, capture_at)
+        ok = _run_ffmpeg_thumbnail(ffmpeg, input_path, output_path, capture_at)
         if not ok and capture_at != "00:00:00":
-            ok = _run_ffmpeg_thumbnail(input_path, output_path, "00:00:00")
+            ok = _run_ffmpeg_thumbnail(ffmpeg, input_path, output_path, "00:00:00")
         if not ok:
             return None
         with open(output_path, "rb") as fh:

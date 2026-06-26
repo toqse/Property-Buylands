@@ -291,6 +291,9 @@ else:
 OTP_ADMIN_NOTIFY_EMAIL = os.getenv("OTP_ADMIN_NOTIFY_EMAIL", "")
 OTP_NOTIFY_ON_FAILURE = os.getenv("OTP_NOTIFY_ON_FAILURE", "True").lower() in ("true", "1", "yes")
 
+# Optional override when the app process PATH omits /usr/bin (common under systemd/gunicorn).
+FFMPEG_BINARY = os.getenv("FFMPEG_BINARY", "/usr/bin/ffmpeg").strip() or None
+
 # --------------------------------------------------
 # DEVELOPMENT LOGGING
 # --------------------------------------------------
