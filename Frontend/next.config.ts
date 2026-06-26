@@ -1,10 +1,8 @@
 import type { NextConfig } from "next";
 
-const isStaticExport = process.env.NEXT_OUTPUT === "export";
-
 const nextConfig: NextConfig = {
+  output: "export",
   devIndicators: false,
-  ...(isStaticExport ? { output: "export" } : {}),
   trailingSlash: true,
   images: {
     disableStaticImages: true,

@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:cpanel": "cross-env NEXT_OUTPUT=export next build",
-    "build:export": "cross-env NEXT_OUTPUT=export next build",
+    "build:cpanel": "next build",
+    "build:export": "next build",
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
