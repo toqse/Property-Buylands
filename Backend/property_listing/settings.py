@@ -23,7 +23,10 @@ SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key")
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = [
+    "13.201.233.41",
+    "api.buylandsindia.com",
+]
 
 # --------------------------------------------------
 # CORS
