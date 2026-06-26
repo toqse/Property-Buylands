@@ -5,7 +5,7 @@ on:
     branches:
       - master
     paths:
-      - 'frontend/**'
+      - 'Frontend/**'
       - '.github/workflows/deploy.yml'
 
   workflow_dispatch:
