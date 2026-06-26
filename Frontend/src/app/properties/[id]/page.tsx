@@ -8,13 +8,18 @@ import type { ApiProperty, FeedItem } from "@/lib/api/types";
 // links keep working even for listings created after the last build.
 export const PROPERTY_DETAIL_SHELL_ID = "__detail__";
 
-function extractIdentifier(item: FeedItem | ApiProperty): string | null {
+function extractIdentifiers(item: FeedItem | ApiProperty): string[] {
+  const out: string[] = [];
   if ("type" in item) {
-    if (item.type !== "property") return null;
+    if (item.type !== "property") return out;
     const data = item.data;
-    return data.slug || (data.id != null ? String(data.id) : null);
+    if (data.slug) out.push(data.slug);
+    if (data.id != null) out.push(String(data.id));
+    return out;
   }
-  return item.slug || (item.id != null ? String(item.id) : null);
+  if (item.slug) out.push(item.slug);
+  if (item.id != null) out.push(String(item.id));
+  return out;
 }
 
 export async function generateStaticParams() {
@@ -34,8 +39,9 @@ export async function generateStaticParams() {
         moderation_status: "approved",
       });
       for (const item of res.results) {
-        const id = extractIdentifier(item);
-        if (id) ids.add(id);
+        for (const id of extractIdentifiers(item)) {
+          ids.add(id);
+        }
       }
       if (!res.next) break;
       page += 1;
