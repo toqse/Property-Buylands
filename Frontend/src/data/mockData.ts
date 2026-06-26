@@ -48,6 +48,10 @@ export interface Property {
   googleEmbedHtml?: string;
   builtYear?: string;
   furnishing?: string;
+  projectStatus?: string;
+  floors?: string;
+  sighting?: string;
+  areaCent?: string;
   parkingSpaces?: string;
   nearbyPlaces?: { name: string; distanceKm: string }[];
   /** API FK ids for forms */

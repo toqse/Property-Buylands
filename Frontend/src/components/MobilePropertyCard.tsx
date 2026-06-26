@@ -6,12 +6,6 @@ import { PropertyMediaThumb } from "@/components/PropertyMediaThumb";
 
 const priceFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
-function typeBadgeLabel(type: Property["type"] | string): string {
-  if (type === "For Sale") return "Buy";
-  if (type === "For Rent") return "Rent";
-  return type;
-}
-
 export function MobilePropertyCard({
   property,
   index = 0,
@@ -40,8 +34,8 @@ export function MobilePropertyCard({
             videoThumbnail={property.videoThumbnail}
             alt={property.title}
           />
-          <span className="absolute top-2 left-2 z-10 rounded-md bg-[#16a34a] px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
-            {typeBadgeLabel(property.type)}
+          <span className="absolute top-2 left-2 z-10 rounded-md bg-[#16a34a] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+            {property.type}
           </span>
           <span className="absolute bottom-2 right-2 max-w-[calc(100%-1rem)] truncate rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-foreground shadow-sm">
             ₹{priceFmt.format(property.price)}

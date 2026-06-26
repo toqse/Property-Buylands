@@ -53,7 +53,7 @@ export const AdvertisementCard = ({ ad, index = 0, className }: AdvertisementCar
   }, [muted, showVideo]);
 
   const outerClass = cn(
-    "group relative block h-full min-h-[340px]",
+    "group relative col-span-full block h-[200px] sm:h-[220px]",
     "overflow-hidden rounded-2xl bg-black text-white",
     "shadow-[0_8px_28px_-16px_rgba(15,23,42,0.18)] ring-1 ring-gold/40",
     "transition-shadow hover:shadow-[0_18px_44px_-20px_rgba(15,23,42,0.28)]",
@@ -122,7 +122,7 @@ export const AdvertisementCard = ({ ad, index = 0, className }: AdvertisementCar
           Learn more
           <ArrowUpRight className="h-3.5 w-3.5" />
         </span>
-        <h3 className="w-full min-w-0 break-words font-serif text-lg font-semibold leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] line-clamp-2">
+        <h3 className="w-full min-w-0 break-words font-serif text-base font-semibold leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] line-clamp-1 sm:text-lg sm:line-clamp-2">
           {ad.title}
         </h3>
       </div>

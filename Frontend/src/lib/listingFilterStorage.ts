@@ -7,7 +7,32 @@ export type SectionLocationPrefs = {
   location: string;
   searchRadius: string;
   autoCurrentLocationDismissed: boolean;
+  /** Coordinates for the chosen place (e.g. OpenStreetMap selection). */
+  latitude?: number;
+  longitude?: number;
 };
+
+function parseLocationPrefs(raw: string | null): SectionLocationPrefs | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as SectionLocationPrefs;
+    if (typeof parsed.location !== "string" || typeof parsed.searchRadius !== "string") {
+      return null;
+    }
+    const latitude = Number(parsed.latitude);
+    const longitude = Number(parsed.longitude);
+    const hasCoords = Number.isFinite(latitude) && Number.isFinite(longitude);
+    return {
+      location: parsed.location,
+      searchRadius: parsed.searchRadius,
+      autoCurrentLocationDismissed: Boolean(parsed.autoCurrentLocationDismissed),
+      latitude: hasCoords ? latitude : undefined,
+      longitude: hasCoords ? longitude : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const STORAGE_PREFIX = "buylands_section_location_";
 
@@ -34,21 +59,7 @@ export function defaultSectionLocationPrefs(radiusKm: number): SectionLocationPr
 
 export function readSectionLocationPrefs(section: ListingSection): SectionLocationPrefs | null {
   if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(`${STORAGE_PREFIX}${section}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SectionLocationPrefs;
-    if (typeof parsed.location !== "string" || typeof parsed.searchRadius !== "string") {
-      return null;
-    }
-    return {
-      location: parsed.location,
-      searchRadius: parsed.searchRadius,
-      autoCurrentLocationDismissed: Boolean(parsed.autoCurrentLocationDismissed),
-    };
-  } catch {
-    return null;
-  }
+  return parseLocationPrefs(sessionStorage.getItem(`${STORAGE_PREFIX}${section}`));
 }
 
 export function writeSectionLocationPrefs(section: ListingSection, prefs: SectionLocationPrefs): void {
@@ -80,21 +91,7 @@ export function isCurrentLocationSelection(location: string): boolean {
  */
 export function readGlobalLocationPrefs(): SectionLocationPrefs | null {
   if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(GLOBAL_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SectionLocationPrefs;
-    if (typeof parsed.location !== "string" || typeof parsed.searchRadius !== "string") {
-      return null;
-    }
-    return {
-      location: parsed.location,
-      searchRadius: parsed.searchRadius,
-      autoCurrentLocationDismissed: Boolean(parsed.autoCurrentLocationDismissed),
-    };
-  } catch {
-    return null;
-  }
+  return parseLocationPrefs(localStorage.getItem(GLOBAL_STORAGE_KEY));
 }
 
 export function writeGlobalLocationPrefs(prefs: SectionLocationPrefs): void {
@@ -125,4 +122,44 @@ export function clearAllSectionLocationPrefs(): void {
   } catch {
     /* ignore */
   }
+}
+
+/** Wipe all persisted listing location filters and cached GPS coords on refresh. */
+export function clearAllListingFilterStorage(): void {
+  if (typeof window === "undefined") return;
+  clearGlobalLocationPrefs();
+  clearAllSectionLocationPrefs();
+  try {
+    localStorage.removeItem("buylands_user_location");
+  } catch {
+    /* ignore */
+  }
+}
+
+export const LISTING_FILTER_QUERY_PARAMS = [
+  "q",
+  "category",
+  "type",
+  "minPrice",
+  "maxPrice",
+  "bedrooms",
+  "bathrooms",
+  "features",
+  "lat",
+  "lng",
+  "radius",
+  "location",
+] as const;
+
+const LISTING_FILTER_ROUTES = ["/", "/buy", "/rent", "/properties"];
+
+export function isListingFilterRoute(pathname: string): boolean {
+  return LISTING_FILTER_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+}
+
+export function hasListingFilterQueryParams(search: string): boolean {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  return LISTING_FILTER_QUERY_PARAMS.some((key) => params.has(key));
 }

@@ -1,9 +1,10 @@
 from django.contrib.auth.models import User
+from decimal import Decimal
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from properties.models import City, District, Property, PropertyType, State
+from properties.models import City, District, Feature, Property, PropertyType, State
 
 
 class PropertyAreaUnitValidationTests(APITestCase):
@@ -49,9 +50,12 @@ class PropertyAreaUnitValidationTests(APITestCase):
         return {
             "bedrooms": 2,
             "bathrooms": 1,
-            "built_year": 2020,
+            "built_year": "2020",
             "furnishing": "furnished",
         }
+
+    def _assert_empty_built_year(self, value):
+        self.assertIn(value, ("", None))
 
     def test_create_cent_without_built_fields_succeeds(self):
         response = self.client.post(
@@ -63,20 +67,21 @@ class PropertyAreaUnitValidationTests(APITestCase):
         self.assertEqual(response.data["area_unit"], "cent")
         self.assertIsNone(response.data["bedrooms"])
         self.assertIsNone(response.data["bathrooms"])
-        self.assertIsNone(response.data["built_year"])
+        self._assert_empty_built_year(response.data["built_year"])
         self.assertIsNone(response.data["furnishing"])
 
-    def test_create_sqft_without_built_fields_fails(self):
+    def test_create_sqft_without_built_fields_succeeds(self):
         response = self.client.post(
             self.url,
             self._base_payload(area_unit="sqft", title="Sqft Home"),
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        # built_year is optional on every area_unit, so it must not be flagged here.
-        for field in ("bedrooms", "bathrooms", "furnishing"):
-            self.assertIn(field, response.data)
-        self.assertNotIn("built_year", response.data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["area_unit"], "sqft")
+        self.assertIsNone(response.data["bedrooms"])
+        self.assertIsNone(response.data["bathrooms"])
+        self._assert_empty_built_year(response.data["built_year"])
+        self.assertIsNone(response.data["furnishing"])
 
     def test_create_sqft_without_built_year_succeeds(self):
         payload = self._base_payload(
@@ -88,16 +93,17 @@ class PropertyAreaUnitValidationTests(APITestCase):
         )
         response = self.client.post(self.url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIsNone(response.data["built_year"])
+        self._assert_empty_built_year(response.data["built_year"])
 
-    def test_create_default_sqft_without_built_fields_fails(self):
+    def test_create_default_sqft_without_built_fields_succeeds(self):
         response = self.client.post(
             self.url,
             self._base_payload(title="Default Sqft Home"),
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("bedrooms", response.data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["area_unit"], "sqft")
+        self.assertIsNone(response.data["bedrooms"])
 
     def test_create_sqft_with_built_fields_succeeds(self):
         response = self.client.post(
@@ -111,8 +117,9 @@ class PropertyAreaUnitValidationTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["bedrooms"], 2)
+        self.assertEqual(response.data["built_year"], "2020")
 
-    def test_patch_cent_to_sqft_without_built_fields_fails(self):
+    def test_patch_cent_to_sqft_without_built_fields_succeeds(self):
         create_resp = self.client.post(
             self.url,
             self._base_payload(area_unit="cent", title="Cent To Sqft"),
@@ -126,10 +133,12 @@ class PropertyAreaUnitValidationTests(APITestCase):
             {"area_unit": "sqft"},
             format="json",
         )
-        self.assertEqual(patch_resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("bedrooms", patch_resp.data)
-        # built_year is optional and must never be flagged as required.
-        self.assertNotIn("built_year", patch_resp.data)
+        self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(patch_resp.data["area_unit"], "sqft")
+        self.assertIsNone(patch_resp.data["bedrooms"])
+        self.assertIsNone(patch_resp.data["bathrooms"])
+        self._assert_empty_built_year(patch_resp.data["built_year"])
+        self.assertIsNone(patch_resp.data["furnishing"])
 
     def test_patch_sqft_to_cent_clears_built_fields(self):
         create_resp = self.client.post(
@@ -153,9 +162,156 @@ class PropertyAreaUnitValidationTests(APITestCase):
         self.assertEqual(patch_resp.data["area_unit"], "cent")
         self.assertIsNone(patch_resp.data["bedrooms"])
         self.assertIsNone(patch_resp.data["bathrooms"])
-        self.assertIsNone(patch_resp.data["built_year"])
+        self.assertEqual(patch_resp.data["built_year"], "2020")
         self.assertIsNone(patch_resp.data["furnishing"])
 
         prop = Property.objects.get(pk=prop_id)
         self.assertIsNone(prop.bedrooms)
         self.assertIsNone(prop.bathrooms)
+        self.assertEqual(prop.built_year, "2020")
+
+    def test_patch_explicit_zero_clears_bedrooms(self):
+        create_resp = self.client.post(
+            self.url,
+            self._base_payload(
+                area_unit="sqft",
+                title="Clear Bedrooms On Patch",
+                **self._built_fields(),
+            ),
+            format="json",
+        )
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        prop_id = create_resp.data["id"]
+
+        patch_resp = self.client.patch(
+            f"{self.url}{prop_id}/",
+            {"bedrooms": "0"},
+            format="multipart",
+        )
+        self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
+        self.assertIsNone(patch_resp.data["bedrooms"])
+        self.assertEqual(patch_resp.data["bathrooms"], 1)
+
+        prop = Property.objects.get(pk=prop_id)
+        self.assertIsNone(prop.bedrooms)
+        self.assertEqual(prop.bathrooms, 1)
+
+    def test_create_without_description_succeeds(self):
+        payload = self._base_payload(title="No Description Listing")
+        payload.pop("description", None)
+        response = self.client.post(self.url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["description"], "")
+
+    def test_patch_empty_description_and_built_year(self):
+        create_resp = self.client.post(
+            self.url,
+            self._base_payload(
+                area_unit="sqft",
+                title="Clear Description And Year",
+                description="Has text",
+                **self._built_fields(),
+            ),
+            format="json",
+        )
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        prop_id = create_resp.data["id"]
+
+        patch_resp = self.client.patch(
+            f"{self.url}{prop_id}/",
+            {"description": "", "built_year": ""},
+            format="multipart",
+        )
+        self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(patch_resp.data["description"], "")
+        self.assertEqual(patch_resp.data["built_year"], "")
+
+        prop = Property.objects.get(pk=prop_id)
+        self.assertEqual(prop.description, "")
+        self.assertEqual(prop.built_year, "")
+
+    def test_patch_clear_all_features(self):
+        pool = Feature.objects.create(name="Pool")
+        gym = Feature.objects.create(name="Gym")
+        create_resp = self.client.post(
+            self.url,
+            self._base_payload(
+                area_unit="sqft",
+                title="Features Listing",
+                features=[pool.pk, gym.pk],
+            ),
+            format="json",
+        )
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        prop_id = create_resp.data["id"]
+        self.assertEqual(len(create_resp.data.get("feature_details", [])), 2)
+
+        patch_resp = self.client.patch(
+            f"{self.url}{prop_id}/",
+            {"features": "[]"},
+            format="multipart",
+        )
+        self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(patch_resp.data.get("feature_details", []), [])
+
+        prop = Property.objects.get(pk=prop_id)
+        self.assertEqual(list(prop.features.values_list("pk", flat=True)), [])
+
+    def test_create_with_decimal_area_sqft(self):
+        response = self.client.post(
+            self.url,
+            self._base_payload(area="1250.50", title="Decimal Sqft"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(str(response.data["area"]), "1250.50000000")
+
+        prop = Property.objects.get(pk=response.data["id"])
+        self.assertEqual(prop.area, Decimal("1250.50"))
+
+    def test_create_with_decimal_area_cent_unit(self):
+        response = self.client.post(
+            self.url,
+            self._base_payload(area="5.75", area_unit="cent", title="Decimal Cent"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(str(response.data["area"]), "5.75000000")
+        self.assertEqual(response.data["area_unit"], "cent")
+
+    def test_create_with_decimal_area_and_area_cent(self):
+        both_type = PropertyType.objects.create(
+            name="Plot Both Units",
+            has_area_both=True,
+        )
+        response = self.client.post(
+            self.url,
+            self._base_payload(
+                area="3200.25",
+                area_cent="5.75",
+                area_unit="sqft",
+                property_type=both_type.pk,
+                title="Decimal Both",
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(str(response.data["area"]), "3200.25000000")
+        self.assertEqual(str(response.data["area_cent"]), "5.75000000")
+
+    def test_patch_decimal_area(self):
+        create_resp = self.client.post(
+            self.url,
+            self._base_payload(area=100, title="Patch Decimal Area"),
+            format="json",
+        )
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        prop_id = create_resp.data["id"]
+
+        patch_resp = self.client.patch(
+            f"{self.url}{prop_id}/",
+            {"area": "1250.50"},
+            format="json",
+        )
+        self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(str(patch_resp.data["area"]), "1250.50000000")

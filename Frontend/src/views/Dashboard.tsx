@@ -16,9 +16,13 @@ import {
   buildPropertyFormData,
   resolveFeatureIds,
   validatePropertyImages,
+  validatePropertyMedia,
+  findPropertyTypeFlags,
 } from "@/lib/api/propertyForm";
 import { getApiErrorField, getErrorMessage } from "@/lib/api/errors";
+import { formatPropertyAreaDisplay } from "@/lib/api/mappers/property";
 import { mapApiUserToSession } from "@/lib/api/mappers/user";
+import { BRAND_LOGO_URL } from "@/lib/site";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +38,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -54,11 +59,9 @@ import {
   Trash2,
   Building2,
   Eye,
+  EyeOff,
   ChevronLeft,
   ChevronRight,
-  Bed,
-  Bath,
-  Maximize,
   MapPin,
   Lightbulb,
   MailCheck,
@@ -135,6 +138,15 @@ const Dashboard = () => {
     "properties",
   );
 
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+
   useEffect(() => {
     // Wait for the session to rehydrate from localStorage before redirecting,
     // otherwise a refresh kicks the user out to the home page.
@@ -204,7 +216,7 @@ const Dashboard = () => {
       .sort((a, b) => a - b);
   })();
 
-  const fallbackImage = properties[0]?.image ?? "/placeholder-property.jpg";
+  const fallbackImage = properties[0]?.image ?? BRAND_LOGO_URL;
 
   const resetAddPropertyForm = () => {
     setDraft(emptyDraft);
@@ -239,6 +251,14 @@ const Dashboard = () => {
       toast.error(imageError);
       return;
     }
+    const mediaError = validatePropertyMedia({
+      newImages: imageFiles.length,
+      hasVideo: !!videoFile || !!draft.youtubeLink.trim(),
+    });
+    if (mediaError) {
+      toast.error(mediaError);
+      return;
+    }
     try {
       const typeId = propertyTypesData?.results?.find(
         (t) => t.name.toLowerCase() === draft.propertyCategory.toLowerCase(),
@@ -251,6 +271,10 @@ const Dashboard = () => {
         propertyTypeId: typeId,
         featureIds: resolveFeatureIds(draft),
         includeContact: false,
+        typeFlags: findPropertyTypeFlags(
+          propertyTypesData?.results,
+          draft.propertyCategory,
+        ),
       });
       await propertyMutations.create.mutateAsync(fd);
       toast.success("Property created and submitted for approval");
@@ -328,6 +352,18 @@ const Dashboard = () => {
       toast.error(imageError);
       return;
     }
+    const mediaError = validatePropertyMedia({
+      newImages: editImageFiles.length,
+      existingImages: editExistingImages.length,
+      hasVideo:
+        !!editVideoFile ||
+        !!editExistingVideo ||
+        !!editDraft.youtubeLink.trim(),
+    });
+    if (mediaError) {
+      toast.error(mediaError);
+      return;
+    }
     try {
       const typeId = propertyTypesData?.results?.find(
         (t) =>
@@ -341,6 +377,11 @@ const Dashboard = () => {
           propertyTypeId: typeId ?? editTarget.propertyTypeId,
           featureIds: resolveFeatureIds(editDraft),
           includeContact: false,
+          typeFlags: findPropertyTypeFlags(
+            propertyTypesData?.results,
+            editDraft.propertyCategory,
+          ),
+          mode: "update",
         },
       );
       await propertyMutations.update.mutateAsync({
@@ -387,6 +428,48 @@ const Dashboard = () => {
       toast.success("Profile updated");
     } catch (err) {
       toast.error(getErrorMessage(err));
+    }
+  };
+
+  const resetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const submitPasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentPassword.trim()) {
+      toast.error("Enter your current password");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const updated = await accountsApi.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+        new_password2: confirmPassword,
+      });
+      const token = getToken();
+      if (token) loginWithToken(token, mapApiUserToSession(updated));
+      toast.success("Password updated successfully");
+      setPasswordDialogOpen(false);
+      resetPasswordForm();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -516,19 +599,19 @@ const Dashboard = () => {
                 </div>
               )}
 
-              {/* MOBILE: stacked card list */}
-              <div className="md:hidden space-y-3">
+              {/* Property cards — 1 col mobile, 2 tablet, 3 desktop */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
                 {allProperties.length === 0 && !hasSearch && (
-                  <div className="bg-card border border-border rounded-2xl p-8 text-center text-sm text-muted-foreground shadow-card">
-                    You don&apos;t have any properties yet. Tap{" "}
-                    <span className="text-gold font-medium">Add property</span>{" "}
+                  <div className="col-span-full rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground shadow-card">
+                    You don&apos;t have any properties yet. Click{" "}
+                    <span className="font-medium text-gold">Add property</span>{" "}
                     to list your first one.
                   </div>
                 )}
                 {hasSearch &&
                   !isSearching &&
                   filteredProperties.length === 0 && (
-                    <div className="bg-card border border-border rounded-2xl p-8 text-center text-sm text-muted-foreground shadow-card">
+                    <div className="col-span-full rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground shadow-card">
                       No properties match{" "}
                       <span className="font-medium text-foreground">
                         &quot;{debouncedSearch}&quot;
@@ -539,71 +622,66 @@ const Dashboard = () => {
                 {pagedProperties.map((p, i) => (
                   <article
                     key={p.id}
-                    className="bg-card border border-border rounded-2xl overflow-hidden shadow-card animate-fade-in"
+                    className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-shadow hover:shadow-lg animate-fade-in"
                     style={{ animationDelay: `${i * 60}ms` }}
                   >
-                    <div className="flex gap-3 p-3">
+                    <div className="relative aspect-[16/10] overflow-hidden">
                       <img
                         src={p.image}
                         alt=""
-                        className="h-20 w-24 shrink-0 rounded-xl object-cover ring-1 ring-border"
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                       />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate font-medium text-foreground">
-                              {p.title}
-                            </div>
-                            <div className="mt-0.5 truncate text-xs text-muted-foreground inline-flex items-center gap-1 max-w-full">
-                              <MapPin className="h-3 w-3 text-gold shrink-0" />
-                              <span className="truncate">
-                                {p.location}
-                                {p.city ? `, ${p.city}` : ""}
-                              </span>
-                            </div>
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
+                      <span className="absolute bottom-3 left-3 inline-flex items-center rounded-md bg-black/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+                        {formatPropertyAreaDisplay(p)}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-1 flex-col p-4 sm:p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="min-w-0 flex-1 font-semibold leading-snug text-foreground line-clamp-2">
+                          {p.title}
+                        </h3>
+                        <span
+                          className={cn(
+                            "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                            p.status === "Approved"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : p.status === "Pending"
+                                ? "bg-gold/15 text-[hsl(35_60%_28%)]"
+                                : "bg-destructive/15 text-destructive",
+                          )}
+                        >
+                          {p.status === "Approved" ? (
+                            <CheckCircle2 className="h-3 w-3" />
+                          ) : null}
+                          {p.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex items-start gap-1.5 text-sm text-muted-foreground">
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
+                        <span className="line-clamp-2 leading-snug">
+                          {p.location}
+                          {p.city ? `, ${p.city}` : ""}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="inline-flex items-center rounded-full bg-[#eef4fc] px-2.5 py-1 text-[11px] font-medium text-[#1c5fa8]">
+                          {p.type}
+                        </span>
+                        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/75">
+                          {p.category}
+                        </span>
+                      </div>
+
+                      {(p.features?.length ?? 0) > 0 && (
+                        <div className="mt-3">
+                          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            Features
                           </div>
-                          <span
-                            className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium ${
-                              p.status === "Approved"
-                                ? "bg-[hsl(28_18%_10%)] text-background"
-                                : p.status === "Pending"
-                                  ? "bg-gold/15 text-[hsl(35_60%_28%)]"
-                                  : "bg-destructive/15 text-destructive"
-                            }`}
-                          >
-                            {p.status}
-                          </span>
-                        </div>
-
-                        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                          <span>{p.category}</span>
-                          <span className="text-foreground/30">·</span>
-                          <span>{p.type}</span>
-                        </div>
-
-                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/75">
-                          <span className="inline-flex items-center gap-1">
-                            <Bed className="h-3.5 w-3.5 text-gold" />{" "}
-                            {p.bedrooms}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Bath className="h-3.5 w-3.5 text-gold" />{" "}
-                            {p.bathrooms}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Maximize className="h-3.5 w-3.5 text-gold" />{" "}
-                            {p.area.toLocaleString("en-US")} ft²
-                          </span>
-                        </div>
-
-                        {p.description ? (
-                          <p className="mt-2 text-xs text-foreground/70 leading-snug line-clamp-2">
-                            {p.description}
-                          </p>
-                        ) : null}
-
-                        {(p.features?.length ?? 0) > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1.5">
                             {p.features.slice(0, 3).map((f) => (
                               <span
                                 key={f}
@@ -621,274 +699,58 @@ const Dashboard = () => {
                               </span>
                             )}
                           </div>
-                        )}
+                        </div>
+                      )}
 
-                        <div className="mt-2 text-base font-semibold text-foreground">
-                          ₹{p.price.toLocaleString("en-US")}
+                      <div className="mt-auto flex flex-wrap items-end justify-between gap-3 pt-4">
+                        <div>
+                          <div className="font-serif text-xl font-semibold text-foreground">
+                            ₹{p.price.toLocaleString("en-US")}
+                          </div>
                           {p.priceUnit ? (
-                            <span className="text-xs font-normal text-muted-foreground ml-1">
+                            <div className="text-[11px] text-muted-foreground">
                               {p.priceUnit}
-                            </span>
+                            </div>
                           ) : null}
                         </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5 rounded-lg border-border text-foreground hover:border-[#1c5fa8]/30 hover:bg-[#eef4fc] hover:text-[#1c5fa8]"
+                            onClick={() =>
+                              navigate(`/properties/${p.slug || p.id}`)
+                            }
+                          >
+                            <Eye className="h-3.5 w-3.5" /> View
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5 rounded-lg border-border hover:border-gold/40 hover:bg-gold/10 hover:text-gold"
+                            onClick={() => openEdit(p)}
+                            aria-label={`Edit ${p.title}`}
+                          >
+                            <Edit className="h-3.5 w-3.5" /> Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5 rounded-lg border-border text-destructive hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setDeleteTarget(p)}
+                            aria-label={`Delete ${p.title}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-end gap-1 border-t border-border/60 px-2 py-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-gold hover:text-gold hover:bg-gold/10 gap-1.5"
-                        onClick={() => navigate(`/properties/${p.id}`)}
-                      >
-                        <Eye className="h-3.5 w-3.5" /> View
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="gap-1.5 hover:text-gold hover:bg-gold/10"
-                        onClick={() => openEdit(p)}
-                        aria-label={`Edit ${p.title}`}
-                      >
-                        <Edit className="h-3.5 w-3.5" /> Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => setDeleteTarget(p)}
-                        aria-label={`Delete ${p.title}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
                     </div>
                   </article>
                 ))}
               </div>
 
-              {/* DESKTOP / TABLET: table */}
-              <div className="hidden md:block bg-card border border-border rounded-2xl overflow-hidden shadow-card w-full">
-                <div className="w-full overflow-x-auto">
-                  <table className="w-full text-[15px] min-w-[1600px]">
-                    <thead className="bg-muted/70 text-[12px] uppercase tracking-[0.18em] text-muted-foreground">
-                      <tr>
-                        <th className="text-left px-4 py-4 font-semibold">
-                          Property
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Category
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Type
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Description
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Features
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Beds
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Baths
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Area
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Price
-                        </th>
-                        <th className="text-left px-3 py-4 font-semibold">
-                          Status
-                        </th>
-                        <th className="text-right px-4 py-4 font-semibold">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allProperties.length === 0 && !hasSearch && (
-                        <tr>
-                          <td
-                            colSpan={11}
-                            className="p-12 text-center text-muted-foreground"
-                          >
-                            You don&apos;t have any properties yet. Click{" "}
-                            <span className="text-gold font-medium">
-                              Add property
-                            </span>{" "}
-                            to list your first one.
-                          </td>
-                        </tr>
-                      )}
-                      {hasSearch &&
-                        !isSearching &&
-                        filteredProperties.length === 0 && (
-                          <tr>
-                            <td
-                              colSpan={11}
-                              className="p-12 text-center text-muted-foreground"
-                            >
-                              No properties match{" "}
-                              <span className="font-medium text-foreground">
-                                &quot;{debouncedSearch}&quot;
-                              </span>
-                              .
-                            </td>
-                          </tr>
-                        )}
-                      {pagedProperties.map((p, i) => (
-                        <tr
-                          key={p.id}
-                          className="border-t border-border/70 hover:bg-muted/40 transition-colors animate-fade-in [&>td]:align-top"
-                          style={{ animationDelay: `${i * 60}ms` }}
-                        >
-                          <td className="px-4 py-4">
-                            <div className="flex items-start gap-3 min-w-[280px]">
-                              <img
-                                src={p.image}
-                                alt=""
-                                className="h-16 w-24 object-cover rounded-lg ring-1 ring-border flex-shrink-0"
-                              />
-                              <div className="min-w-0 max-w-[260px]">
-                                <div className="font-semibold text-[15px] text-foreground truncate">
-                                  {p.title}
-                                </div>
-                                <div className="text-[13px] text-muted-foreground mt-1 truncate inline-flex items-center gap-1">
-                                  <MapPin className="h-3.5 w-3.5 text-gold shrink-0" />
-                                  <span className="truncate">
-                                    {p.location}
-                                    {p.city ? `, ${p.city}` : ""}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-3 py-4 text-[14px] text-foreground/85 whitespace-nowrap">
-                            {p.category}
-                          </td>
-                          <td className="px-3 py-4 text-[14px] text-foreground/85 whitespace-nowrap">
-                            {p.type}
-                          </td>
-                          <td className="px-3 py-4 align-top">
-                            <p
-                              className="text-[13px] text-foreground/80 leading-relaxed max-w-[340px] line-clamp-2"
-                              title={p.description}
-                            >
-                              {p.description || (
-                                <span className="text-muted-foreground/70 italic">
-                                  No description
-                                </span>
-                              )}
-                            </p>
-                          </td>
-                          <td className="px-3 py-4 align-top">
-                            <div className="flex flex-wrap gap-1.5 max-w-[260px]">
-                              {(p.features?.length ?? 0) === 0 ? (
-                                <span className="text-[13px] text-muted-foreground/70 italic">
-                                  —
-                                </span>
-                              ) : (
-                                <>
-                                  {p.features.slice(0, 2).map((f) => (
-                                    <span
-                                      key={f}
-                                      className="inline-flex items-center rounded-full border border-gold/30 bg-gold/10 px-2.5 py-1 text-[12px] font-medium text-[hsl(35_60%_28%)]"
-                                    >
-                                      {f}
-                                    </span>
-                                  ))}
-                                  {p.features.length > 2 && (
-                                    <span
-                                      className="inline-flex items-center rounded-full border border-border bg-muted/60 px-2.5 py-1 text-[12px] font-medium text-foreground/70"
-                                      title={p.features.slice(2).join(", ")}
-                                    >
-                                      +{p.features.length - 2}
-                                    </span>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-4 text-[14px] text-foreground/85 whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1.5">
-                              <Bed className="h-4 w-4 text-gold" /> {p.bedrooms}
-                            </span>
-                          </td>
-                          <td className="px-3 py-4 text-[14px] text-foreground/85 whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1.5">
-                              <Bath className="h-4 w-4 text-gold" />{" "}
-                              {p.bathrooms}
-                            </span>
-                          </td>
-                          <td className="px-3 py-4 text-[14px] text-foreground/85 whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1.5">
-                              <Maximize className="h-4 w-4 text-gold" />{" "}
-                              {p.area.toLocaleString("en-US")} ft²
-                            </span>
-                          </td>
-                          <td className="px-3 py-4 text-[15px] text-foreground whitespace-nowrap font-semibold">
-                            ₹{p.price.toLocaleString("en-US")}
-                            {p.priceUnit ? (
-                              <span className="text-[12px] font-normal text-muted-foreground ml-1">
-                                {p.priceUnit}
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className="px-3 py-4">
-                            <span
-                              className={`inline-flex items-center rounded-full px-3 py-1 text-[12px] font-medium ${
-                                p.status === "Approved"
-                                  ? "bg-[hsl(28_18%_10%)] text-background"
-                                  : p.status === "Pending"
-                                    ? "bg-gold/15 text-[hsl(35_60%_28%)]"
-                                    : "bg-destructive/15 text-destructive"
-                              }`}
-                            >
-                              {p.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-[14px] text-gold hover:text-gold hover:bg-gold/10 gap-1.5"
-                                onClick={() => navigate(`/properties/${p.id}`)}
-                                title="View property"
-                              >
-                                <Eye className="h-4 w-4" /> View
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-9 w-9 p-0 hover:text-gold hover:bg-gold/10"
-                                onClick={() => openEdit(p)}
-                                title="Edit property"
-                                aria-label={`Edit ${p.title}`}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-9 w-9 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => setDeleteTarget(p)}
-                                title="Delete property"
-                                aria-label={`Delete ${p.title}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Pagination — shared across mobile cards & desktop table */}
+              {/* Pagination */}
               {filteredProperties.length > 0 && (
                 <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
                   {/* Left — results-per-page selector */}
@@ -1082,18 +944,13 @@ const Dashboard = () => {
                         />
                       </div>
 
-                      <div className="flex items-center justify-between rounded-lg border border-dashed border-border px-4 py-3 text-sm">
-                        <span className="font-medium text-foreground">
-                          Change password
-                        </span>
+                      <div className="rounded-lg border border-dashed border-border px-4 py-3">
                         <button
                           type="button"
-                          onClick={() =>
-                            toast.info("Password reset link sent to your email")
-                          }
-                          className="text-[#1c5fa8] font-medium hover:underline"
+                          onClick={() => setPasswordDialogOpen(true)}
+                          className="text-sm font-medium text-[#1c5fa8] hover:underline"
                         >
-                          Update password
+                          Change Password
                         </button>
                       </div>
 
@@ -1248,6 +1105,139 @@ const Dashboard = () => {
 
       <Footer />
 
+      <Dialog
+        open={passwordDialogOpen}
+        onOpenChange={(open) => {
+          setPasswordDialogOpen(open);
+          if (!open) resetPasswordForm();
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-xl">
+              Change Password
+            </DialogTitle>
+            <DialogDescription>
+              Enter your current password, then choose a strong new password.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={submitPasswordChange} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Current password</Label>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="current-password"
+                  className="pl-10 pr-10"
+                  type={showCurrentPassword ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword((v) => !v)}
+                  tabIndex={-1}
+                  aria-label={
+                    showCurrentPassword ? "Hide password" : "Show password"
+                  }
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showCurrentPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New password</Label>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="new-password"
+                  className="pl-10 pr-10"
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((v) => !v)}
+                  tabIndex={-1}
+                  aria-label={
+                    showNewPassword ? "Hide password" : "Show password"
+                  }
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showNewPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm new password</Label>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="confirm-password"
+                  className="pl-10 pr-10"
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  tabIndex={-1}
+                  aria-label={
+                    showConfirmPassword ? "Hide password" : "Show password"
+                  }
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:justify-end pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={changingPassword}
+                onClick={() => {
+                  setPasswordDialogOpen(false);
+                  resetPasswordForm();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={changingPassword}
+                className="rounded-lg bg-[#1c5fa8] text-white hover:bg-[#0e305d]"
+              >
+                {changingPassword ? "Changing…" : "Change Password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Add property — single scrollable form */}
       <Dialog
         open={addOpen}
@@ -1274,7 +1264,6 @@ const Dashboard = () => {
               imageInputRef={imageInputRef}
               videoInputRef={videoInputRef}
               hideContact
-              hideOwnership
             />
           </div>
 
@@ -1334,7 +1323,6 @@ const Dashboard = () => {
               onDeleteExistingVideo={handleDeleteExistingVideo}
               deletingVideo={deletingVideo}
               hideContact
-              hideOwnership
             />
           </div>
           <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

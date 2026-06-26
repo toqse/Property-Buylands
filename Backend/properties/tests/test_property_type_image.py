@@ -50,6 +50,9 @@ class PropertyTypeImageTests(APITestCase):
         self.assertEqual(response.data["name"], "Apartment")
         self.assertIsNotNone(response.data["image"])
         self.assertIn("property_types/icons/", response.data["image"])
+        ptype = PropertyType.objects.get(pk=response.data["id"])
+        self.assertTrue(ptype.image.name.lower().endswith(".webp"))
+        self.assertLessEqual(ptype.image.size, 80 * 1024)
 
     def test_patch_without_image_when_missing_fails(self):
         ptype = PropertyType.objects.create(name="Legacy Type")

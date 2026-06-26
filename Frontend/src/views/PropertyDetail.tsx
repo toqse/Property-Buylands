@@ -7,7 +7,6 @@ import { Footer } from "@/components/Footer";
 import { useProperty } from "@/hooks/api/useProperties";
 import { useCatalogMutations, useCompanyContact } from "@/hooks/api/useCatalog";
 import { getErrorMessage } from "@/lib/api/errors";
-import { openCompanyEmail } from "@/lib/mailto";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { registerExclusiveVideo } from "@/lib/videoCoordinator";
+import { formatPropertyAreaDisplay } from "@/lib/api/mappers/property";
 
 const WhatsAppIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
@@ -39,8 +39,8 @@ const PropertyDetail = () => {
     slugFromPath && slugFromPath !== "properties" ? slugFromPath : routeId;
   const { data: property, isLoading, isError } = useProperty(id);
   const { submitContact } = useCatalogMutations();
-  // All property enquiries route through the company/admin contact, not the
-  // individual property owner. Admin then connects the buyer with the owner.
+  // Company/admin contact is used only as a fallback when a listing has no
+  // seller contact details; the actual property owner's info is preferred.
   const { data: company } = useCompanyContact();
   const [active, setActive] = useState(0); // index into combined media (video first, then photos)
   const [enquiry, setEnquiry] = useState(false);
@@ -51,9 +51,8 @@ const PropertyDetail = () => {
   // play button until the viewer chooses to start it.
   const [videoStarted, setVideoStarted] = useState(false);
   const fmt = new Intl.NumberFormat("en-US");
-  const builtYear = Number.parseInt(property?.createdAt?.slice(0, 4) || "", 10) || "N/A";
-  const furnishing = property?.features.some((f) => /smart home|concierge|maid room/i.test(f)) ? "Furnished" : "Unfurnished";
-  const parking = property?.features.some((f) => /parking|garage/i.test(f)) ? "Available" : "N/A";
+  const furnishing = property?.furnishing || "N/A";
+  const parking = property?.parkingSpaces || "N/A";
   const totalPhotos = property?.gallery.length ?? 0;
   const hasVideo = Boolean(property?.videoUrl);
   const totalMedia = totalPhotos + (hasVideo ? 1 : 0);
@@ -130,13 +129,16 @@ const PropertyDetail = () => {
     );
   }
 
-  const contactPhone = (company?.phone || company?.admin_phone || "").trim();
-  const contactWhatsapp = (company?.whatsapp || company?.admin_whatsapp || contactPhone).trim();
+  // Prefer the actual seller's (property owner's) contact details. Fall back to
+  // the company/admin contact only when the listing has none on record.
+  const contactPhone = (property.ownerPhone || company?.phone || company?.admin_phone || "").trim();
+  const contactWhatsapp = (
+    property.contactWhatsApp || property.ownerPhone || company?.whatsapp || company?.admin_whatsapp || contactPhone
+  ).trim();
   const wa = contactWhatsapp
     ? `https://wa.me/${contactWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in "${property.title}" listed on Buylands India.`)}`
     : "";
 
-  const companyEmail = (company?.email || company?.company_email || "").trim();
   const submitEnquiry = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
@@ -147,7 +149,7 @@ const PropertyDetail = () => {
     const message = String(fd.get("message") || "");
     const subject = `Enquiry about "${property.title}"`;
     try {
-      await submitContact.mutateAsync({
+      const result = await submitContact.mutateAsync({
         name,
         email,
         phone_number: phone,
@@ -155,10 +157,24 @@ const PropertyDetail = () => {
         message,
         property: Number(property.id),
       });
-      toast.success("Enquiry sent — our team will connect you shortly");
+      if (result.email_sent) {
+        const sentTo = result.notification_recipients?.[0];
+        toast.success(
+          sentTo
+            ? `Enquiry sent to ${sentTo}`
+            : "Enquiry sent — the property owner has been notified",
+        );
+      } else if (result.notification_recipients?.length) {
+        toast.warning(
+          "Enquiry saved, but email could not be delivered. Please try WhatsApp or phone.",
+        );
+      } else {
+        toast.warning(
+          "Enquiry saved, but no owner email is configured for this listing.",
+        );
+      }
       setEnquiry(false);
       form.reset();
-      openCompanyEmail(companyEmail, subject, { name, email, phone, message });
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -432,16 +448,38 @@ const PropertyDetail = () => {
                         <span className="font-medium text-right break-words min-w-0 pl-3">{property.type === "For Sale" ? "House for sale" : "House for rent"}</span>
                       </div>
                       <div className="flex items-center justify-between py-3 border-b border-border/70">
-                        <span className="text-muted-foreground">Built Year</span>
-                        <span className="font-medium text-right break-words min-w-0 pl-3">{builtYear}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-3 border-b border-border/70">
                         <span className="text-muted-foreground">Furnishing</span>
                         <span className="font-medium text-right break-words min-w-0 pl-3">{furnishing}</span>
                       </div>
+                      {property.ownership ? (
+                        <div className="flex items-center justify-between py-3 border-b border-border/70">
+                          <span className="text-muted-foreground">Ownership</span>
+                          <span className="font-medium text-right break-words min-w-0 pl-3">{property.ownership}</span>
+                        </div>
+                      ) : null}
+                      {property.projectStatus ? (
+                        <div className="flex items-center justify-between py-3 border-b border-border/70">
+                          <span className="text-muted-foreground">Project Status</span>
+                          <span className="font-medium text-right break-words min-w-0 pl-3">{property.projectStatus}</span>
+                        </div>
+                      ) : null}
+                      {property.floors ? (
+                        <div className="flex items-center justify-between py-3 border-b border-border/70">
+                          <span className="text-muted-foreground">Floors</span>
+                          <span className="font-medium text-right break-words min-w-0 pl-3">{property.floors}</span>
+                        </div>
+                      ) : null}
+                      {property.sighting ? (
+                        <div className="flex items-center justify-between py-3 border-b border-border/70">
+                          <span className="text-muted-foreground">Sighting</span>
+                          <span className="font-medium text-right break-words min-w-0 pl-3">{property.sighting}</span>
+                        </div>
+                      ) : null}
                       <div className="flex items-center justify-between pt-3">
                         <span className="text-muted-foreground">Area</span>
-                        <span className="font-medium text-right break-words min-w-0 pl-3">{fmt.format(property.area)} sq.ft</span>
+                        <span className="font-medium text-right break-words min-w-0 pl-3">
+                          {formatPropertyAreaDisplay(property)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -483,14 +521,29 @@ const PropertyDetail = () => {
 
               <TabsContent value="location" className="mt-4 rounded-2xl border border-border bg-background p-4 md:p-5">
                 <h2 className="font-sans text-base md:text-lg font-medium text-foreground mb-4 tracking-tight">Location</h2>
-                <div className="rounded-2xl overflow-hidden border border-border h-[250px] bg-muted relative">
-                  <div className="absolute inset-0 grid place-items-center text-muted-foreground">
-                    <div className="text-center">
-                      <MapPin className="h-10 w-10 mx-auto text-gold mb-2 animate-float" />
-                      <div className="font-medium break-words">{property.location}, {property.city}</div>
-                      <div className="text-xs mt-1">{property.lat.toFixed(4)}, {property.lng.toFixed(4)}</div>
+                <div className="rounded-2xl overflow-hidden border border-border h-[250px] md:h-[320px] bg-muted relative">
+                  {property.lat !== 0 && property.lng !== 0 ? (
+                    <iframe
+                      title={`Map of ${property.title}`}
+                      src={`https://www.google.com/maps?q=${property.lat},${property.lng}&hl=en&z=15&output=embed`}
+                      className="absolute inset-0 h-full w-full border-0"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      allowFullScreen
+                    />
+                  ) : (
+                    <div className="absolute inset-0 grid place-items-center text-muted-foreground">
+                      <div className="text-center px-4">
+                        <MapPin className="h-10 w-10 mx-auto text-gold mb-2 animate-float" />
+                        <div className="font-medium break-words">{property.location}, {property.city}</div>
+                        <div className="text-xs mt-1">Map unavailable — no coordinates on file</div>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                </div>
+                <div className="mt-3 text-sm text-muted-foreground flex items-start gap-1.5">
+                  <MapPin className="h-4 w-4 text-gold shrink-0 mt-0.5" />
+                  <span className="min-w-0 break-words">{property.location}, {property.city}</span>
                 </div>
               </TabsContent>
 

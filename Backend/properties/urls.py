@@ -6,6 +6,7 @@ from .views import (
     StateViewSet, DistrictViewSet, CityViewSet,
     HeroBannerViewSet, OfferBannerViewSet, ContactViewSet,
     SiteSettingsViewSet, CompanySettingsViewSet, CompanyContactViewSet,
+    MobileAppSettingsViewSet, MobileAppVersionViewSet,
     TestimonialViewSet,
 )
 
@@ -31,5 +32,7 @@ urlpatterns = [
     path('site-contact/', SiteSettingsViewSet.as_view({'get': 'site_contact'}), name='site-contact'),
     path('company-settings/', CompanySettingsViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update'}), name='company-settings'),
     path('company-contact/', CompanyContactViewSet.as_view({'get': 'company_contact'}), name='company-contact'),
+    path('app-settings/', MobileAppSettingsViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update'}), name='app-settings'),
+    path('app-version/', MobileAppVersionViewSet.as_view({'get': 'mobile_app_version'}), name='app-version'),
 ]
 

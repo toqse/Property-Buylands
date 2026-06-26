@@ -121,11 +121,11 @@ export function Footer() {
       </div>
       <div className="border-t border-background/10">
         <div className="container py-3 md:py-6 flex flex-col md:flex-row gap-2 justify-between text-xs text-background/60">
-          <span>© {year} Buy Lands India. All rights reserved. Designed by Toqse.</span>
+          <span>© {year} Buy Lands India. All rights reserved.</span>
           <span className="flex items-center gap-3">
-            <a href="#" className="hover:text-gold transition-colors">Privacy Policy</a>
+            <Link to="/privacy-policy" className="hover:text-gold transition-colors">Privacy Policy</Link>
             <span>|</span>
-            <a href="#" className="hover:text-gold transition-colors">Terms &amp; Conditions</a>
+            <Link to="/terms-conditions" className="hover:text-gold transition-colors">Terms &amp; Conditions</Link>
           </span>
         </div>
       </div>

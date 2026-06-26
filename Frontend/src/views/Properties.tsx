@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback, type ReactNode } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "@/lib/router";
 import { usePathname } from "next/navigation";
@@ -15,13 +15,14 @@ import { usePropertyList, usePropertyLocations } from "@/hooks/api/useProperties
 import { usePropertyTypes, useFeatures } from "@/hooks/api/useCatalog";
 import { useUserLocation } from "@/context/UserLocationContext";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { isBrowserReload } from "@/lib/browserReload";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
-import { Search, SlidersHorizontal, MapPin, ChevronLeft, ChevronRight, ChevronDown, Check, LocateFixed, X } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, ChevronDown, Check, LocateFixed, X } from "lucide-react";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { cn } from "@/lib/utils";
 import {
@@ -29,16 +30,33 @@ import {
   RADIUS_OPTIONS,
   buildLocationCoordsMap,
   getLocationSearchValue,
-  uniqueLocationLabels,
 } from "@/lib/locationFilter";
 import {
-  clearSectionLocationPrefs,
+  LocationSearchSelect,
+  locationStringToSelection,
+  type LocationSelection,
+} from "@/components/LocationSearchSelect";
+import { setNavbarToAllLocations, setNavbarToCurrentLocation } from "@/lib/navbarLocation";
+import {
   getListingSection,
   readGlobalLocationPrefs,
   readSectionLocationPrefs,
   writeSectionLocationPrefs,
   type SectionLocationPrefs,
 } from "@/lib/listingFilterStorage";
+import {
+  clearSearchFiltersForFlags,
+  DEFAULT_PROPERTY_TYPE_FLAGS,
+  DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS,
+  findPropertyTypeFlags,
+  propertyTypeSearchListParams,
+  readTypeSearchFiltersFromUrlParams,
+  type PropertyTypeSearchFilterState,
+} from "@/lib/api/propertyForm";
+import {
+  PropertyTypeRoomSearchFields,
+  PropertyTypeSearchFields,
+} from "@/components/PropertyTypeSearchFields";
 
 const PRICE_RANGES: { value: string; label: string; min: number; max: number }[] = [
   { value: "any", label: "Any price", min: 0, max: 5000000 },
@@ -51,15 +69,11 @@ const PRICE_RANGES: { value: string; label: string; min: number; max: number }[]
 
 type FeatureOption = { id: number; name: string };
 
-const ROOM_OPTIONS = ["Any", "1", "2", "3", "4", "5"];
-
 const PROPERTY_FOR_PILLS: { value: string; label: string }[] = [
   { value: "Any", label: "All" },
-  { value: "For Sale", label: "Buy" },
+  { value: "Sale", label: "Sale" },
   { value: "For Rent", label: "Rent" },
 ];
-
-const roomLabel = (b: string) => (b === "Any" ? "Any" : b === "5" ? "5+" : b);
 
 const mobileFilterLabelClass =
   "mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[hsl(30_10%_38%)]";
@@ -167,17 +181,26 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   const {
     coords,
     radiusKm: defaultRadiusKm,
-    requestLocation,
+    status: locationStatus,
+    requestLocationForFilter,
+    firstVisitAutoFilterPending,
+    consumeFirstVisitAutoFilter,
   } = useUserLocation();
   const listingSection = getListingSection(pathname);
+  const skipUrlHydrationRef = useRef(isBrowserReload());
+
+  const readInitialParam = (key: string, fallback: string) => {
+    if (skipUrlHydrationRef.current) return fallback;
+    return searchParams.get(key) || fallback;
+  };
 
   // Lazy-initialize state directly from the URL so first render already shows
   // the correct filtered list (no flash of "All" before useEffect catches up).
-  const initialQ = searchParams.get("q") || "";
-  const initialCategory = searchParams.get("category") || "All";
-  const initialType = searchParams.get("type") || defaultType || "Any";
-  const initialMinPriceRaw = searchParams.get("minPrice");
-  const initialMaxPriceRaw = searchParams.get("maxPrice");
+  const initialQ = readInitialParam("q", "");
+  const initialCategory = readInitialParam("category", "All");
+  const initialType = readInitialParam("type", defaultType || "Any");
+  const initialMinPriceRaw = skipUrlHydrationRef.current ? null : searchParams.get("minPrice");
+  const initialMaxPriceRaw = skipUrlHydrationRef.current ? null : searchParams.get("maxPrice");
   const initialMin = initialMinPriceRaw ? Math.max(0, Number(initialMinPriceRaw) || 0) : 0;
   const initialMax = initialMaxPriceRaw ? Math.max(initialMin, Number(initialMaxPriceRaw) || 5000000) : 5000000;
 
@@ -191,11 +214,16 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   const [pendingCurrentLocation, setPendingCurrentLocation] = useState(false);
   const [category, setCategory] = useState<string>(initialCategory);
   const [type, setType] = useState<string>(initialType);
-  const [bedrooms, setBedrooms] = useState<string>(searchParams.get("bedrooms") || "Any");
-  const [bathrooms, setBathrooms] = useState<string>(searchParams.get("bathrooms") || "Any");
+  const [typeFilters, setTypeFilters] = useState<PropertyTypeSearchFilterState>(() => ({
+    ...DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS,
+    ...(skipUrlHydrationRef.current
+      ? {}
+      : readTypeSearchFiltersFromUrlParams(searchParams)),
+  }));
   const [price, setPrice] = useState<number[]>([initialMin, initialMax]);
   const [priceRange, setPriceRange] = useState<string>("any");
   const [features, setFeatures] = useState<number[]>(() => {
+    if (skipUrlHydrationRef.current) return [];
     const f = searchParams.get("features");
     return f
       ? f
@@ -235,25 +263,19 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     if (category !== "All" && !names.includes(category)) options.push(category);
     return options;
   }, [propertyTypesData, category]);
-  const locationOptions = useMemo(
-    () => uniqueLocationLabels(locationData?.results ?? []),
-    [locationData?.results],
-  );
-  const visibleLocationOptions = useMemo(() => {
-    if (
-      location === "Any" ||
-      location === CURRENT_LOCATION_VALUE ||
-      locationOptions.includes(location)
-    ) {
-      return locationOptions;
-    }
-    return [location, ...locationOptions];
-  }, [location, locationOptions]);
-
   const locationCoordsByLabel = useMemo(
     () => buildLocationCoordsMap(locationData?.results ?? []),
     [locationData?.results],
   );
+  const [selectedPlaceGeo, setSelectedPlaceGeo] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const selectedPlaceGeoRef = useRef<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const locationSearchCandidateRef = useRef<LocationSelection | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -271,6 +293,10 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   const searchKey = searchParams.toString();
   useEffect(() => {
     window.scrollTo(0, 0);
+    if (skipUrlHydrationRef.current) {
+      skipUrlHydrationRef.current = false;
+      return;
+    }
     const qParam = searchParams.get("q") || "";
     const categoryParam = searchParams.get("category") || "All";
     const typeParam = searchParams.get("type") || defaultType || "Any";
@@ -280,8 +306,10 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setSearchInput(qParam);
     setCategory(categoryParam);
     setType(typeParam);
-    setBedrooms(searchParams.get("bedrooms") || "Any");
-    setBathrooms(searchParams.get("bathrooms") || "Any");
+    setTypeFilters({
+      ...DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS,
+      ...readTypeSearchFiltersFromUrlParams(searchParams),
+    });
     const featuresRaw = searchParams.get("features");
     setFeatures(
       featuresRaw
@@ -306,7 +334,27 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       // persist a section override; the global pref already carries it.
       if (r) setSearchRadius(r);
       setLocation(locParam);
-      setAutoCurrentLocationDismissed(true);
+      if (locParam === CURRENT_LOCATION_VALUE) {
+        setAutoCurrentLocationDismissed(false);
+        if (!latParam || !lngParam) {
+          setPendingCurrentLocation(true);
+        }
+      } else {
+        setAutoCurrentLocationDismissed(true);
+      }
+      if (latParam && lngParam) {
+        const lat = Number(latParam);
+        const lng = Number(lngParam);
+        const geo =
+          Number.isFinite(lat) && Number.isFinite(lng)
+            ? { latitude: lat, longitude: lng }
+            : null;
+        selectedPlaceGeoRef.current = geo;
+        setSelectedPlaceGeo(geo);
+      } else {
+        selectedPlaceGeoRef.current = null;
+        setSelectedPlaceGeo(null);
+      }
     } else if (latParam && lngParam) {
       if (r) setSearchRadius(r);
       setLocation(CURRENT_LOCATION_VALUE);
@@ -323,38 +371,22 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         setLocation(resolved.location);
         setSearchRadius(resolved.searchRadius);
         setAutoCurrentLocationDismissed(resolved.autoCurrentLocationDismissed);
+        const geo =
+          resolved.latitude != null && resolved.longitude != null
+            ? { latitude: resolved.latitude, longitude: resolved.longitude }
+            : null;
+        selectedPlaceGeoRef.current = geo;
+        setSelectedPlaceGeo(geo);
       } else {
         setLocation("Any");
         setSearchRadius(String(defaultRadiusKm));
-        setAutoCurrentLocationDismissed(false);
+        setAutoCurrentLocationDismissed(true);
+        selectedPlaceGeoRef.current = null;
+        setSelectedPlaceGeo(null);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchKey, defaultType, listingSection]);
-
-  useEffect(() => {
-    const latParam = searchParams.get("lat");
-    const lngParam = searchParams.get("lng");
-    const locParam = searchParams.get("location");
-    if (locParam || (latParam && lngParam)) return;
-    if (coords && !autoCurrentLocationDismissed && location === "Any") {
-      setLocation(CURRENT_LOCATION_VALUE);
-      setSearchRadius((prev) => (prev === "10" ? String(defaultRadiusKm) : prev));
-    }
-  }, [coords, autoCurrentLocationDismissed, searchParams, location, defaultRadiusKm]);
-
-  useEffect(() => {
-    if (pendingCurrentLocation && coords) {
-      setLocation(CURRENT_LOCATION_VALUE);
-      setAutoCurrentLocationDismissed(false);
-      persistSectionLocationPrefs({
-        location: CURRENT_LOCATION_VALUE,
-        searchRadius,
-        autoCurrentLocationDismissed: false,
-      });
-      setPendingCurrentLocation(false);
-    }
-  }, [pendingCurrentLocation, coords, persistSectionLocationPrefs, searchRadius]);
 
   const syncLocationToUrl = useCallback(
     (
@@ -388,53 +420,75 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     [searchParams, searchRadius, pathname, navigate],
   );
 
-  const clearLocationFilter = useCallback(() => {
-    const inherited: SectionLocationPrefs =
-      readGlobalLocationPrefs() ??
-      (coords
-        ? {
-            location: CURRENT_LOCATION_VALUE,
-            searchRadius: String(defaultRadiusKm),
-            autoCurrentLocationDismissed: false,
-          }
-        : {
-            location: "Any",
-            searchRadius: String(defaultRadiusKm),
-            autoCurrentLocationDismissed: false,
-          });
-
-    clearSectionLocationPrefs(listingSection);
-    setLocation(inherited.location);
-    setSearchRadius(inherited.searchRadius);
-    setAutoCurrentLocationDismissed(inherited.autoCurrentLocationDismissed);
-    setPage(1);
-
-    if (inherited.location === CURRENT_LOCATION_VALUE) {
-      if (coords) {
-        syncLocationToUrl(
-          { latitude: coords.latitude, longitude: coords.longitude },
-          { radius: inherited.searchRadius },
-        );
-      } else {
-        syncLocationToUrl(null);
-        requestLocation();
+  useEffect(() => {
+    if (pendingCurrentLocation && coords) {
+      setLocation(CURRENT_LOCATION_VALUE);
+      setAutoCurrentLocationDismissed(false);
+      persistSectionLocationPrefs({
+        location: CURRENT_LOCATION_VALUE,
+        searchRadius,
+        autoCurrentLocationDismissed: false,
+      });
+      setPendingCurrentLocation(false);
+      if (!searchParams.get("lat") || !searchParams.get("lng")) {
+        syncLocationToUrl({ latitude: coords.latitude, longitude: coords.longitude });
       }
-    } else if (inherited.location !== "Any") {
-      const place = locationCoordsByLabel.get(inherited.location);
-      if (place) {
-        syncLocationToUrl(place, {
-          locationLabel: inherited.location,
-          radius: inherited.searchRadius,
-        });
-      } else {
-        syncLocationToUrl(null, {
-          locationQuery: getLocationSearchValue(inherited.location),
-          radius: inherited.searchRadius,
-        });
-      }
-    } else {
-      syncLocationToUrl(null);
     }
+  }, [pendingCurrentLocation, coords, persistSectionLocationPrefs, searchRadius, searchParams, syncLocationToUrl]);
+
+  useEffect(() => {
+    if (location !== CURRENT_LOCATION_VALUE || coords || !pendingCurrentLocation) return;
+    if (locationStatus === "loading") return;
+    void requestLocationForFilter().then((result) => {
+      if (!result) setPendingCurrentLocation(false);
+    });
+  }, [location, coords, pendingCurrentLocation, locationStatus, requestLocationForFilter]);
+
+  useEffect(() => {
+    if (!firstVisitAutoFilterPending || !coords) return;
+    const nextRadius = String(defaultRadiusKm);
+    setLocation(CURRENT_LOCATION_VALUE);
+    setSearchRadius(nextRadius);
+    setAutoCurrentLocationDismissed(false);
+    persistSectionLocationPrefs({
+      location: CURRENT_LOCATION_VALUE,
+      searchRadius: nextRadius,
+      autoCurrentLocationDismissed: false,
+    });
+    setNavbarToCurrentLocation(defaultRadiusKm, {
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+    });
+    syncLocationToUrl(
+      { latitude: coords.latitude, longitude: coords.longitude },
+      { radius: nextRadius },
+    );
+    consumeFirstVisitAutoFilter();
+  }, [
+    firstVisitAutoFilterPending,
+    coords,
+    defaultRadiusKm,
+    persistSectionLocationPrefs,
+    syncLocationToUrl,
+    consumeFirstVisitAutoFilter,
+  ]);
+
+  const clearLocationFilter = useCallback(() => {
+    setSelectedPlaceGeo(null);
+    selectedPlaceGeoRef.current = null;
+    locationSearchCandidateRef.current = null;
+    const nextRadius = String(defaultRadiusKm);
+    setLocation("Any");
+    setSearchRadius(nextRadius);
+    setAutoCurrentLocationDismissed(true);
+    setPage(1);
+    writeSectionLocationPrefs(listingSection, {
+      location: "Any",
+      searchRadius: nextRadius,
+      autoCurrentLocationDismissed: true,
+    });
+    setNavbarToAllLocations(defaultRadiusKm);
+    syncLocationToUrl(null, { radius: nextRadius });
 
     void queryClient.invalidateQueries({ queryKey: ["properties"] });
   }, [
@@ -442,48 +496,59 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     queryClient,
     listingSection,
     defaultRadiusKm,
-    coords,
-    requestLocation,
-    locationCoordsByLabel,
   ]);
 
-  const handleLocationChange = useCallback(
-    (value: string) => {
-      if (value === CURRENT_LOCATION_VALUE) {
-        if (!coords) {
-          setPendingCurrentLocation(true);
-          requestLocation();
-          return;
-        }
-        setAutoCurrentLocationDismissed(false);
-        setLocation(CURRENT_LOCATION_VALUE);
-        persistSectionLocationPrefs({
-          location: CURRENT_LOCATION_VALUE,
-          searchRadius,
-          autoCurrentLocationDismissed: false,
-        });
-        return;
-      }
-      if (value === "Any") {
+  const handleLocationSelect = useCallback(
+    (selection: LocationSelection | null) => {
+      locationSearchCandidateRef.current = null;
+      if (!selection || selection.source === "all") {
         clearLocationFilter();
         return;
       }
+      if (selection.source === "current") {
+        setPendingCurrentLocation(true);
+        void requestLocationForFilter().then((result) => {
+          if (!result) {
+            setPendingCurrentLocation(false);
+          }
+        });
+        return;
+      }
       setAutoCurrentLocationDismissed(true);
-      setLocation(value);
+      setLocation(selection.label);
+      let geo: { latitude: number; longitude: number } | null = null;
+      if (
+        selection.latitude != null &&
+        selection.longitude != null &&
+        Number.isFinite(selection.latitude) &&
+        Number.isFinite(selection.longitude)
+      ) {
+        geo = { latitude: selection.latitude, longitude: selection.longitude };
+      } else {
+        geo = locationCoordsByLabel.get(selection.label) ?? null;
+      }
+      selectedPlaceGeoRef.current = geo;
+      setSelectedPlaceGeo(geo);
       persistSectionLocationPrefs({
-        location: value,
+        location: selection.label,
         searchRadius,
         autoCurrentLocationDismissed: true,
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
       });
     },
     [
-      coords,
-      requestLocation,
+      requestLocationForFilter,
       clearLocationFilter,
       persistSectionLocationPrefs,
       searchRadius,
+      locationCoordsByLabel,
     ],
   );
+
+  const handleLocationSearchCandidateChange = useCallback((selection: LocationSelection | null) => {
+    locationSearchCandidateRef.current = selection;
+  }, []);
 
   const propertyTypeId = useMemo(() => {
     if (category === "All") return undefined;
@@ -492,6 +557,33 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     );
     return match?.id;
   }, [category, propertyTypesData]);
+
+  const typeFlags = useMemo(
+    () =>
+      category === "All"
+        ? DEFAULT_PROPERTY_TYPE_FLAGS
+        : findPropertyTypeFlags(propertyTypesData?.results, category),
+    [category, propertyTypesData?.results],
+  );
+
+  const handleCategoryChange = useCallback(
+    (value: string) => {
+      setCategory(value);
+      const flags =
+        value === "All"
+          ? DEFAULT_PROPERTY_TYPE_FLAGS
+          : findPropertyTypeFlags(propertyTypesData?.results, value);
+      setTypeFilters((prev) => ({ ...prev, ...clearSearchFiltersForFlags(flags) }));
+    },
+    [propertyTypesData?.results],
+  );
+
+  const patchTypeFilters = useCallback(
+    (patch: Partial<PropertyTypeSearchFilterState>) => {
+      setTypeFilters((prev) => ({ ...prev, ...patch }));
+    },
+    [],
+  );
 
   const geoFromUrl = useMemo(() => {
     const latRaw = searchParams.get("lat");
@@ -520,18 +612,48 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       return { latitude: geoFromUrl.latitude, longitude: geoFromUrl.longitude, radius: radiusKm };
     }
 
+    const selectedGeo = selectedPlaceGeoRef.current ?? selectedPlaceGeo;
+    if (selectedGeo) {
+      return {
+        latitude: selectedGeo.latitude,
+        longitude: selectedGeo.longitude,
+        radius: radiusKm,
+      };
+    }
+
     const place = locationCoordsByLabel.get(location);
     if (place) {
       return { latitude: place.latitude, longitude: place.longitude, radius: radiusKm };
     }
 
     return null;
-  }, [geoFromUrl, coords, location, searchRadius, defaultRadiusKm, locationCoordsByLabel, searchParams]);
+  }, [geoFromUrl, coords, location, searchRadius, defaultRadiusKm, locationCoordsByLabel, searchParams, selectedPlaceGeo]);
 
   const showRadiusFilter = location !== "Any";
   const isCurrentLocationFilter = location === CURRENT_LOCATION_VALUE;
-  const hasPlaceCoordinates = location !== "Any" && !isCurrentLocationFilter && locationCoordsByLabel.has(location);
+  const hasPlaceCoordinates =
+    location !== "Any" &&
+    !isCurrentLocationFilter &&
+    (locationCoordsByLabel.has(location) || selectedPlaceGeo != null);
   const textLocationQuery = getLocationSearchValue(location);
+
+  const locationSelection = useMemo(
+    () =>
+      locationStringToSelection(location, {
+        allValue: "Any",
+        allLabel: "No location filter",
+        currentLocationLabel: "My current location",
+        latitude: selectedPlaceGeo?.latitude ?? geoFromUrl?.latitude,
+        longitude: selectedPlaceGeo?.longitude ?? geoFromUrl?.longitude,
+        source: selectedPlaceGeo || geoFromUrl ? "osm" : undefined,
+      }),
+    [location, selectedPlaceGeo, geoFromUrl],
+  );
+
+  const typeApiParams = useMemo(
+    () => propertyTypeSearchListParams(typeFlags, typeFilters),
+    [typeFlags, typeFilters],
+  );
 
   const listFilters = useMemo(
     () => ({
@@ -543,11 +665,20 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       priceMin: price[0] > 0 ? price[0] : undefined,
       priceMax: price[1] < 5000000 ? price[1] : undefined,
       propertyType: propertyTypeId,
-      // Exact match for 1–4 (min == max); "5" means 5+ so only a minimum is sent.
-      bedroomsMin: bedrooms !== "Any" ? Number(bedrooms) : undefined,
-      bedroomsMax: bedrooms !== "Any" && bedrooms !== "5" ? Number(bedrooms) : undefined,
-      bathroomsMin: bathrooms !== "Any" ? Number(bathrooms) : undefined,
-      bathroomsMax: bathrooms !== "Any" && bathrooms !== "5" ? Number(bathrooms) : undefined,
+      bedroomsMin: typeApiParams.bedrooms_min as number | undefined,
+      bedroomsMax: typeApiParams.bedrooms_max as number | undefined,
+      bathroomsMin: typeApiParams.bathrooms_min as number | undefined,
+      bathroomsMax: typeApiParams.bathrooms_max as number | undefined,
+      areaMin: typeApiParams.area_min as string | number | undefined,
+      areaMax: typeApiParams.area_max as string | number | undefined,
+      areaUnit: typeApiParams.area_unit as string | undefined,
+      areaCentMin: typeApiParams.area_cent_min as string | number | undefined,
+      areaCentMax: typeApiParams.area_cent_max as string | number | undefined,
+      furnishing: typeApiParams.furnishing as string | undefined,
+      parkingSpacesMin: typeApiParams.parking_spaces_min as number | undefined,
+      projectStatus: typeApiParams.project_status as string | undefined,
+      floors: typeApiParams.floors as string | undefined,
+      sighting: typeApiParams.sighting as string | undefined,
       features: features.length ? features : undefined,
       location: activeGeo ? undefined : textLocationQuery,
       latitude: activeGeo?.latitude,
@@ -563,14 +694,14 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
               ? "distance"
               : "-created_at",
     }),
-    [page, pageSize, q, type, defaultType, price, propertyTypeId, bedrooms, bathrooms, features, textLocationQuery, activeGeo, sort],
+    [page, pageSize, q, type, defaultType, price, propertyTypeId, typeApiParams, features, textLocationQuery, activeGeo, sort],
   );
 
   const { data, isLoading, isError } = usePropertyList(listFilters);
 
   useEffect(() => {
     setPage(1);
-  }, [q, location, category, type, bedrooms, bathrooms, price, features, sort, pageSize, searchRadius]);
+  }, [q, location, category, type, typeFilters, price, features, sort, pageSize, searchRadius]);
 
   const toggleFeature = (f: number) => setFeatures((p) => (p.includes(f) ? p.filter((x) => x !== f) : [...p, f]));
   const handlePriceRange = (value: string) => {
@@ -587,8 +718,30 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         searchRadius,
         autoCurrentLocationDismissed: false,
       });
+    } else if (location === "Any" && locationSearchCandidateRef.current) {
+      const candidate = locationSearchCandidateRef.current;
+      const latitude = candidate.latitude;
+      const longitude = candidate.longitude;
+      if (
+        latitude != null &&
+        longitude != null &&
+        Number.isFinite(latitude) &&
+        Number.isFinite(longitude)
+      ) {
+        const place = { latitude, longitude };
+        syncLocationToUrl(place, { locationLabel: candidate.label });
+        persistSectionLocationPrefs({
+          location: candidate.label,
+          searchRadius,
+          autoCurrentLocationDismissed: true,
+          latitude,
+          longitude,
+        });
+      } else {
+        syncLocationToUrl(null);
+      }
     } else if (location !== "Any" && location !== CURRENT_LOCATION_VALUE) {
-      const place = locationCoordsByLabel.get(location);
+      const place = selectedPlaceGeoRef.current ?? selectedPlaceGeo ?? locationCoordsByLabel.get(location);
       if (place) {
         syncLocationToUrl(place, { locationLabel: location });
       } else {
@@ -598,10 +751,16 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         location,
         searchRadius,
         autoCurrentLocationDismissed: true,
+        latitude: place?.latitude,
+        longitude: place?.longitude,
       });
     } else {
       syncLocationToUrl(null);
-      clearSectionLocationPrefs(listingSection);
+      persistSectionLocationPrefs({
+        location: "Any",
+        searchRadius,
+        autoCurrentLocationDismissed: true,
+      });
     }
     setShowFilters(false);
   };
@@ -612,8 +771,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     clearLocationFilter();
     setCategory("All");
     setType("Any");
-    setBedrooms("Any");
-    setBathrooms("Any");
+    setTypeFilters(DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS);
     setPrice([0, 5000000]);
     setPriceRange("any");
     setFeatures([]);
@@ -643,7 +801,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         <RevealOnScroll className="container">
           <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.25em] text-white">Listings</div>
           <h1 className="font-serif text-3xl sm:text-5xl md:text-6xl mt-1.5 sm:mt-3 text-white">Browse properties</h1>
-          <p className="mt-2 sm:mt-3 text-sm sm:text-base text-white/85 max-w-2xl">Filter by location, price, features, and bedrooms. Switch to map view for nearby search.</p>
+          <p className="mt-2 sm:mt-3 text-sm sm:text-base text-white/85 max-w-2xl">Filter by location, price, and features. Switch to map view for nearby search.</p>
         </RevealOnScroll>
       </section>
 
@@ -703,26 +861,29 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   {/* Location */}
                   <div>
                     <Label className={mobileFilterLabelClass}>Location</Label>
-                    <div className="relative">
-                      <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#1c5fa8]" />
-                      <Select value={location} onValueChange={handleLocationChange}>
-                        <SelectTrigger className="h-12 rounded-xl border-border bg-white pl-9 text-left text-[hsl(30_14%_20%)]">
-                          <SelectValue placeholder="Select location" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Any">No location filter</SelectItem>
-                          <SelectItem value={CURRENT_LOCATION_VALUE}>My current location</SelectItem>
-                          {visibleLocationOptions.map((loc) => (
-                            <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <LocationSearchSelect
+                      instanceId="properties-mobile-filter-location"
+                      value={locationSelection}
+                      onChange={handleLocationSelect}
+                      onSearchCandidateChange={handleLocationSearchCandidateChange}
+                      propertyFor={propertyForFilter}
+                      variant="modal"
+                      allValue="Any"
+                      allLabel="No location filter"
+                      currentLocationLabel="My current location"
+                      placeholder="Select location"
+                    />
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => handleLocationChange(CURRENT_LOCATION_VALUE)}
+                    onClick={() =>
+                      handleLocationSelect(
+                        locationStringToSelection(CURRENT_LOCATION_VALUE, {
+                          currentLocationLabel: "My current location",
+                        }),
+                      )
+                    }
                     className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#1c5fa8]/60 bg-white px-4 py-2.5 text-[13px] font-semibold text-[#1c5fa8] transition hover:bg-[#1c5fa8]/5 active:scale-[0.99]"
                   >
                     <LocateFixed className="h-4 w-4" /> Use my current location
@@ -764,7 +925,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   {/* Property Type */}
                   <div>
                     <Label className={mobileFilterLabelClass}>Property Type</Label>
-                    <Select value={category} onValueChange={setCategory}>
+                    <Select value={category} onValueChange={handleCategoryChange}>
                       <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
                         <SelectValue placeholder="All types" />
                       </SelectTrigger>
@@ -776,28 +937,25 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     </Select>
                   </div>
 
-                  {/* Bedrooms */}
-                  <div>
-                    <Label className={mobileFilterLabelClass}>Bedrooms</Label>
-                    <div className="grid grid-cols-6 gap-2">
-                      {ROOM_OPTIONS.map((b) => (
-                        <FilterChip key={b} active={bedrooms === b} onClick={() => setBedrooms(b)} className="px-0">
-                          {roomLabel(b)}
-                        </FilterChip>
-                      ))}
-                    </div>
-                  </div>
+                  <PropertyTypeRoomSearchFields
+                    typeFlags={typeFlags}
+                    filters={typeFilters}
+                    onChange={patchTypeFilters}
+                    labelClassName={mobileFilterLabelClass}
+                    triggerClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
+                    sectionLabelClassName={mobileFilterLabelClass}
+                  />
 
-                  {/* Bathrooms */}
-                  <div>
-                    <Label className={mobileFilterLabelClass}>Bathrooms</Label>
-                    <div className="grid grid-cols-6 gap-2">
-                      {ROOM_OPTIONS.map((b) => (
-                        <FilterChip key={b} active={bathrooms === b} onClick={() => setBathrooms(b)} className="px-0">
-                          {roomLabel(b)}
-                        </FilterChip>
-                      ))}
-                    </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <PropertyTypeSearchFields
+                      typeFlags={typeFlags}
+                      filters={typeFilters}
+                      onChange={patchTypeFilters}
+                      hideRoomFilters
+                      labelClassName={mobileFilterLabelClass}
+                      triggerClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
+                      inputClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
+                    />
                   </div>
 
                   {/* Price Range */}
@@ -841,7 +999,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   Refine your search
                 </DialogTitle>
                 <DialogDescription className="text-[13px] text-muted-foreground md:text-sm">
-                  Choose location, search radius, category, type, bedrooms, bathrooms, price, and features.
+                  Choose location, search radius, category, type, price, and features.
                 </DialogDescription>
               </DialogHeader>
 
@@ -854,21 +1012,18 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     </Label>
                     <div className="flex gap-2">
                       <div className="relative min-w-0 flex-1">
-                        <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#1c5fa8]" />
-                        <Select value={location} onValueChange={handleLocationChange}>
-                          <SelectTrigger className="h-12 rounded-xl border-border bg-white pl-9 text-left text-[hsl(30_14%_20%)]">
-                            <SelectValue placeholder="Select or search a location" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Any">No location filter</SelectItem>
-                            <SelectItem value={CURRENT_LOCATION_VALUE}>
-                              My current location
-                            </SelectItem>
-                            {visibleLocationOptions.map((loc) => (
-                              <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <LocationSearchSelect
+                          instanceId="properties-desktop-filter-location"
+                          value={locationSelection}
+                          onChange={handleLocationSelect}
+                          onSearchCandidateChange={handleLocationSearchCandidateChange}
+                          propertyFor={propertyForFilter}
+                          variant="modal"
+                          allValue="Any"
+                          allLabel="No location filter"
+                          currentLocationLabel="My current location"
+                          placeholder="Select or search a location"
+                        />
                       </div>
                       {location !== "Any" && (
                         <Button
@@ -915,13 +1070,13 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     </div>
                   )}
 
-                  {/* CATEGORY | TYPE | BEDROOMS | BATHROOMS — 4 columns */}
-                  <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4 md:gap-5">
+                  {/* CATEGORY | TYPE */}
+                  <div className="grid gap-4 sm:grid-cols-2 md:gap-5">
                     <div>
                       <Label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]">
                         Category
                       </Label>
-                      <Select value={category} onValueChange={setCategory}>
+                      <Select value={category} onValueChange={handleCategoryChange}>
                         <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"><SelectValue /></SelectTrigger>
                         <SelectContent>{categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                       </Select>
@@ -939,28 +1094,27 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                         </SelectContent>
                       </Select>
                     </div>
-                    <div>
-                      <Label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]">
-                        Bedrooms
-                      </Label>
-                      <Select value={bedrooms} onValueChange={setBedrooms}>
-                        <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {["Any", "1", "2", "3", "4", "5"].map(b => <SelectItem key={b} value={b}>{b === "Any" ? "Any" : b === "5" ? "5+" : b}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]">
-                        Bathrooms
-                      </Label>
-                      <Select value={bathrooms} onValueChange={setBathrooms}>
-                        <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {["Any", "1", "2", "3", "4", "5"].map(b => <SelectItem key={b} value={b}>{b === "Any" ? "Any" : b === "5" ? "5+" : b}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  </div>
+
+                  <PropertyTypeRoomSearchFields
+                    typeFlags={typeFlags}
+                    filters={typeFilters}
+                    onChange={patchTypeFilters}
+                    labelClassName="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]"
+                    triggerClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
+                    sectionLabelClassName="mb-3 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]"
+                  />
+
+                  <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4 md:gap-5">
+                    <PropertyTypeSearchFields
+                      typeFlags={typeFlags}
+                      filters={typeFilters}
+                      onChange={patchTypeFilters}
+                      hideRoomFilters
+                      labelClassName="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]"
+                      triggerClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
+                      inputClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
+                    />
                   </div>
 
                   {/* PRICE RANGE — full width */}

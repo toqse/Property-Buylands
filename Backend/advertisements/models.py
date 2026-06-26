@@ -155,7 +155,7 @@ class Advertisement(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-priority", "-created_at"]
+        ordering = ["priority", "-created_at"]
         indexes = [
             models.Index(fields=["is_active", "start_date", "end_date"]),
             models.Index(fields=["state", "district", "city"]),

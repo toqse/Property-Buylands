@@ -6,14 +6,23 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
+import { LocationPromptDialog } from "@/components/LocationPromptDialog";
+import {
+  geolocationErrorMessage,
+  requestGeolocationForFilter,
+  requestGeolocationForPrompt,
+  type GeolocationErrorCode,
+} from "@/lib/geolocationRequest";
+import { setNavbarToCurrentLocation } from "@/lib/navbarLocation";
 import { useSiteSettings } from "@/hooks/api/useCatalog";
 
-const STORAGE_KEY = "buylands_user_location";
+const PROMPT_SEEN_KEY = "buylands_location_prompt_seen";
 
 export type UserCoords = {
   latitude: number;
@@ -32,7 +41,11 @@ type UserLocationContextValue = {
   coords: UserCoords | null;
   status: LocationStatus;
   radiusKm: number;
+  /** True briefly after first-visit popup Allow succeeds — views may auto-filter once. */
+  firstVisitAutoFilterPending: boolean;
+  consumeFirstVisitAutoFilter: () => void;
   requestLocation: () => void;
+  requestLocationForFilter: () => Promise<UserCoords | null>;
   clearLocation: () => void;
 };
 
@@ -40,104 +53,153 @@ const UserLocationContext = createContext<UserLocationContextValue | null>(
   null,
 );
 
-function readStoredCoords(): UserCoords | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as UserCoords;
-    if (
-      typeof parsed.latitude === "number" &&
-      typeof parsed.longitude === "number" &&
-      Number.isFinite(parsed.latitude) &&
-      Number.isFinite(parsed.longitude)
-    ) {
-      return parsed;
-    }
-  } catch {
-    /* ignore */
-  }
-  return null;
+function hasSeenLocationPrompt(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(PROMPT_SEEN_KEY) === "1";
+}
+
+function markLocationPromptSeen(): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PROMPT_SEEN_KEY, "1");
+}
+
+function toUserCoords(latitude: number, longitude: number): UserCoords {
+  return {
+    latitude,
+    longitude,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export function UserLocationProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "";
   const isAdminRoute = pathname.startsWith("/admin");
-  // Only the admin area needs the (auth-only) site settings; the public site
-  // falls back to the default radius without hitting the endpoint.
   const { data: siteSettings } = useSiteSettings(isAdminRoute);
   const defaultRadius = siteSettings?.filter_radius ?? 25;
 
   const [coords, setCoords] = useState<UserCoords | null>(null);
   const [status, setStatus] = useState<LocationStatus>("idle");
+  const [firstVisitAutoFilterPending, setFirstVisitAutoFilterPending] = useState(false);
+  const firstVisitAllowRef = useRef(false);
 
-  const persistCoords = useCallback((latitude: number, longitude: number) => {
-    const entry: UserCoords = {
-      latitude,
-      longitude,
-      updatedAt: new Date().toISOString(),
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
+  const setCoordsInMemory = useCallback((latitude: number, longitude: number) => {
+    const entry = toUserCoords(latitude, longitude);
     setCoords(entry);
     setStatus("granted");
-    toast.success("Showing properties near you first");
+    return entry;
+  }, []);
+
+  const handleGeolocationFailure = useCallback((code: GeolocationErrorCode) => {
+    setCoords(null);
+    setStatus("denied");
+    toast.error(geolocationErrorMessage(code));
   }, []);
 
   const requestLocation = useCallback(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setStatus("denied");
+    setStatus("loading");
+    requestGeolocationForPrompt()
+      .then(({ latitude, longitude }) => {
+        setCoordsInMemory(latitude, longitude);
+        if (firstVisitAllowRef.current) {
+          firstVisitAllowRef.current = false;
+          setFirstVisitAutoFilterPending(true);
+          setNavbarToCurrentLocation(defaultRadius, { latitude, longitude });
+          toast.success("Showing properties near you first");
+        }
+      })
+      .catch((err: unknown) => {
+        firstVisitAllowRef.current = false;
+        const code = (err instanceof Error ? err.message : "unavailable") as GeolocationErrorCode;
+        handleGeolocationFailure(code);
+      });
+  }, [setCoordsInMemory, handleGeolocationFailure, defaultRadius]);
+
+  const requestLocationForFilter = useCallback(async (): Promise<UserCoords | null> => {
+    setStatus("loading");
+    try {
+      const { latitude, longitude } = await requestGeolocationForFilter();
+      const entry = setCoordsInMemory(latitude, longitude);
+      setNavbarToCurrentLocation(defaultRadius, { latitude, longitude });
+      return entry;
+    } catch (err: unknown) {
+      const code = (err instanceof Error ? err.message : "unavailable") as GeolocationErrorCode;
+      handleGeolocationFailure(code);
+      return null;
+    }
+  }, [setCoordsInMemory, handleGeolocationFailure, defaultRadius]);
+
+  const dismissLocationPrompt = useCallback(() => {
+    markLocationPromptSeen();
+    setStatus("denied");
+  }, []);
+
+  const allowLocationFromPrompt = useCallback(() => {
+    markLocationPromptSeen();
+    firstVisitAllowRef.current = true;
+    requestLocation();
+  }, [requestLocation]);
+
+  const consumeFirstVisitAutoFilter = useCallback(() => {
+    setFirstVisitAutoFilterPending(false);
+  }, []);
+
+  // First visit: custom popup only. Coords stay in memory for the session.
+  useEffect(() => {
+    if (isAdminRoute) {
+      setStatus("idle");
       return;
     }
-    setStatus("loading");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        persistCoords(pos.coords.latitude, pos.coords.longitude);
-      },
-      () => {
-        setCoords(null);
-        setStatus("denied");
-      },
-      // Reuse a recent device fix (up to 30 min old) so the position resolves
-      // quickly instead of waiting for a fresh GPS lock; coarse accuracy is
-      // enough for "near you" sorting and is faster than high accuracy.
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 },
-    );
-  }, [persistCoords]);
-
-  // On launch (public site), rely on the browser's native geolocation prompt
-  // instead of a custom permission dialog. Stored coordinates are reused.
-  useEffect(() => {
-    const stored = readStoredCoords();
-    if (stored) {
-      setCoords(stored);
-      setStatus("granted");
-    } else if (!isAdminRoute) {
-      requestLocation();
+    if (!hasSeenLocationPrompt()) {
+      setStatus("prompting");
     } else {
       setStatus("idle");
     }
-  }, [isAdminRoute, requestLocation]);
+  }, [isAdminRoute]);
 
   const clearLocation = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
     setCoords(null);
-    requestLocation();
-  }, [requestLocation]);
+    setStatus("idle");
+  }, []);
 
   const value = useMemo(
     () => ({
       coords,
       status,
       radiusKm: defaultRadius,
+      firstVisitAutoFilterPending,
+      consumeFirstVisitAutoFilter,
       requestLocation,
+      requestLocationForFilter,
       clearLocation,
     }),
-    [coords, status, defaultRadius, requestLocation, clearLocation],
+    [
+      coords,
+      status,
+      defaultRadius,
+      firstVisitAutoFilterPending,
+      consumeFirstVisitAutoFilter,
+      requestLocation,
+      requestLocationForFilter,
+      clearLocation,
+    ],
   );
+
+  const showLocationPrompt = !isAdminRoute && status === "prompting";
 
   return (
     <UserLocationContext.Provider value={value}>
       {children}
+      <LocationPromptDialog
+        open={showLocationPrompt}
+        onOpenChange={(open) => {
+          if (!open && showLocationPrompt) {
+            dismissLocationPrompt();
+          }
+        }}
+        onAllow={allowLocationFromPrompt}
+        onDismiss={dismissLocationPrompt}
+        loading={status === "loading"}
+      />
     </UserLocationContext.Provider>
   );
 }

@@ -16,7 +16,7 @@ export const Logo = ({
   return (
     <div className={cn("flex items-center gap-5", className)}>
       <img
-        src={src ?? "/logo%20new-Photoroom.png"}
+        src={src ?? "/brand/logo.png"}
         alt="Buy Lands India"
         className={cn(
           "w-auto shrink-0 object-contain origin-left max-h-full",

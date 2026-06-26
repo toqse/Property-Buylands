@@ -46,7 +46,7 @@ export function MobileAdvertisementCard({
   }, [muted, showVideo]);
 
   const outerClass = cn(
-    "group relative h-full min-h-[220px] w-full animate-fade-in overflow-hidden rounded-xl bg-black text-white shadow-[0_4px_16px_-8px_rgba(15,23,42,0.15)] ring-1 ring-gold/30",
+    "group relative col-span-2 aspect-[2.2/1] min-h-[160px] w-full animate-fade-in overflow-hidden rounded-xl bg-black text-white shadow-[0_4px_16px_-8px_rgba(15,23,42,0.15)] ring-1 ring-gold/30",
     className,
   );
   const style = { animationDelay: `${index * 40}ms` } as const;

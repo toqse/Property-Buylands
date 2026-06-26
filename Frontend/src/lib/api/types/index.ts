@@ -66,8 +66,12 @@ export interface ApiProperty {
   property_video_url?: string | null;
   video_thumbnail_url?: string | null;
   nearby_places_data?: { name: string; distance: number }[];
-  built_year?: number;
+  built_year?: string;
   furnishing?: string;
+  project_status?: string;
+  floors?: string;
+  sighting?: string;
+  area_cent?: number;
   parking_spaces?: number;
   is_featured?: boolean;
   moderation_status?: "pending" | "approved" | "rejected";
@@ -122,6 +126,15 @@ export interface ApiPropertyType {
   name: string;
   description?: string;
   image?: string | null;
+  has_bedrooms?: boolean;
+  has_bathrooms?: boolean;
+  has_built_year?: boolean;
+  has_parking_spaces?: boolean;
+  has_project_status?: boolean;
+  has_floors?: boolean;
+  has_sighting?: boolean;
+  has_area_both?: boolean;
+  has_furnishing?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -221,6 +234,8 @@ export interface ApiContact {
   property?: number | null;
   property_title?: string;
   created_at?: string;
+  email_sent?: boolean | null;
+  notification_recipients?: string[];
 }
 
 export interface ApiSiteSettings {
@@ -247,6 +262,13 @@ export interface ApiCompanyContact {
   company_address?: string;
 }
 
+export interface ApiMobileAppSettings {
+  android_app_version?: string;
+  android_force_update?: boolean;
+  ios_app_version?: string;
+  ios_force_update?: boolean;
+}
+
 export interface ApiOwner {
   id: number;
   email: string;
@@ -257,5 +279,6 @@ export interface ApiOwner {
   address?: string;
   is_active?: boolean;
   date_joined?: string;
+  property_count?: number;
   properties_count?: number;
 }

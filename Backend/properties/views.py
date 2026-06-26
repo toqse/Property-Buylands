@@ -51,6 +51,7 @@ from .serializers import (
     ContactSerializer,
     SiteSettingsSerializer,
     CompanySettingsSerializer,
+    MobileAppSettingsSerializer,
     PropertyLocationSerializer,
     TestimonialSerializer,
     TestimonialSectionSerializer,
@@ -598,6 +599,8 @@ class PropertyViewSet(viewsets.ModelViewSet):
         ownership = params.get('ownership')
         area_min = params.get('area_min')
         area_max = params.get('area_max')
+        area_cent_min = params.get('area_cent_min')
+        area_cent_max = params.get('area_cent_max')
         area_unit_param = params.get('area_unit')
         area_unit = (area_unit_param or '').strip().lower() or None
         date_from = params.get('date_from')
@@ -612,6 +615,10 @@ class PropertyViewSet(viewsets.ModelViewSet):
         city_id = params.get('city_id')
         location = params.get('location')
         furnishing = params.get('furnishing')
+        project_status = params.get('project_status')
+        floors = params.get('floors')
+        sighting = params.get('sighting')
+        parking_spaces_min = params.get('parking_spaces_min')
         search = params.get('search')
         # Search OR-clauses include features (M2M); DISTINCT is required then only.
         # Unconditional DISTINCT made every list query a heavy SELECT DISTINCT over Azure MySQL (~4s+).
@@ -683,11 +690,24 @@ class PropertyViewSet(viewsets.ModelViewSet):
             elif val in ('false', '0', 'no'):
                 queryset = queryset.filter(is_featured=False)
 
-        if ownership in dict(Property.OWNERSHIP_CHOICES):
-            queryset = queryset.filter(property_ownership=ownership)
+        if ownership:
+            queryset = queryset.filter(property_ownership__iexact=ownership)
 
         if furnishing:
             queryset = queryset.filter(furnishing__iexact=furnishing)
+
+        if project_status:
+            queryset = queryset.filter(project_status__iexact=project_status)
+
+        if floors:
+            queryset = queryset.filter(floors__icontains=floors)
+
+        if sighting:
+            queryset = queryset.filter(sighting__iexact=sighting)
+
+        parking_spaces_min_value = convert_int(parking_spaces_min)
+        if parking_spaces_min_value is not None:
+            queryset = queryset.filter(parking_spaces__gte=parking_spaces_min_value)
 
         # Area filtering - filter by matching area_unit and area value (no conversion)
         # Get valid area unit choices as a set for efficient lookup
@@ -699,24 +719,32 @@ class PropertyViewSet(viewsets.ModelViewSet):
             
             # Apply area_min and area_max filters only when area_unit is specified
             # This ensures we're comparing within the same unit
-            area_min_value = convert_int(area_min)
+            area_min_value = convert_decimal(area_min)
             if area_min_value is not None:
                 queryset = queryset.filter(area__gte=area_min_value)
 
-            area_max_value = convert_int(area_max)
+            area_max_value = convert_decimal(area_max)
             if area_max_value is not None:
                 queryset = queryset.filter(area__lte=area_max_value)
         elif area_min or area_max:
             # If area_min/area_max are provided but area_unit is not, 
             # default to 'sqft' for backward compatibility
             queryset = queryset.filter(area_unit='sqft')
-            area_min_value = convert_int(area_min)
+            area_min_value = convert_decimal(area_min)
             if area_min_value is not None:
                 queryset = queryset.filter(area__gte=area_min_value)
 
-            area_max_value = convert_int(area_max)
+            area_max_value = convert_decimal(area_max)
             if area_max_value is not None:
                 queryset = queryset.filter(area__lte=area_max_value)
+
+        area_cent_min_value = convert_decimal(area_cent_min)
+        if area_cent_min_value is not None:
+            queryset = queryset.filter(area_cent__gte=area_cent_min_value)
+
+        area_cent_max_value = convert_decimal(area_cent_max)
+        if area_cent_max_value is not None:
+            queryset = queryset.filter(area_cent__lte=area_cent_max_value)
 
         if date_from:
             parsed_date = parse_date(date_from)
@@ -1209,6 +1237,55 @@ class CompanyContactViewSet(viewsets.GenericViewSet):
     def company_contact(self, request, *args, **kwargs):
         s = SiteSettings.get_settings()
         return Response(_company_contact_payload(s))
+
+
+def _mobile_app_version_payload(s):
+    return {
+        "android_app_version": s.android_app_version or "",
+        "android_force_update": bool(s.android_force_update),
+        "ios_app_version": s.ios_app_version or "",
+        "ios_force_update": bool(s.ios_force_update),
+    }
+
+
+class MobileAppSettingsViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
+    """Admin GET/PATCH for mobile app version and force-update flag."""
+
+    queryset = SiteSettings.objects.all()
+    serializer_class = MobileAppSettingsSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_object(self):
+        return SiteSettings.get_settings()
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Method 'PUT' not allowed. Use 'PATCH' instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+
+class MobileAppVersionViewSet(viewsets.GenericViewSet):
+    """Public GET for mobile app version and force-update flag."""
+
+    queryset = SiteSettings.objects.all()
+    permission_classes = [permissions.AllowAny]
+
+    def mobile_app_version(self, request, *args, **kwargs):
+        s = SiteSettings.get_settings()
+        return Response(_mobile_app_version_payload(s))
 
 
 def _parse_bulk_titles(request, file_count):

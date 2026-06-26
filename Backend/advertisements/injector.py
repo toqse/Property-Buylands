@@ -38,7 +38,7 @@ def _sort_ads_by_distance(items, lat, lng):
         key=lambda ad: (
             0 if ad.ad_type == Advertisement.AD_TYPE_PROPERTY else 1,
             _ad_distance_km(ad, lat, lng),
-            -int(ad.priority or 0),
+            int(ad.priority or 0),
             -ad.created_at.timestamp() if ad.created_at else 0,
         ),
     )
@@ -75,7 +75,7 @@ def _location_filtered_ads(request, placement=None):
             default=1,
             output_field=IntegerField(),
         )
-    ).order_by("ad_type_rank", "-priority", "-created_at")
+    ).order_by("ad_type_rank", "priority", "-created_at")
 
     items = list(qs)
 

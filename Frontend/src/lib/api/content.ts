@@ -2,6 +2,7 @@ import { apiRequest, asList, toQueryString } from "@/lib/api/client";
 import type {
   ApiCompanyContact,
   ApiHeroBanner,
+  ApiMobileAppSettings,
   ApiOfferBanner,
   ApiSiteSettings,
   ApiTestimonial,
@@ -61,6 +62,16 @@ export const contentApi = {
         body,
       }),
   },
+  mobileAppSettings: {
+    get: () => apiRequest<ApiMobileAppSettings>("properties/app-settings/", { auth: true }),
+    patch: (body: Partial<ApiMobileAppSettings>) =>
+      apiRequest<ApiMobileAppSettings>("properties/app-settings/", {
+        method: "PATCH",
+        auth: true,
+        body,
+      }),
+  },
+  appVersion: () => apiRequest<ApiMobileAppSettings>("properties/app-version/"),
   siteContact: () => apiRequest<ApiCompanyContact>("properties/site-contact/"),
   companyContact: () => apiRequest<ApiCompanyContact>("properties/company-contact/"),
 };

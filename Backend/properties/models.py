@@ -2,8 +2,13 @@ from django.conf import settings
 from django.db import models
 from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator
 
-from .image_utils import compress_property_image, is_new_image_upload
+from .image_utils import (
+    compress_category_icon,
+    compress_property_image,
+    is_new_image_upload,
+)
 from .validators import (
+    validate_category_icon_max_size,
     validate_property_image_max_size,
     validate_property_video_file_size,
 )
@@ -60,8 +65,23 @@ class PropertyType(models.Model):
         null=True,
         blank=True,
     )
+    has_bedrooms = models.BooleanField(default=True)
+    has_bathrooms = models.BooleanField(default=True)
+    has_built_year = models.BooleanField(default=True)
+    has_parking_spaces = models.BooleanField(default=True)
+    has_project_status = models.BooleanField(default=False)
+    has_floors = models.BooleanField(default=False)
+    has_sighting = models.BooleanField(default=False)
+    has_area_both = models.BooleanField(default=False)
+    has_furnishing = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.image and is_new_image_upload(self.image):
+            self.image = compress_category_icon(self.image)
+            validate_category_icon_max_size(self.image)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -72,11 +92,6 @@ class Property(models.Model):
         ('sell', 'Sell'),
     ]
     
-    OWNERSHIP_CHOICES = [
-        ('management', 'Management'),
-        ('direct_owner', 'Direct Owner'),
-    ]
-
     MODERATION_PENDING = "pending"
     MODERATION_APPROVED = "approved"
     MODERATION_REJECTED = "rejected"
@@ -88,7 +103,7 @@ class Property(models.Model):
 
     # Basic Information
     property_for = models.CharField(max_length=10, choices=PROPERTY_FOR_CHOICES)
-    property_ownership = models.CharField(max_length=20, choices=OWNERSHIP_CHOICES)
+    property_ownership = models.CharField(max_length=50)
     
     # Contact Information
     contact_name = models.CharField(max_length=100)
@@ -123,9 +138,14 @@ class Property(models.Model):
         ('sqft', 'Square Feet'),
         ('cent', 'Cent'),
     ]
-    area = models.PositiveIntegerField(help_text="Area value")
+    area = models.DecimalField(
+        max_digits=18,
+        decimal_places=8,
+        help_text="Area value",
+        validators=[MinValueValidator(0)],
+    )
     area_unit = models.CharField(max_length=10, choices=AREA_UNIT_CHOICES, default='sqft', help_text="Unit of measurement for area")
-    description = models.TextField()
+    description = models.TextField(blank=True, default="")
     features = models.ManyToManyField(Feature, related_name='properties')
     google_maps_url = models.URLField(blank=True, null=True)
     google_embedded_map_link = models.TextField(blank=True, null=True, help_text="Paste the complete iframe HTML code from Google Maps embed")
@@ -143,8 +163,19 @@ class Property(models.Model):
         validators=PROPERTY_IMAGE_VALIDATORS,
     )
     nearby_places = models.JSONField(blank=True, null=True, help_text="List of nearby places in format: ['place1 - 1km', 'place2 - 2km']")
-    built_year = models.PositiveIntegerField(null=True, blank=True)
+    built_year = models.CharField(max_length=20, blank=True, default="")
     furnishing = models.CharField(max_length=50, null=True, blank=True)
+    project_status = models.CharField(max_length=100, blank=True, null=True)
+    floors = models.CharField(max_length=50, blank=True, null=True)
+    sighting = models.CharField(max_length=100, blank=True, null=True)
+    area_cent = models.DecimalField(
+        max_digits=18,
+        decimal_places=8,
+        null=True,
+        blank=True,
+        help_text="Cent value when property type supports both units",
+        validators=[MinValueValidator(0)],
+    )
     parking_spaces = models.PositiveIntegerField(default=0)
     is_featured = models.BooleanField(
         default=False,
@@ -362,6 +393,24 @@ class SiteSettings(models.Model):
     company_address = models.TextField(
         default="4/461, Second Floor, Valamkottil Towers, Thrikkakara, Ernakulam – 682021, Kerala, India",
         help_text="Company office address shown in footer and contact page.",
+    )
+    android_app_version = models.CharField(
+        max_length=20,
+        default="1.0.0",
+        help_text="Current published Android app version, e.g. 1.4.3",
+    )
+    android_force_update = models.BooleanField(
+        default=False,
+        help_text="If true, the Android app forces users to update.",
+    )
+    ios_app_version = models.CharField(
+        max_length=20,
+        default="1.0.0",
+        help_text="Current published iOS app version, e.g. 1.4.3",
+    )
+    ios_force_update = models.BooleanField(
+        default=False,
+        help_text="If true, the iOS app forces users to update.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

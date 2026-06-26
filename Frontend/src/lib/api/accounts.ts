@@ -29,6 +29,18 @@ export const accountsApi = {
     });
   },
 
+  changePassword(body: {
+    current_password: string;
+    new_password: string;
+    new_password2: string;
+  }) {
+    return apiRequest<ApiUser>("accounts/profile/", {
+      method: "PATCH",
+      auth: true,
+      body,
+    });
+  },
+
   requestEmailChange(new_email: string) {
     return apiRequest<OtpInitResponse>("accounts/profile/email-change/request/", {
       method: "POST",

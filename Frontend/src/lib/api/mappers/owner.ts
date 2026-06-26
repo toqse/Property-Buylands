@@ -11,6 +11,6 @@ export function mapApiOwnerToAppUser(o: ApiOwner): AppUser {
     phone: o.phone || "",
     joinedAt: o.date_joined?.slice(0, 10) || "",
     active: o.is_active ?? true,
-    propertyCount: o.properties_count ?? 0,
+    propertyCount: o.property_count ?? o.properties_count ?? 0,
   };
 }

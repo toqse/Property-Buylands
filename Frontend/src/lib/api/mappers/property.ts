@@ -1,5 +1,6 @@
 import type { ApiProperty } from "@/lib/api/types";
 import type { Property, PropertyStatus } from "@/data/mockData";
+import { BRAND_LOGO_URL } from "@/lib/site";
 
 function moderationToStatus(s?: string): PropertyStatus {
   switch (s) {
@@ -19,7 +20,9 @@ function propertyForToType(pf: string): "For Sale" | "For Rent" {
 
 function pickImage(p: ApiProperty): string {
   const first = p.images?.[0]?.image;
-  return first || "/placeholder-property.jpg";
+  // No uploaded photo: fall back to the video thumbnail (for video-only
+  // listings) before the generic placeholder.
+  return first || p.video_thumbnail_url || BRAND_LOGO_URL;
 }
 
 function pickGallery(p: ApiProperty): string[] {
@@ -46,6 +49,16 @@ function pickFeatureIds(p: ApiProperty): number[] {
 function mapAreaUnit(unit?: string): Property["areaUnit"] {
   if (unit === "cent") return "cents";
   return (unit as Property["areaUnit"]) || "sqft";
+}
+
+export function formatPropertyAreaDisplay(p: Property): string {
+  const fmt = new Intl.NumberFormat("en-IN");
+  if (p.areaCent?.trim()) {
+    const centVal = Number(p.areaCent.replace(/,/g, "")) || 0;
+    return `${fmt.format(p.area)} sq.ft / ${fmt.format(centVal)} cent`;
+  }
+  if (p.areaUnit === "cents") return `${fmt.format(p.area)} cent`;
+  return `${fmt.format(p.area)} sq.ft`;
 }
 
 export function mapApiPropertyToUi(p: ApiProperty): Property {
@@ -88,8 +101,12 @@ export function mapApiPropertyToUi(p: ApiProperty): Property {
     youtubeUrl: p.youtube_video_link,
     googleMapUrl: p.google_maps_url,
     googleEmbedHtml: p.google_embedded_map_link || undefined,
-    builtYear: p.built_year ? String(p.built_year) : undefined,
+    builtYear: p.built_year?.trim() || undefined,
     furnishing: p.furnishing,
+    projectStatus: p.project_status || undefined,
+    floors: p.floors || undefined,
+    sighting: p.sighting || undefined,
+    areaCent: p.area_cent != null ? String(p.area_cent) : undefined,
     parkingSpaces: p.parking_spaces != null ? String(p.parking_spaces) : undefined,
     nearbyPlaces: (p.nearby_places_data ?? []).map((np) => ({
       name: np.name,

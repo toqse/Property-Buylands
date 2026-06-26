@@ -38,8 +38,37 @@ class FeatureAdmin(admin.ModelAdmin):
 
 @admin.register(PropertyType)
 class PropertyTypeAdmin(admin.ModelAdmin):
-    list_display = ('name', 'image', 'created_at', 'updated_at')
+    list_display = (
+        'name',
+        'has_bedrooms',
+        'has_bathrooms',
+        'has_built_year',
+        'has_parking_spaces',
+        'has_project_status',
+        'has_floors',
+        'has_sighting',
+        'has_area_both',
+        'has_furnishing',
+        'created_at',
+        'updated_at',
+    )
     search_fields = ('name',)
+    fields = (
+        'name',
+        'image',
+        'has_bedrooms',
+        'has_bathrooms',
+        'has_built_year',
+        'has_parking_spaces',
+        'has_project_status',
+        'has_floors',
+        'has_sighting',
+        'has_area_both',
+        'has_furnishing',
+        'created_at',
+        'updated_at',
+    )
+    readonly_fields = ('created_at', 'updated_at')
 
 class PropertyImageInline(admin.TabularInline):
     model = PropertyImage
@@ -48,8 +77,8 @@ class PropertyImageInline(admin.TabularInline):
 @admin.register(Property)
 class PropertyAdmin(admin.ModelAdmin):
     list_display = ('title', 'property_for', 'is_featured', 'state', 'district', 'city', 'property_type', 'price', 'created_at')
-    list_filter = ('property_for', 'is_featured', 'state', 'district', 'city', 'property_type', 'bedrooms', 'bathrooms', 'furnishing')
-    search_fields = ('title', 'description', 'address')
+    list_filter = ('property_for', 'is_featured', 'state', 'district', 'city', 'property_type', 'bedrooms', 'bathrooms', 'furnishing', 'project_status')
+    search_fields = ('title', 'description', 'property_ownership', 'project_status', 'floors', 'sighting')
     inlines = [PropertyImageInline]
     filter_horizontal = ('features',)
 
@@ -89,6 +118,10 @@ class SiteSettingsAdmin(admin.ModelAdmin):
         "admin_whatsapp",
         "company_email",
         "company_address",
+        "android_app_version",
+        "android_force_update",
+        "ios_app_version",
+        "ios_force_update",
         "testimonials_section_tag",
         "testimonials_section_heading",
         "testimonials_section_description",

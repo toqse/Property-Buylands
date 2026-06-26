@@ -58,13 +58,13 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
       <div className="container flex h-24 items-center justify-between gap-4 overflow-visible">
         <Link to="/" className="shrink-0 transition-opacity hover:opacity-90">
           <Logo
-            src="/logo%20new-Photoroom.png"
+            src="/brand/logo.png"
             variant="dark"
             className="hidden sm:flex origin-left -my-1"
             imgClassName="h-10 md:h-12"
           />
           <Logo
-            src="/logo%20new-Photoroom.png"
+            src="/brand/logo.png"
             variant="dark"
             className="flex sm:hidden origin-left -my-1 -ml-1"
             imgClassName="h-9"
@@ -149,7 +149,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
           <div className="flex min-h-16 items-center justify-between border-b border-border/60 px-4 pr-14">
             <Link to="/" onClick={() => setOpen(false)} className="block transition-opacity hover:opacity-90">
               <Logo
-                src="/logo%20new-Photoroom.png"
+                src="/brand/logo.png"
                 variant="dark"
                 imgClassName="h-8 w-auto max-w-[150px]"
               />

@@ -103,6 +103,14 @@ export function useSiteSettings(enabled = true) {
   });
 }
 
+export function useMobileAppSettings(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.mobileAppSettings,
+    queryFn: () => contentApi.mobileAppSettings.get(),
+    enabled,
+  });
+}
+
 export function useActiveAds(
   placement: string,
   loc?: { latitude?: number; longitude?: number; state_id?: number; district_id?: number; city_id?: number },
@@ -213,6 +221,10 @@ export function useCatalogMutations() {
     patchSiteSettings: useMutation({
       mutationFn: contentApi.siteSettings.patch,
       onSuccess: () => inv(["siteSettings"]),
+    }),
+    patchMobileAppSettings: useMutation({
+      mutationFn: contentApi.mobileAppSettings.patch,
+      onSuccess: () => inv(["mobileAppSettings"]),
     }),
     createPropertyType: useMutation({
       mutationFn: (form: FormData) => catalogApi.propertyTypes.create(form),

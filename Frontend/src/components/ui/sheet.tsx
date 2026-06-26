@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { X } from "lucide-react";
 import * as React from "react";
 
-import { cn } from "@/lib/utils";
+import { cn, isPortaledOverlayTarget } from "@/lib/utils";
 
 const Sheet = SheetPrimitive.Root;
 
@@ -59,11 +59,15 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Con
         ref={ref}
         className={cn(sheetVariants({ side }), className)}
         onPointerDownOutside={(event) => {
-          event.preventDefault();
+          if (!isPortaledOverlayTarget(event.target)) {
+            event.preventDefault();
+          }
           onPointerDownOutside?.(event);
         }}
         onInteractOutside={(event) => {
-          event.preventDefault();
+          if (!isPortaledOverlayTarget(event.target)) {
+            event.preventDefault();
+          }
           onInteractOutside?.(event);
         }}
         {...props}

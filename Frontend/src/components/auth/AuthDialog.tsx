@@ -807,7 +807,7 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
                 <span>
                   I have read and agree to the{" "}
                   <a
-                    href="/terms"
+                    href="/terms-conditions"
                     target="_blank"
                     rel="noreferrer"
                     className="font-semibold text-gold hover:underline"

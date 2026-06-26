@@ -73,7 +73,7 @@ class AdvertisementViewSet(viewsets.ModelViewSet):
         ordering_map = {
             "newest": ("-created_at",),
             "oldest": ("created_at",),
-            "priority": ("-priority", "-created_at"),
+            "priority": ("priority", "-created_at"),
         }
         if ordering in ordering_map:
             queryset = queryset.order_by(*ordering_map[ordering])

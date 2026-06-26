@@ -1,9 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+  type SVGProps,
+} from "react";
 import { NavLink, useLocation, useNavigate } from "@/lib/router";
 import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/Logo";
+import { AdminModal } from "@/components/admin/AdminModal";
 import { Button } from "@/components/ui/button";
 import { SubmitProgressButton } from "@/components/SubmitProgressButton";
 import { Input } from "@/components/ui/input";
@@ -11,11 +20,28 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { type Property, type PropertyStatus, type Enquiry } from "@/data/mockData";
+import {
+  type Property,
+  type PropertyStatus,
+  type Enquiry,
+  type AppUser,
+} from "@/data/mockData";
 import {
   emptyAd,
   type Advertisement,
@@ -23,7 +49,10 @@ import {
   type AdMediaType,
   type AdRedirectType,
 } from "@/data/advertisements";
-import { usePropertyList, usePropertyMutations } from "@/hooks/api/useProperties";
+import {
+  usePropertyList,
+  usePropertyMutations,
+} from "@/hooks/api/useProperties";
 import {
   useOwners,
   useContacts,
@@ -41,13 +70,34 @@ import {
   useAdminAds,
   useAdminTestimonials,
   useSiteSettings,
+  useMobileAppSettings,
   useHeroBanners,
   useOfferBanners,
   useCatalogMutations,
 } from "@/hooks/api/useCatalog";
-import { buildTestimonialFormData, type UiTestimonial } from "@/lib/api/mappers/testimonial";
-import type { ApiPropertyType, ApiFeature, ApiState, ApiDistrict, ApiCity } from "@/lib/api/types";
-import { buildPropertyFormData, resolveFeatureIds, validatePropertyImages } from "@/lib/api/propertyForm";
+import {
+  buildTestimonialFormData,
+  type UiTestimonial,
+} from "@/lib/api/mappers/testimonial";
+import type {
+  ApiPropertyType,
+  ApiFeature,
+  ApiState,
+  ApiDistrict,
+  ApiCity,
+  ApiOwner,
+} from "@/lib/api/types";
+import {
+  buildPropertyFormData,
+  resolveFeatureIds,
+  validatePropertyImages,
+  validatePropertyMedia,
+  findPropertyTypeFlags,
+  appendPropertyTypeFlagsToFormData,
+  flagsFromPropertyType,
+  DEFAULT_PROPERTY_TYPE_FLAGS,
+  type PropertyTypeFeatureFlags,
+} from "@/lib/api/propertyForm";
 import { buildAdFormData } from "@/lib/api/advertisementForm";
 import { getApiErrorField, getErrorMessage } from "@/lib/api/errors";
 import { contentApi } from "@/lib/api/content";
@@ -56,11 +106,37 @@ import { mapApiAdToUi } from "@/lib/api/mappers/advertisement";
 import { mapApiOwnerToAppUser } from "@/lib/api/mappers/owner";
 import type { ApiAdvertisement } from "@/lib/api/types";
 import {
-  LayoutDashboard, Building2, Users, Tag, Image as ImageIcon, Settings,
-  LogOut, CheckCircle2, XCircle, Eye, Pencil, Trash2, Plus,
-  TrendingUp, DollarSign, MessageSquare, Star, Upload,
-  MapPin, ChevronDown, ChevronRight, Mail, Phone as PhoneIcon, Reply,
-  Search, Store, Map as MapIcon, Home as HomeIcon, Landmark, Menu, Megaphone,
+  LayoutDashboard,
+  Building2,
+  Users,
+  Tag,
+  Image as ImageIcon,
+  Settings,
+  LogOut,
+  CheckCircle2,
+  XCircle,
+  Eye,
+  Pencil,
+  Trash2,
+  Plus,
+  TrendingUp,
+  DollarSign,
+  MessageSquare,
+  Star,
+  Upload,
+  MapPin,
+  ChevronDown,
+  ChevronRight,
+  Mail,
+  Phone as PhoneIcon,
+  Reply,
+  Search,
+  Store,
+  Map as MapIcon,
+  Home as HomeIcon,
+  Landmark,
+  Menu,
+  Megaphone,
   ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -74,6 +150,7 @@ import {
   scrollToListingField,
   type AddPropertyDraft,
 } from "@/components/PropertyListingForm";
+import { OsmPlaceSearch } from "@/components/ui/osm-place-search";
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -130,14 +207,42 @@ type PaginationFooterProps = {
   className?: string;
 };
 
-const PaginationFooter = ({ page, total, pageSize, onPrev, onNext, className }: PaginationFooterProps) => {
+const PaginationFooter = ({
+  page,
+  total,
+  pageSize,
+  onPrev,
+  onNext,
+  className,
+}: PaginationFooterProps) => {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   return (
-    <div className={cn("flex items-center justify-between mt-4 text-sm text-muted-foreground flex-wrap gap-3", className)}>
-      <div>Page {Math.min(page, totalPages)} of {totalPages} · {total} total</div>
+    <div
+      className={cn(
+        "flex items-center justify-between mt-4 text-sm text-muted-foreground flex-wrap gap-3",
+        className,
+      )}
+    >
+      <div>
+        Page {Math.min(page, totalPages)} of {totalPages} · {total} total
+      </div>
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" disabled={page <= 1} onClick={onPrev}>Previous</Button>
-        <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={onNext}>Next</Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={page <= 1}
+          onClick={onPrev}
+        >
+          Previous
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={page >= totalPages}
+          onClick={onNext}
+        >
+          Next
+        </Button>
       </div>
     </div>
   );
@@ -152,7 +257,15 @@ function usePagination<T>(items: T[], pageSize: number) {
   const goPrev = () => setPage((p) => Math.max(1, p - 1));
   const goNext = () => setPage((p) => Math.min(totalPages, p + 1));
   const reset = () => setPage(1);
-  return { page: safePage, setPage, totalPages, paginated, goPrev, goNext, reset };
+  return {
+    page: safePage,
+    setPage,
+    totalPages,
+    paginated,
+    goPrev,
+    goNext,
+    reset,
+  };
 }
 
 /** Reusable confirmation dialog shown before destructive actions. */
@@ -188,7 +301,9 @@ const ConfirmDeleteDialog = ({
         </p>
       )}
       <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)}>{cancelLabel}</Button>
+        <Button variant="outline" onClick={() => onOpenChange(false)}>
+          {cancelLabel}
+        </Button>
         <Button
           variant="destructive"
           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -212,7 +327,10 @@ type SidebarBodyProps = {
   showInlineSignOut?: boolean;
 };
 
-const SidebarBody = ({ onNavigate, showInlineSignOut = false }: SidebarBodyProps) => {
+const SidebarBody = ({
+  onNavigate,
+  showInlineSignOut = false,
+}: SidebarBodyProps) => {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -221,13 +339,17 @@ const SidebarBody = ({ onNavigate, showInlineSignOut = false }: SidebarBodyProps
   const initialOpenGroups = useMemo(() => {
     const open: Record<string, boolean> = {};
     for (const item of navItems) {
-      if (isGroup(item) && (pathname === item.basePath || pathname.startsWith(`${item.basePath}/`))) {
+      if (
+        isGroup(item) &&
+        (pathname === item.basePath || pathname.startsWith(`${item.basePath}/`))
+      ) {
         open[item.label] = true;
       }
     }
     return open;
   }, [pathname]);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(initialOpenGroups);
+  const [openGroups, setOpenGroups] =
+    useState<Record<string, boolean>>(initialOpenGroups);
 
   const toggleGroup = (label: string) =>
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -244,7 +366,8 @@ const SidebarBody = ({ onNavigate, showInlineSignOut = false }: SidebarBodyProps
         {navItems.map((item) => {
           if (isGroup(item)) {
             const isParentActive =
-              pathname === item.basePath || pathname.startsWith(`${item.basePath}/`);
+              pathname === item.basePath ||
+              pathname.startsWith(`${item.basePath}/`);
             const expanded = openGroups[item.label] ?? isParentActive;
             const Icon = item.icon;
             return (
@@ -378,11 +501,20 @@ const MobileTopBar = ({ open, onOpenChange }: MobileTopBarProps) => (
 );
 
 const Overview = () => {
-  const { data: allProps } = usePropertyList({ moderationStatus: "all", includeAds: false, pageSize: 1 }, { auth: true });
-  const { data: pendingProps } = usePropertyList({ moderationStatus: "pending", includeAds: false, pageSize: 1 }, { auth: true });
+  const { data: allProps } = usePropertyList(
+    { moderationStatus: "all", includeAds: false, pageSize: 1 },
+    { auth: true },
+  );
+  const { data: pendingProps } = usePropertyList(
+    { moderationStatus: "pending", includeAds: false, pageSize: 1 },
+    { auth: true },
+  );
   const { data: ownersPage } = useOwners({ page_size: 1 });
   const { data: contactsPage } = useContacts({ page_size: 5 });
-  const { data: recentPage } = usePropertyList({ moderationStatus: "all", includeAds: false, pageSize: 4 }, { auth: true });
+  const { data: recentPage } = usePropertyList(
+    { moderationStatus: "all", includeAds: false, pageSize: 4 },
+    { auth: true },
+  );
   const recentList = (recentPage?.items ?? [])
     .filter((x) => x.kind === "property")
     .map((x) => x.property);
@@ -390,14 +522,29 @@ const Overview = () => {
   const [viewTarget, setViewTarget] = useState<Property | null>(null);
 
   if (viewTarget) {
-    return <PropertyDetailView property={viewTarget} onBack={() => setViewTarget(null)} />;
+    return (
+      <PropertyDetailView
+        property={viewTarget}
+        onBack={() => setViewTarget(null)}
+      />
+    );
   }
 
   const stats = [
     { i: Building2, l: "Total Listings", v: allProps?.count ?? 0, c: "" },
     { i: Users, l: "Registered Users", v: ownersPage?.count ?? 0, c: "" },
-    { i: MessageSquare, l: "New Enquiries", v: enquiries.filter((e) => e.status === "New").length, c: "" },
-    { i: DollarSign, l: "Pending Approvals", v: pendingProps?.count ?? 0, c: "" },
+    {
+      i: MessageSquare,
+      l: "New Enquiries",
+      v: enquiries.filter((e) => e.status === "New").length,
+      c: "",
+    },
+    {
+      i: DollarSign,
+      l: "Pending Approvals",
+      v: pendingProps?.count ?? 0,
+      c: "",
+    },
   ];
   return (
     <div className="animate-fade-in">
@@ -413,13 +560,24 @@ const Overview = () => {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-8 md:mb-10">
         {stats.map((s, i) => (
-          <div key={s.l} className="p-4 sm:p-6 rounded-2xl bg-card border border-border hover-lift animate-fade-in" style={{ animationDelay: `${i * 80}ms` }}>
+          <div
+            key={s.l}
+            className="p-4 sm:p-6 rounded-2xl bg-card border border-border hover-lift animate-fade-in"
+            style={{ animationDelay: `${i * 80}ms` }}
+          >
             <div className="flex justify-between">
               <s.i className="h-5 w-5 text-gold" />
-              {s.c && <span className="text-[11px] sm:text-xs text-emerald-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" />{s.c}</span>}
+              {s.c && (
+                <span className="text-[11px] sm:text-xs text-emerald-600 flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3" />
+                  {s.c}
+                </span>
+              )}
             </div>
             <div className="font-serif text-2xl sm:text-3xl mt-3">{s.v}</div>
-            <div className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground mt-1">{s.l}</div>
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground mt-1">
+              {s.l}
+            </div>
           </div>
         ))}
       </div>
@@ -428,19 +586,29 @@ const Overview = () => {
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-serif text-2xl mb-4">Recent listings</h2>
           <div className="space-y-3">
-            {recentList.map(p => (
+            {recentList.map((p) => (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => setViewTarget(p)}
                 className="flex w-full items-center gap-3 p-3 rounded-lg text-left hover:bg-muted transition-colors"
               >
-                <img src={p.image} className="h-12 w-16 object-cover rounded" alt="" />
+                <img
+                  src={p.image}
+                  className="h-12 w-16 object-cover rounded"
+                  alt=""
+                />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{p.title}</div>
-                  <div className="text-xs text-muted-foreground">{p.ownerName}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {p.ownerName}
+                  </div>
                 </div>
-                <Badge variant={p.status === "Approved" ? "default" : "secondary"}>{p.status}</Badge>
+                <Badge
+                  variant={p.status === "Approved" ? "default" : "secondary"}
+                >
+                  {p.status}
+                </Badge>
               </button>
             ))}
           </div>
@@ -448,16 +616,22 @@ const Overview = () => {
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-serif text-2xl mb-4">Latest enquiries</h2>
           <div className="space-y-3">
-            {enquiries.map(e => (
+            {enquiries.map((e) => (
               <div key={e.id} className="p-3 rounded-lg border border-border">
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="font-medium">{e.fromName}</div>
-                    <div className="text-xs text-muted-foreground">{e.propertyTitle}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {e.propertyTitle}
+                    </div>
                   </div>
-                  <Badge variant={e.status === "New" ? "default" : "secondary"}>{e.status}</Badge>
+                  <Badge variant={e.status === "New" ? "default" : "secondary"}>
+                    {e.status}
+                  </Badge>
                 </div>
-                <p className="text-sm text-foreground/70 mt-2 line-clamp-2">{e.message}</p>
+                <p className="text-sm text-foreground/70 mt-2 line-clamp-2">
+                  {e.message}
+                </p>
               </div>
             ))}
           </div>
@@ -480,7 +654,12 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
       : property.image
         ? [property.image]
         : [];
-  const addressParts = [property.location, property.city, property.district, property.state]
+  const addressParts = [
+    property.location,
+    property.city,
+    property.district,
+    property.state,
+  ]
     .map((s) => (s ?? "").trim())
     .filter(Boolean);
   const address = Array.from(new Set(addressParts)).join(", ");
@@ -492,15 +671,38 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
       label: "Price",
       value: `₹${fmt(property.price)}${property.priceUnit ? ` ${property.priceUnit}` : ""}`,
     },
-    { label: "Area", value: `${fmt(property.area)} ${property.areaUnit ?? "sqft"}` },
-    ...(property.bedrooms ? [{ label: "Bedrooms", value: String(property.bedrooms) }] : []),
-    ...(property.bathrooms ? [{ label: "Bathrooms", value: String(property.bathrooms) }] : []),
-    ...(property.furnishing ? [{ label: "Furnishing", value: property.furnishing }] : []),
-    ...(property.parkingSpaces ? [{ label: "Parking", value: property.parkingSpaces }] : []),
-    ...(property.builtYear ? [{ label: "Built year", value: property.builtYear }] : []),
-    ...(property.ownership ? [{ label: "Ownership", value: property.ownership }] : []),
+    {
+      label: "Area",
+      value: property.areaCent
+        ? `${fmt(property.area)} sq.ft / ${fmt(Number(property.areaCent) || 0)} cent`
+        : `${fmt(property.area)} ${property.areaUnit === "cents" ? "cent" : "sq.ft"}`,
+    },
+    ...(property.bedrooms
+      ? [{ label: "Bedrooms", value: String(property.bedrooms) }]
+      : []),
+    ...(property.bathrooms
+      ? [{ label: "Bathrooms", value: String(property.bathrooms) }]
+      : []),
+    ...(property.furnishing
+      ? [{ label: "Furnishing", value: property.furnishing }]
+      : []),
+    ...(property.parkingSpaces
+      ? [{ label: "Parking", value: property.parkingSpaces }]
+      : []),
+    ...(property.projectStatus
+      ? [{ label: "Project status", value: property.projectStatus }]
+      : []),
+    ...(property.floors ? [{ label: "Floors", value: property.floors }] : []),
+    ...(property.sighting
+      ? [{ label: "Sighting", value: property.sighting }]
+      : []),
+    ...(property.ownership
+      ? [{ label: "Ownership", value: property.ownership }]
+      : []),
     { label: "Featured", value: property.featured ? "Yes" : "No" },
-    ...(property.createdAt ? [{ label: "Listed on", value: property.createdAt }] : []),
+    ...(property.createdAt
+      ? [{ label: "Listed on", value: property.createdAt }]
+      : []),
   ];
 
   return (
@@ -519,14 +721,20 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
           <h1 className="font-serif text-3xl md:text-4xl">{property.title}</h1>
           <div className="text-gold-gradient font-semibold text-base md:text-lg mt-1">
             ₹{fmt(property.price)}
-            {property.priceUnit ? <span className="ml-1">{property.priceUnit}</span> : null}
+            {property.priceUnit ? (
+              <span className="ml-1">{property.priceUnit}</span>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={property.status === "Approved" ? "default" : "secondary"}>
+          <Badge
+            variant={property.status === "Approved" ? "default" : "secondary"}
+          >
             {property.status}
           </Badge>
-          {property.featured ? <Badge variant="secondary">Featured</Badge> : null}
+          {property.featured ? (
+            <Badge variant="secondary">Featured</Badge>
+          ) : null}
         </div>
       </div>
 
@@ -560,7 +768,9 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
 
       {property.videoUrl ? (
         <div className="mt-4">
-          <div className="text-sm font-semibold text-foreground mb-2">Property video</div>
+          <div className="text-sm font-semibold text-foreground mb-2">
+            Property video
+          </div>
           <video
             src={property.videoUrl}
             poster={property.videoThumbnail || property.image}
@@ -572,30 +782,41 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
       ) : null}
 
       <div className="mt-6 bg-card border border-border rounded-2xl p-5 shadow-sm">
-        <div className="text-sm font-semibold text-foreground mb-3">Property details</div>
+        <div className="text-sm font-semibold text-foreground mb-3">
+          Property details
+        </div>
         <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
           {detailRows.map((row) => (
             <div key={row.label}>
               <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">
                 {row.label}
               </dt>
-              <dd className="text-sm text-foreground/90 mt-0.5 break-words">{row.value}</dd>
+              <dd className="text-sm text-foreground/90 mt-0.5 break-words">
+                {row.value}
+              </dd>
             </div>
           ))}
         </dl>
       </div>
 
       <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
-        <div className="text-sm font-semibold text-foreground mb-3">Owner / contact</div>
+        <div className="text-sm font-semibold text-foreground mb-3">
+          Owner / contact
+        </div>
         <div className="space-y-2 text-sm">
           <div>
             <span className="font-semibold text-foreground">Name:</span>{" "}
-            <span className="text-foreground/80">{property.ownerName || "—"}</span>
+            <span className="text-foreground/80">
+              {property.ownerName || "—"}
+            </span>
           </div>
           <div>
             <span className="font-semibold text-foreground">Phone:</span>{" "}
             {property.ownerPhone ? (
-              <a href={`tel:${property.ownerPhone}`} className="text-gold hover:underline">
+              <a
+                href={`tel:${property.ownerPhone}`}
+                className="text-gold hover:underline"
+              >
                 {property.ownerPhone}
               </a>
             ) : (
@@ -605,7 +826,10 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
           <div>
             <span className="font-semibold text-foreground">Email:</span>{" "}
             {property.ownerEmail ? (
-              <a href={`mailto:${property.ownerEmail}`} className="text-gold hover:underline">
+              <a
+                href={`mailto:${property.ownerEmail}`}
+                className="text-gold hover:underline"
+              >
                 {property.ownerEmail}
               </a>
             ) : (
@@ -615,7 +839,9 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
           {property.contactWhatsApp ? (
             <div>
               <span className="font-semibold text-foreground">WhatsApp:</span>{" "}
-              <span className="text-foreground/80">{property.contactWhatsApp}</span>
+              <span className="text-foreground/80">
+                {property.contactWhatsApp}
+              </span>
             </div>
           ) : null}
         </div>
@@ -623,7 +849,9 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
 
       {property.features && property.features.length ? (
         <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
-          <div className="text-sm font-semibold text-foreground mb-3">Features &amp; amenities</div>
+          <div className="text-sm font-semibold text-foreground mb-3">
+            Features &amp; amenities
+          </div>
           <div className="flex flex-wrap gap-2">
             {property.features.map((f) => (
               <Badge key={f} variant="secondary">
@@ -636,21 +864,33 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
 
       {property.nearbyPlaces && property.nearbyPlaces.length ? (
         <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
-          <div className="text-sm font-semibold text-foreground mb-3">Nearby places</div>
+          <div className="text-sm font-semibold text-foreground mb-3">
+            Nearby places
+          </div>
           <ul className="space-y-1 text-sm text-foreground/80">
             {property.nearbyPlaces.map((np, i) => (
-              <li key={`${np.name}-${i}`} className="flex justify-between gap-3">
+              <li
+                key={`${np.name}-${i}`}
+                className="flex justify-between gap-3"
+              >
                 <span>{np.name}</span>
-                <span className="text-muted-foreground">{np.distanceKm} km</span>
+                <span className="text-muted-foreground">
+                  {np.distanceKm} km
+                </span>
               </li>
             ))}
           </ul>
         </div>
       ) : null}
 
-      {(property.googleMapUrl || property.youtubeUrl || property.lat || property.lng) ? (
+      {property.googleMapUrl ||
+      property.youtubeUrl ||
+      property.lat ||
+      property.lng ? (
         <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm space-y-2 text-sm">
-          <div className="text-sm font-semibold text-foreground mb-1">Location &amp; links</div>
+          <div className="text-sm font-semibold text-foreground mb-1">
+            Location &amp; links
+          </div>
           {property.lat || property.lng ? (
             <div className="text-foreground/80">
               Coordinates: {property.lat}, {property.lng}
@@ -684,13 +924,17 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
       ) : null}
 
       <div className="mt-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
-        <div className="text-sm font-semibold text-foreground mb-1">Description</div>
+        <div className="text-sm font-semibold text-foreground mb-1">
+          Description
+        </div>
         {property.description ? (
           <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
             {property.description}
           </p>
         ) : (
-          <p className="text-sm text-muted-foreground italic">No description provided.</p>
+          <p className="text-sm text-muted-foreground italic">
+            No description provided.
+          </p>
         )}
       </div>
     </div>
@@ -698,11 +942,14 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
 };
 
 const PropertiesAdmin = () => {
-  const { data: listData, refetch } = usePropertyList({
-    moderationStatus: "all",
-    includeAds: false,
-    pageSize: 100,
-  }, { auth: true });
+  const { data: listData, refetch } = usePropertyList(
+    {
+      moderationStatus: "all",
+      includeAds: false,
+      pageSize: 100,
+    },
+    { auth: true },
+  );
   const propertyMutations = usePropertyMutations();
   const list = useMemo(
     () =>
@@ -727,8 +974,12 @@ const PropertiesAdmin = () => {
   const [editStatus, setEditStatus] = useState<PropertyStatus>("Pending");
   const [editImageFiles, setEditImageFiles] = useState<File[]>([]);
   const [editVideoFile, setEditVideoFile] = useState<File | null>(null);
-  const [editExistingImages, setEditExistingImages] = useState<{ id: number; url: string }[]>([]);
-  const [editExistingVideo, setEditExistingVideo] = useState<string | null>(null);
+  const [editExistingImages, setEditExistingImages] = useState<
+    { id: number; url: string }[]
+  >([]);
+  const [editExistingVideo, setEditExistingVideo] = useState<string | null>(
+    null,
+  );
   const [deletingImageIds, setDeletingImageIds] = useState<number[]>([]);
   const [deletingVideo, setDeletingVideo] = useState(false);
   const editImageInputRef = useRef<HTMLInputElement>(null);
@@ -739,7 +990,9 @@ const PropertiesAdmin = () => {
 
   const { data: propertyTypesData } = usePropertyTypes();
 
-  const [featuredPendingId, setFeaturedPendingId] = useState<string | null>(null);
+  const [featuredPendingId, setFeaturedPendingId] = useState<string | null>(
+    null,
+  );
   const toggleFeatured = async (p: Property) => {
     setFeaturedPendingId(p.id);
     const form = new FormData();
@@ -747,7 +1000,9 @@ const PropertiesAdmin = () => {
     try {
       await propertyMutations.update.mutateAsync({ id: p.id, form });
       await refetch();
-      toast.success(p.featured ? "Removed from featured" : "Marked as featured");
+      toast.success(
+        p.featured ? "Removed from featured" : "Marked as featured",
+      );
     } catch {
       toast.error("Could not update featured status");
     } finally {
@@ -781,9 +1036,19 @@ const PropertiesAdmin = () => {
       scrollToListingField(parsed.field);
       return;
     }
-    const imageError = validatePropertyImages({ newImages: addImageFiles.length });
+    const imageError = validatePropertyImages({
+      newImages: addImageFiles.length,
+    });
     if (imageError) {
       toast.error(imageError);
+      return;
+    }
+    const mediaError = validatePropertyMedia({
+      newImages: addImageFiles.length,
+      hasVideo: !!addVideoFile || !!addDraft.youtubeLink.trim(),
+    });
+    if (mediaError) {
+      toast.error(mediaError);
       return;
     }
     try {
@@ -797,6 +1062,10 @@ const PropertiesAdmin = () => {
       const fd = buildPropertyFormData(addDraft, addImageFiles, addVideoFile, {
         propertyTypeId: typeId,
         featureIds: resolveFeatureIds(addDraft),
+        typeFlags: findPropertyTypeFlags(
+          propertyTypesData?.results,
+          addDraft.propertyCategory,
+        ),
       });
       await propertyMutations.create.mutateAsync(fd);
       toast.success("Property added");
@@ -831,7 +1100,10 @@ const PropertiesAdmin = () => {
     if (!editTarget) return;
     setDeletingImageIds((prev) => [...prev, imageId]);
     try {
-      await propertyMutations.deleteImage.mutateAsync({ id: editTarget.id, imageId });
+      await propertyMutations.deleteImage.mutateAsync({
+        id: editTarget.id,
+        imageId,
+      });
       setEditExistingImages((prev) => prev.filter((img) => img.id !== imageId));
       toast.success("Image removed");
     } catch (err) {
@@ -871,15 +1143,39 @@ const PropertiesAdmin = () => {
       toast.error(imageError);
       return;
     }
+    const mediaError = validatePropertyMedia({
+      newImages: editImageFiles.length,
+      existingImages: editExistingImages.length,
+      hasVideo:
+        !!editVideoFile || !!editExistingVideo || !!editDraft.youtubeLink.trim(),
+    });
+    if (mediaError) {
+      toast.error(mediaError);
+      return;
+    }
     try {
       const typeId = propertyTypesData?.results?.find(
-        (t) => t.name.toLowerCase() === editDraft.propertyCategory.toLowerCase(),
+        (t) =>
+          t.name.toLowerCase() === editDraft.propertyCategory.toLowerCase(),
       )?.id;
-      const fd = buildPropertyFormData(editDraft, editImageFiles, editVideoFile, {
-        propertyTypeId: typeId ?? editTarget.propertyTypeId,
-        featureIds: resolveFeatureIds(editDraft),
+      const fd = buildPropertyFormData(
+        editDraft,
+        editImageFiles,
+        editVideoFile,
+        {
+          propertyTypeId: typeId ?? editTarget.propertyTypeId,
+          featureIds: resolveFeatureIds(editDraft),
+          typeFlags: findPropertyTypeFlags(
+            propertyTypesData?.results,
+            editDraft.propertyCategory,
+          ),
+          mode: "update",
+        },
+      );
+      await propertyMutations.update.mutateAsync({
+        id: editTarget.id,
+        form: fd,
       });
-      await propertyMutations.update.mutateAsync({ id: editTarget.id, form: fd });
       toast.success(`“${editDraft.title.trim()}” updated`);
       setEditTarget(null);
       resetEdit();
@@ -906,20 +1202,33 @@ const PropertiesAdmin = () => {
   const propertiesPager = usePagination(list, 10);
 
   if (viewTarget) {
-    return <PropertyDetailView property={viewTarget} onBack={() => setViewTarget(null)} />;
+    return (
+      <PropertyDetailView
+        property={viewTarget}
+        onBack={() => setViewTarget(null)}
+      />
+    );
   }
 
   return (
     <div className="animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6 md:mb-8">
         <h1 className="font-serif text-3xl md:text-4xl">All Properties</h1>
-        <Button variant="luxe" onClick={() => setAddOpen(true)} className="self-start sm:self-auto"><Plus className="h-4 w-4" /> Add property</Button>
+        <Button
+          variant="luxe"
+          onClick={() => setAddOpen(true)}
+          className="self-start sm:self-auto"
+        >
+          <Plus className="h-4 w-4" /> Add property
+        </Button>
       </div>
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         {/* Mobile: stacked cards (the table is too wide for small screens) */}
         <div className="md:hidden divide-y divide-border">
           {propertiesPager.paginated.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">No properties yet.</div>
+            <div className="p-8 text-center text-muted-foreground">
+              No properties yet.
+            </div>
           ) : (
             propertiesPager.paginated.map((p) => (
               <div key={p.id} className="p-3">
@@ -931,9 +1240,14 @@ const PropertiesAdmin = () => {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{p.title}</div>
-                    <div className="line-clamp-2 text-xs text-muted-foreground">{p.location}</div>
+                    <div className="line-clamp-2 text-xs text-muted-foreground">
+                      {p.location}
+                    </div>
                     <div className="mt-1 truncate text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground/80">Owner:</span> {p.ownerName}
+                      <span className="font-medium text-foreground/80">
+                        Owner:
+                      </span>{" "}
+                      {p.ownerName}
                     </div>
                     <div className="text-gold-gradient mt-1 text-sm font-semibold">
                       ₹{p.price.toLocaleString("en-IN")}
@@ -942,7 +1256,11 @@ const PropertiesAdmin = () => {
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <Badge variant={p.status === "Approved" ? "default" : "secondary"}>
+                    <Badge
+                      variant={
+                        p.status === "Approved" ? "default" : "secondary"
+                      }
+                    >
                       {p.status}
                     </Badge>
                     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -955,10 +1273,20 @@ const PropertiesAdmin = () => {
                     </label>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => setViewTarget(p)} title="View">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setViewTarget(p)}
+                      title="View"
+                    >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(p)} title="Edit">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openEdit(p)}
+                      title="Edit"
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
@@ -979,58 +1307,100 @@ const PropertiesAdmin = () => {
 
         {/* Desktop: full table */}
         <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-sm min-w-[760px]">
-          <thead className="bg-muted text-xs uppercase tracking-wider text-muted-foreground">
-            <tr>
-              <th className="text-left p-4">Property</th>
-              <th className="text-left p-4">Owner</th>
-              <th className="text-left p-4">Price</th>
-              <th className="text-left p-4">Status</th>
-              <th className="text-left p-4">Featured</th>
-              <th className="text-right p-4">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {propertiesPager.paginated.length === 0 ? (
+          <table className="w-full text-sm min-w-[760px]">
+            <thead className="bg-muted text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <td colSpan={6} className="p-12 text-center text-muted-foreground">
-                  No properties yet.
-                </td>
+                <th className="text-left p-4">Property</th>
+                <th className="text-left p-4">Owner</th>
+                <th className="text-left p-4">Price</th>
+                <th className="text-left p-4">Status</th>
+                <th className="text-left p-4">Featured</th>
+                <th className="text-right p-4">Actions</th>
               </tr>
-            ) : (
-              propertiesPager.paginated.map((p) => (
-                <tr key={p.id} className="border-t border-border hover:bg-muted/40">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <img src={p.image} className="h-12 w-16 object-cover rounded" alt="" />
-                      <div>
-                        <div className="font-medium">{p.title}</div>
-                        <div className="text-xs text-muted-foreground">{p.location}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4">{p.ownerName}</td>
-                  <td className="p-4 text-gold-gradient">₹{p.price.toLocaleString("en-US")}</td>
-                  <td className="p-4"><Badge variant={p.status === "Approved" ? "default" : "secondary"}>{p.status}</Badge></td>
-                  <td className="p-4"><Switch checked={!!p.featured} disabled={featuredPendingId === p.id} onCheckedChange={() => toggleFeatured(p)} /></td>
-                  <td className="p-4 text-right space-x-1 whitespace-nowrap">
-                    <Button size="sm" variant="ghost" onClick={() => setViewTarget(p)} title="View"><Eye className="h-3 w-3" /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(p)} title="Edit"><Pencil className="h-3 w-3" /></Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setDeleteTarget(p)}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+            </thead>
+            <tbody>
+              {propertiesPager.paginated.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="p-12 text-center text-muted-foreground"
+                  >
+                    No properties yet.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                propertiesPager.paginated.map((p) => (
+                  <tr
+                    key={p.id}
+                    className="border-t border-border hover:bg-muted/40"
+                  >
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={p.image}
+                          className="h-12 w-16 object-cover rounded"
+                          alt=""
+                        />
+                        <div>
+                          <div className="font-medium">{p.title}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {p.location}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4">{p.ownerName}</td>
+                    <td className="p-4 text-gold-gradient">
+                      ₹{p.price.toLocaleString("en-US")}
+                    </td>
+                    <td className="p-4">
+                      <Badge
+                        variant={
+                          p.status === "Approved" ? "default" : "secondary"
+                        }
+                      >
+                        {p.status}
+                      </Badge>
+                    </td>
+                    <td className="p-4">
+                      <Switch
+                        checked={!!p.featured}
+                        disabled={featuredPendingId === p.id}
+                        onCheckedChange={() => toggleFeatured(p)}
+                      />
+                    </td>
+                    <td className="p-4 text-right space-x-1 whitespace-nowrap">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setViewTarget(p)}
+                        title="View"
+                      >
+                        <Eye className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEdit(p)}
+                        title="Edit"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteTarget(p)}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
       <PaginationFooter
@@ -1049,13 +1419,11 @@ const PropertiesAdmin = () => {
           if (!v) resetAdd();
         }}
       >
-        <DialogContent
-          className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden"
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onInteractOutside={(e) => e.preventDefault()}
-        >
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-            <DialogTitle className="font-serif text-2xl">Add property</DialogTitle>
+            <DialogTitle className="font-serif text-2xl">
+              Add property
+            </DialogTitle>
           </DialogHeader>
           <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
             <ListingFormFields
@@ -1075,7 +1443,10 @@ const PropertiesAdmin = () => {
                 type="button"
                 variant="outline"
                 disabled={propertyMutations.create.isPending}
-                onClick={() => { setAddOpen(false); resetAdd(); }}
+                onClick={() => {
+                  setAddOpen(false);
+                  resetAdd();
+                }}
               >
                 Cancel
               </Button>
@@ -1101,25 +1472,40 @@ const PropertiesAdmin = () => {
           }
         }}
       >
-        <DialogContent
-          className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden"
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onInteractOutside={(e) => e.preventDefault()}
-        >
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-            <DialogTitle className="font-serif text-2xl">Edit property</DialogTitle>
+            <DialogTitle className="font-serif text-2xl">
+              Edit property
+            </DialogTitle>
           </DialogHeader>
           <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
             {/* Listing administration — status pinned at the top, matches admin "edit" UX */}
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
-              <h3 className="font-semibold text-foreground">Listing administration</h3>
+              <h3 className="font-semibold text-foreground">
+                Listing administration
+              </h3>
               <div className="space-y-2 w-full sm:max-w-xs">
                 <Label>Status</Label>
-                <Select value={editStatus} onValueChange={(v) => setEditStatus(v as PropertyStatus)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select
+                  value={editStatus}
+                  onValueChange={(v) => setEditStatus(v as PropertyStatus)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {(["Approved", "Pending", "Rejected", "Sold", "Rented"] as const).map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    {(
+                      [
+                        "Approved",
+                        "Pending",
+                        "Rejected",
+                        "Sold",
+                        "Rented",
+                      ] as const
+                    ).map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1148,7 +1534,10 @@ const PropertiesAdmin = () => {
               type="button"
               variant="outline"
               disabled={propertyMutations.update.isPending}
-              onClick={() => { setEditTarget(null); resetEdit(); }}
+              onClick={() => {
+                setEditTarget(null);
+                resetEdit();
+              }}
             >
               Cancel
             </Button>
@@ -1164,16 +1553,29 @@ const PropertiesAdmin = () => {
       </Dialog>
 
       {/* Delete confirmation */}
-      <Dialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(v) => {
+          if (!v) setDeleteTarget(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-serif text-2xl">Delete this property?</DialogTitle>
+            <DialogTitle className="font-serif text-2xl">
+              Delete this property?
+            </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            This will permanently remove <span className="font-medium text-foreground">“{deleteTarget?.title}”</span> from the catalog. This action cannot be undone.
+            This will permanently remove{" "}
+            <span className="font-medium text-foreground">
+              “{deleteTarget?.title}”
+            </span>{" "}
+            from the catalog. This action cannot be undone.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
             <Button
               variant="destructive"
               onClick={confirmDelete}
@@ -1189,11 +1591,14 @@ const PropertiesAdmin = () => {
 };
 
 const Approvals = () => {
-  const { data, refetch } = usePropertyList({
-    moderationStatus: "pending",
-    includeAds: false,
-    pageSize: 50,
-  }, { auth: true });
+  const { data, refetch } = usePropertyList(
+    {
+      moderationStatus: "pending",
+      includeAds: false,
+      pageSize: 50,
+    },
+    { auth: true },
+  );
   const { approve, reject } = usePropertyMutations();
   const pending = useMemo(
     () =>
@@ -1214,21 +1619,42 @@ const Approvals = () => {
   };
   return (
     <div className="animate-fade-in">
-      <h1 className="font-serif text-3xl md:text-4xl mb-6 md:mb-8">Approval Queue</h1>
+      <h1 className="font-serif text-3xl md:text-4xl mb-6 md:mb-8">
+        Approval Queue
+      </h1>
       {pending.length === 0 ? (
-        <div className="bg-card border border-dashed rounded-2xl p-16 text-center text-muted-foreground">All caught up — no pending properties.</div>
+        <div className="bg-card border border-dashed rounded-2xl p-16 text-center text-muted-foreground">
+          All caught up — no pending properties.
+        </div>
       ) : (
         <div className="grid md:grid-cols-2 gap-6">
-          {pending.map(p => (
-            <div key={p.id} className="bg-card border border-border rounded-2xl overflow-hidden hover-lift">
+          {pending.map((p) => (
+            <div
+              key={p.id}
+              className="bg-card border border-border rounded-2xl overflow-hidden hover-lift"
+            >
               <img src={p.image} alt="" className="h-48 w-full object-cover" />
               <div className="p-5">
                 <h3 className="font-serif text-xl">{p.title}</h3>
-                <div className="text-sm text-muted-foreground">{p.location} · ₹{p.price.toLocaleString("en-US")}</div>
+                <div className="text-sm text-muted-foreground">
+                  {p.location} · ₹{p.price.toLocaleString("en-US")}
+                </div>
                 <p className="text-sm mt-2 line-clamp-2">{p.description}</p>
                 <div className="flex gap-2 mt-4">
-                  <Button variant="luxe" size="sm" onClick={() => act(p.id, "Approved")}><CheckCircle2 className="h-3 w-3" /> Approve</Button>
-                  <Button variant="outline" size="sm" onClick={() => act(p.id, "Rejected")}><XCircle className="h-3 w-3" /> Reject</Button>
+                  <Button
+                    variant="luxe"
+                    size="sm"
+                    onClick={() => act(p.id, "Approved")}
+                  >
+                    <CheckCircle2 className="h-3 w-3" /> Approve
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => act(p.id, "Rejected")}
+                  >
+                    <XCircle className="h-3 w-3" /> Reject
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1238,6 +1664,67 @@ const Approvals = () => {
     </div>
   );
 };
+
+type OwnerEditForm = {
+  id: number;
+  fullName: string;
+  email: string;
+  phone: string;
+  whatsappNumber: string;
+  address: string;
+  isActive: boolean;
+  newPassword: string;
+  newPassword2: string;
+};
+
+function ownerToEditForm(owner: ApiOwner, fallback: AppUser): OwnerEditForm {
+  return {
+    id: owner.id,
+    fullName:
+      [owner.first_name, owner.last_name].filter(Boolean).join(" ").trim() ||
+      fallback.name,
+    email: owner.email || fallback.email,
+    phone: owner.phone || fallback.phone || "",
+    whatsappNumber: owner.whatsapp_number || "",
+    address: owner.address || "",
+    isActive: owner.is_active ?? fallback.active,
+    newPassword: "",
+    newPassword2: "",
+  };
+}
+
+type OwnerViewDetail = {
+  id: number;
+  fullName: string;
+  email: string;
+  phone: string;
+  whatsappNumber: string;
+  address: string;
+  isActive: boolean;
+  joinedAt: string;
+  propertyCount: number;
+};
+
+function ownerToViewDetail(
+  owner: ApiOwner | undefined,
+  fallback: AppUser,
+): OwnerViewDetail {
+  return {
+    id: owner?.id ?? Number(fallback.id),
+    fullName: owner
+      ? [owner.first_name, owner.last_name].filter(Boolean).join(" ").trim() ||
+        fallback.name
+      : fallback.name,
+    email: owner?.email ?? fallback.email,
+    phone: owner?.phone || fallback.phone || "",
+    whatsappNumber: owner?.whatsapp_number || "",
+    address: owner?.address || "",
+    isActive: owner?.is_active ?? fallback.active,
+    joinedAt: owner?.date_joined?.slice(0, 10) || fallback.joinedAt,
+    propertyCount:
+      owner?.property_count ?? owner?.properties_count ?? fallback.propertyCount,
+  };
+}
 
 const UsersAdmin = () => {
   const { data: ownersData, refetch } = useOwners({ page_size: 100 });
@@ -1249,7 +1736,17 @@ const UsersAdmin = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
+  const [viewingOwner, setViewingOwner] = useState<AppUser | null>(null);
+  const [editingOwner, setEditingOwner] = useState<OwnerEditForm | null>(null);
   const pageSize = 10;
+
+  const viewingDetail = useMemo(() => {
+    if (!viewingOwner) return null;
+    const owner = (ownersData?.results ?? []).find(
+      (o) => String(o.id) === viewingOwner.id,
+    );
+    return ownerToViewDetail(owner, viewingOwner);
+  }, [viewingOwner, ownersData]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1264,13 +1761,20 @@ const UsersAdmin = () => {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const paginated = filtered.slice(
+    (safePage - 1) * pageSize,
+    safePage * pageSize,
+  );
 
   const formatDate = (iso: string) => {
     if (!iso) return "—";
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    return d.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
   };
 
   const toggleStatus = async (id: string) => {
@@ -1298,6 +1802,64 @@ const UsersAdmin = () => {
     }
   };
 
+  const openViewOwner = (u: AppUser) => {
+    setViewingOwner(u);
+  };
+
+  const openEditOwner = (u: AppUser) => {
+    const owner = (ownersData?.results ?? []).find((o) => String(o.id) === u.id);
+    setEditingOwner(
+      owner
+        ? ownerToEditForm(owner, u)
+        : {
+            id: Number(u.id),
+            fullName: u.name,
+            email: u.email,
+            phone: u.phone,
+            whatsappNumber: "",
+            address: "",
+            isActive: u.active,
+            newPassword: "",
+            newPassword2: "",
+          },
+    );
+  };
+
+  const saveOwner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOwner) return;
+    if (
+      editingOwner.newPassword &&
+      editingOwner.newPassword !== editingOwner.newPassword2
+    ) {
+      toast.error("Password fields don't match");
+      return;
+    }
+    try {
+      const body: Record<string, unknown> = {
+        full_name: editingOwner.fullName.trim(),
+        email: editingOwner.email.trim(),
+        phone: editingOwner.phone.trim(),
+        whatsapp_number: editingOwner.whatsappNumber.trim(),
+        address: editingOwner.address.trim(),
+        is_active: editingOwner.isActive,
+      };
+      if (editingOwner.newPassword) {
+        body.new_password = editingOwner.newPassword;
+        body.new_password2 = editingOwner.newPassword2;
+      }
+      await catalogMutations.patchOwner.mutateAsync({
+        id: editingOwner.id,
+        body,
+      });
+      toast.success("Owner updated");
+      setEditingOwner(null);
+      void refetch();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    }
+  };
+
   return (
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-8 gap-4 flex-wrap">
@@ -1306,7 +1868,10 @@ const UsersAdmin = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
             placeholder="Search name, email, phone…"
             className="pl-9 rounded-full bg-card"
           />
@@ -1315,96 +1880,394 @@ const UsersAdmin = () => {
 
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[720px]">
-          <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            <tr>
-              <th className="text-left p-4 font-medium">Owner</th>
-              <th className="text-left p-4 font-medium">Phone</th>
-              <th className="text-left p-4 font-medium">Joined</th>
-              <th className="text-left p-4 font-medium">Properties</th>
-              <th className="text-left p-4 font-medium">Status</th>
-              <th className="text-right p-4 font-medium pr-6">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginated.length === 0 ? (
+          <table className="w-full text-sm min-w-[720px]">
+            <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               <tr>
-                <td colSpan={6} className="p-12 text-center text-muted-foreground">No owners match your search.</td>
+                <th className="text-left p-4 font-medium">Owner</th>
+                <th className="text-left p-4 font-medium">Phone</th>
+                <th className="text-left p-4 font-medium">Joined</th>
+                <th className="text-left p-4 font-medium">Properties</th>
+                <th className="text-left p-4 font-medium">Status</th>
+                <th className="text-right p-4 font-medium pr-6">Actions</th>
               </tr>
-            ) : (
-              paginated.map((u) => (
-                <tr key={u.id} className="border-t border-border hover:bg-muted/30">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-full bg-sky-400 grid place-items-center text-white font-semibold text-sm shrink-0">
-                        {u.name[0]?.toUpperCase() ?? "?"}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{u.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{u.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4 text-foreground/80 whitespace-nowrap">{u.phone}</td>
-                  <td className="p-4 text-foreground/80 whitespace-nowrap">{formatDate(u.joinedAt)}</td>
-                  <td className="p-4 text-foreground/80">{u.propertyCount}</td>
-                  <td className="p-4">
-                    <button
-                      type="button"
-                      onClick={() => toggleStatus(u.id)}
-                      className={cn(
-                        "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                        u.active
-                          ? "bg-[hsl(30_14%_10%)] text-white hover:bg-[hsl(30_14%_18%)]"
-                          : "bg-muted text-foreground/70 hover:bg-muted/80",
-                      )}
-                    >
-                      {u.active ? "Active" : "Inactive"}
-                    </button>
-                  </td>
-                  <td className="p-4 pr-6">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="View" onClick={() => toast.success(`Viewing ${u.name}`)}>
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Edit" onClick={() => toast.success(`Editing ${u.name}`)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        title="Delete"
-                        onClick={() => setPendingDelete({ label: u.name, action: () => removeOwner(u.id) })}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+            </thead>
+            <tbody>
+              {paginated.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="p-12 text-center text-muted-foreground"
+                  >
+                    No owners match your search.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                paginated.map((u) => (
+                  <tr
+                    key={u.id}
+                    className="border-t border-border hover:bg-muted/30"
+                  >
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-full bg-sky-400 grid place-items-center text-white font-semibold text-sm shrink-0">
+                          {u.name[0]?.toUpperCase() ?? "?"}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{u.name}</div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {u.email}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4 text-foreground/80 whitespace-nowrap">
+                      {u.phone}
+                    </td>
+                    <td className="p-4 text-foreground/80 whitespace-nowrap">
+                      {formatDate(u.joinedAt)}
+                    </td>
+                    <td className="p-4 text-foreground/80">
+                      {u.propertyCount}
+                    </td>
+                    <td className="p-4">
+                      <button
+                        type="button"
+                        onClick={() => toggleStatus(u.id)}
+                        className={cn(
+                          "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                          u.active
+                            ? "bg-[hsl(30_14%_10%)] text-white hover:bg-[hsl(30_14%_18%)]"
+                            : "bg-muted text-foreground/70 hover:bg-muted/80",
+                        )}
+                      >
+                        {u.active ? "Active" : "Inactive"}
+                      </button>
+                    </td>
+                    <td className="p-4 pr-6">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          title="View"
+                          onClick={() => openViewOwner(u)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          title="Edit"
+                          onClick={() => openEditOwner(u)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          title="Delete"
+                          onClick={() =>
+                            setPendingDelete({
+                              label: u.name,
+                              action: () => removeOwner(u.id),
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
       <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground flex-wrap gap-3">
-        <div>Page {safePage} · {filtered.length} total</div>
+        <div>
+          Page {safePage} · {filtered.length} total
+        </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</Button>
-          <Button size="sm" variant="outline" disabled={safePage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={safePage <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={safePage >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </Button>
         </div>
       </div>
 
+      <AdminModal
+        open={!!viewingOwner}
+        onClose={() => setViewingOwner(null)}
+        title={viewingDetail?.fullName ?? "Property owner"}
+      >
+        {viewingDetail && (
+          <div className="space-y-4 text-sm">
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 p-4">
+              <div className="h-12 w-12 rounded-full bg-sky-400 grid place-items-center text-white font-semibold text-lg shrink-0">
+                {viewingDetail.fullName[0]?.toUpperCase() ?? "?"}
+              </div>
+              <div className="min-w-0">
+                <div className="font-medium truncate">{viewingDetail.fullName}</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {viewingDetail.email}
+                </div>
+                <div className="mt-2">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium",
+                      viewingDetail.isActive
+                        ? "bg-[hsl(30_14%_10%)] text-white"
+                        : "bg-muted text-foreground/70",
+                    )}
+                  >
+                    {viewingDetail.isActive ? "Active" : "Inactive"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-xl border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Email
+                </div>
+                <div className="mt-1 inline-flex items-center gap-1 break-all">
+                  <Mail className="h-3 w-3 shrink-0" />
+                  {viewingDetail.email || "—"}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Phone
+                </div>
+                <div className="mt-1 inline-flex items-center gap-1">
+                  <PhoneIcon className="h-3 w-3 shrink-0" />
+                  {viewingDetail.phone || "—"}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  WhatsApp
+                </div>
+                <div className="mt-1">{viewingDetail.whatsappNumber || "—"}</div>
+              </div>
+              <div className="rounded-xl border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Joined
+                </div>
+                <div className="mt-1">{formatDate(viewingDetail.joinedAt)}</div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border p-3">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Address
+              </div>
+              <p className="mt-1 leading-relaxed whitespace-pre-wrap">
+                {viewingDetail.address || "—"}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border p-3">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Properties listed
+              </div>
+              <div className="mt-1 text-lg font-medium tabular-nums">
+                {viewingDetail.propertyCount}
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:space-x-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setViewingOwner(null)}
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                variant="luxe"
+                onClick={() => {
+                  const user = viewingOwner;
+                  setViewingOwner(null);
+                  if (user) openEditOwner(user);
+                }}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit owner
+              </Button>
+            </div>
+          </div>
+        )}
+      </AdminModal>
+
+      <AdminModal
+        open={!!editingOwner}
+        onClose={() => setEditingOwner(null)}
+        title="Edit property owner"
+      >
+        {editingOwner && (
+          <form onSubmit={saveOwner} className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs">Full name</Label>
+              <Input
+                value={editingOwner.fullName}
+                onChange={(e) =>
+                  setEditingOwner({
+                    ...editingOwner,
+                    fullName: e.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Email</Label>
+              <Input
+                type="email"
+                value={editingOwner.email}
+                onChange={(e) =>
+                  setEditingOwner({
+                    ...editingOwner,
+                    email: e.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs">Phone</Label>
+                <Input
+                  value={editingOwner.phone}
+                  onChange={(e) =>
+                    setEditingOwner({
+                      ...editingOwner,
+                      phone: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">WhatsApp</Label>
+                <Input
+                  value={editingOwner.whatsappNumber}
+                  onChange={(e) =>
+                    setEditingOwner({
+                      ...editingOwner,
+                      whatsappNumber: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Address</Label>
+              <Textarea
+                value={editingOwner.address}
+                onChange={(e) =>
+                  setEditingOwner({
+                    ...editingOwner,
+                    address: e.target.value,
+                  })
+                }
+                rows={3}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-border px-4 py-3">
+              <div>
+                <div className="text-sm font-medium">Active account</div>
+                <div className="text-xs text-muted-foreground">
+                  Inactive owners cannot sign in
+                </div>
+              </div>
+              <Switch
+                checked={editingOwner.isActive}
+                onCheckedChange={(checked) =>
+                  setEditingOwner({ ...editingOwner, isActive: checked })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">New password (optional)</Label>
+              <Input
+                type="password"
+                value={editingOwner.newPassword}
+                onChange={(e) =>
+                  setEditingOwner({
+                    ...editingOwner,
+                    newPassword: e.target.value,
+                  })
+                }
+                autoComplete="new-password"
+                placeholder="Leave blank to keep current password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Confirm new password</Label>
+              <Input
+                type="password"
+                value={editingOwner.newPassword2}
+                onChange={(e) =>
+                  setEditingOwner({
+                    ...editingOwner,
+                    newPassword2: e.target.value,
+                  })
+                }
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:space-x-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditingOwner(null)}
+              >
+                Cancel
+              </Button>
+              <SubmitProgressButton
+                type="submit"
+                variant="luxe"
+                submitting={catalogMutations.patchOwner.isPending}
+                idleLabel="Save changes"
+              />
+            </div>
+          </form>
+        )}
+      </AdminModal>
+
       <ConfirmDeleteDialog
         open={!!pendingDelete}
-        onOpenChange={(v) => { if (!v) setPendingDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingDelete(null);
+        }}
         title="Remove this owner?"
         description={
           <>
             This will permanently remove{" "}
-            <span className="font-medium text-foreground">"{pendingDelete?.label}"</span> from the directory. This action cannot be undone.
+            <span className="font-medium text-foreground">
+              "{pendingDelete?.label}"
+            </span>{" "}
+            from the directory. This action cannot be undone.
           </>
         }
         confirmLabel="Remove owner"
@@ -1417,12 +2280,56 @@ const UsersAdmin = () => {
 type CategoryRow = { id: string; name: string; count: number; icon: string };
 type FeatureRow = { id: string; name: string };
 
-const DEFAULT_CATEGORY_ICONS: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
+const DEFAULT_CATEGORY_ICONS: Record<
+  string,
+  ComponentType<SVGProps<SVGSVGElement>>
+> = {
   apartment: Building2,
   commercial: Store,
   land: MapIcon,
   villa: HomeIcon,
 };
+
+const PROPERTY_TYPE_FLAG_LABELS: {
+  key: keyof PropertyTypeFeatureFlags;
+  label: string;
+}[] = [
+  { key: "has_bedrooms", label: "Bedrooms" },
+  { key: "has_bathrooms", label: "Bathrooms" },
+  { key: "has_parking_spaces", label: "Parking spaces" },
+  { key: "has_project_status", label: "Project status" },
+  { key: "has_floors", label: "Floors" },
+  { key: "has_sighting", label: "Sighting" },
+  { key: "has_furnishing", label: "Furnishing" },
+  { key: "has_area_both", label: "Area both (sq.ft + cent)" },
+];
+
+function PropertyTypeFlagsEditor({
+  flags,
+  onChange,
+}: {
+  flags: PropertyTypeFeatureFlags;
+  onChange: (flags: PropertyTypeFeatureFlags) => void;
+}) {
+  return (
+    <div className="grid sm:grid-cols-2 gap-3">
+      {PROPERTY_TYPE_FLAG_LABELS.map(({ key, label }) => (
+        <div
+          key={key}
+          className="flex items-center justify-between rounded-md border border-border px-3 py-2.5"
+        >
+          <Label className="text-sm">{label}</Label>
+          <Switch
+            checked={flags[key]}
+            onCheckedChange={(checked) =>
+              onChange({ ...flags, [key]: checked })
+            }
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const Categories = () => {
   const PAGE_SIZE = 20;
@@ -1452,19 +2359,27 @@ const Categories = () => {
   }, [debouncedFeatSearch]);
 
   const catQueryParams = useMemo(() => {
-    const params: Record<string, string | number> = { page: catPage, page_size: PAGE_SIZE };
+    const params: Record<string, string | number> = {
+      page: catPage,
+      page_size: PAGE_SIZE,
+    };
     if (debouncedCatSearch.trim()) params.search = debouncedCatSearch.trim();
     return params;
   }, [catPage, debouncedCatSearch]);
 
   const featQueryParams = useMemo(() => {
-    const params: Record<string, string | number> = { page: featPage, page_size: PAGE_SIZE };
+    const params: Record<string, string | number> = {
+      page: featPage,
+      page_size: PAGE_SIZE,
+    };
     if (debouncedFeatSearch.trim()) params.search = debouncedFeatSearch.trim();
     return params;
   }, [featPage, debouncedFeatSearch]);
 
-  const { data: catsData, refetch: refetchCats } = useAdminPropertyTypesPaged(catQueryParams);
-  const { data: featsData, refetch: refetchFeats } = useFeaturesPaged(featQueryParams);
+  const { data: catsData, refetch: refetchCats } =
+    useAdminPropertyTypesPaged(catQueryParams);
+  const { data: featsData, refetch: refetchFeats } =
+    useFeaturesPaged(featQueryParams);
   const catalogMutations = useCatalogMutations();
   const cats = catsData?.results ?? [];
   const feats = featsData?.results ?? [];
@@ -1474,6 +2389,9 @@ const Categories = () => {
   const featTotalPages = Math.max(1, Math.ceil(featTotal / PAGE_SIZE));
 
   const [newCat, setNewCat] = useState("");
+  const [newCatFlags, setNewCatFlags] = useState<PropertyTypeFeatureFlags>(
+    DEFAULT_PROPERTY_TYPE_FLAGS,
+  );
   const [newFeat, setNewFeat] = useState("");
   const [iconFile, setIconFile] = useState<File | null>(null);
   const [iconPreview, setIconPreview] = useState<string>("");
@@ -1482,8 +2400,12 @@ const Categories = () => {
   const [editingFeat, setEditingFeat] = useState<ApiFeature | null>(null);
   const [editIconFile, setEditIconFile] = useState<File | null>(null);
   const [editIconPreview, setEditIconPreview] = useState<string>("");
+  const [editCatFlags, setEditCatFlags] = useState<PropertyTypeFeatureFlags>(
+    DEFAULT_PROPERTY_TYPE_FLAGS,
+  );
   const [pendingCatDelete, setPendingCatDelete] = useState<PendingDelete>(null);
-  const [pendingFeatDelete, setPendingFeatDelete] = useState<PendingDelete>(null);
+  const [pendingFeatDelete, setPendingFeatDelete] =
+    useState<PendingDelete>(null);
 
   const handleIconChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1513,7 +2435,9 @@ const Categories = () => {
     setEditIconFile(file);
     const reader = new FileReader();
     reader.onload = () => {
-      setEditIconPreview(typeof reader.result === "string" ? reader.result : "");
+      setEditIconPreview(
+        typeof reader.result === "string" ? reader.result : "",
+      );
     };
     reader.readAsDataURL(file);
   };
@@ -1532,9 +2456,11 @@ const Categories = () => {
       const fd = new FormData();
       fd.append("name", name);
       fd.append("image", iconFile);
+      appendPropertyTypeFlagsToFormData(fd, newCatFlags);
       await catalogMutations.createPropertyType.mutateAsync(fd);
       toast.success("Category added");
       setNewCat("");
+      setNewCatFlags(DEFAULT_PROPERTY_TYPE_FLAGS);
       setIconFile(null);
       setIconPreview("");
       setIconName("");
@@ -1564,11 +2490,14 @@ const Categories = () => {
     setEditingCat(c);
     setEditIconFile(null);
     setEditIconPreview(c.image || "");
+    setEditCatFlags(flagsFromPropertyType(c));
   };
 
   return (
     <div className="animate-fade-in">
-      <h1 className="font-serif text-3xl md:text-4xl mb-6">Categories &amp; Features</h1>
+      <h1 className="font-serif text-3xl md:text-4xl mb-6">
+        Categories &amp; Features
+      </h1>
 
       <Tabs defaultValue="cats">
         <TabsList className="bg-muted/60 rounded-full p-1 h-10">
@@ -1630,15 +2559,26 @@ const Categories = () => {
               >
                 {iconPreview ? (
                   <div className="flex flex-col items-center gap-1">
-                    <img src={iconPreview} alt={iconName} className="h-14 object-contain" />
-                    <span className="text-xs text-muted-foreground truncate max-w-[16rem]">{iconName}</span>
+                    <img
+                      src={iconPreview}
+                      alt={iconName}
+                      className="h-14 object-contain"
+                    />
+                    <span className="text-xs text-muted-foreground truncate max-w-[16rem]">
+                      {iconName}
+                    </span>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-1">
                     <Upload className="h-5 w-5 text-muted-foreground" />
                     <div className="text-sm">
-                      <span className="text-emerald-600 font-medium">Upload Icon</span>
-                      <span className="text-muted-foreground"> (JPG, PNG, WebP)</span>
+                      <span className="text-emerald-600 font-medium">
+                        Upload Icon
+                      </span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        (JPG, PNG, WebP)
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1652,62 +2592,83 @@ const Categories = () => {
               </label>
             </div>
 
+            <div className="mb-6 space-y-3">
+              <Label className="text-xs font-medium text-foreground/80">
+                Property form fields for this category
+              </Label>
+              <PropertyTypeFlagsEditor
+                flags={newCatFlags}
+                onChange={setNewCatFlags}
+              />
+            </div>
+
             <div className="space-y-2">
               {cats.map((c) => {
-                const FallbackIcon = DEFAULT_CATEGORY_ICONS[c.name.toLowerCase()] ?? Building2;
+                const FallbackIcon =
+                  DEFAULT_CATEGORY_ICONS[c.name.toLowerCase()] ?? Building2;
                 return (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between rounded-xl border border-border bg-background p-3 hover:bg-muted/30 transition"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-10 w-10 rounded-lg bg-sky-50 grid place-items-center text-sky-500 shrink-0">
-                      {c.image ? (
-                        <img src={c.image} alt="" className="h-7 w-7 object-contain" />
-                      ) : (
-                        <FallbackIcon className="h-5 w-5" />
-                      )}
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between rounded-xl border border-border bg-background p-3 hover:bg-muted/30 transition"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-10 w-10 rounded-lg bg-sky-50 grid place-items-center text-sky-500 shrink-0">
+                        {c.image ? (
+                          <img
+                            src={c.image}
+                            alt=""
+                            className="h-7 w-7 object-contain"
+                          />
+                        ) : (
+                          <FallbackIcon className="h-5 w-5" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{c.name}</div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{c.name}</div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                        title="Edit"
+                        onClick={() => openEditCategory(c)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8 border-rose-200 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
+                        title="Delete"
+                        onClick={() =>
+                          setPendingCatDelete({
+                            label: c.name,
+                            action: async () => {
+                              try {
+                                await catalogMutations.deletePropertyType.mutateAsync(
+                                  c.id,
+                                );
+                                toast.success("Category removed");
+                                void refetchCats();
+                              } catch (err) {
+                                toast.error(getErrorMessage(err));
+                              }
+                            },
+                          })
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="h-8 w-8 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                      title="Edit"
-                      onClick={() => openEditCategory(c)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="h-8 w-8 border-rose-200 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
-                      title="Delete"
-                      onClick={() => setPendingCatDelete({
-                        label: c.name,
-                        action: async () => {
-                          try {
-                            await catalogMutations.deletePropertyType.mutateAsync(c.id);
-                            toast.success("Category removed");
-                            void refetchCats();
-                          } catch (err) {
-                            toast.error(getErrorMessage(err));
-                          }
-                        },
-                      })}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
                 );
               })}
               {cats.length === 0 && (
-                <div className="text-center text-sm text-muted-foreground py-8">No categories yet.</div>
+                <div className="text-center text-sm text-muted-foreground py-8">
+                  No categories yet.
+                </div>
               )}
             </div>
 
@@ -1777,18 +2738,22 @@ const Categories = () => {
                       variant="outline"
                       className="h-8 w-8 border-rose-200 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
                       title="Delete"
-                      onClick={() => setPendingFeatDelete({
-                        label: f.name,
-                        action: async () => {
-                          try {
-                            await catalogMutations.deleteFeature.mutateAsync(f.id);
-                            toast.success("Feature removed");
-                            void refetchFeats();
-                          } catch (err) {
-                            toast.error(getErrorMessage(err));
-                          }
-                        },
-                      })}
+                      onClick={() =>
+                        setPendingFeatDelete({
+                          label: f.name,
+                          action: async () => {
+                            try {
+                              await catalogMutations.deleteFeature.mutateAsync(
+                                f.id,
+                              );
+                              toast.success("Feature removed");
+                              void refetchFeats();
+                            } catch (err) {
+                              toast.error(getErrorMessage(err));
+                            }
+                          },
+                        })
+                      }
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -1796,7 +2761,9 @@ const Categories = () => {
                 </div>
               ))}
               {feats.length === 0 && (
-                <div className="text-center text-sm text-muted-foreground py-8">No features yet.</div>
+                <div className="text-center text-sm text-muted-foreground py-8">
+                  No features yet.
+                </div>
               )}
             </div>
 
@@ -1811,10 +2778,20 @@ const Categories = () => {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={!!editingCat} onOpenChange={(v) => { if (!v) { setEditingCat(null); setEditIconPreview(""); } }}>
+      <Dialog
+        open={!!editingCat}
+        onOpenChange={(v) => {
+          if (!v) {
+            setEditingCat(null);
+            setEditIconPreview("");
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-serif text-xl">Edit category</DialogTitle>
+            <DialogTitle className="font-serif text-xl">
+              Edit category
+            </DialogTitle>
           </DialogHeader>
           {editingCat && (
             <form
@@ -1830,6 +2807,7 @@ const Categories = () => {
                   const form = new FormData();
                   form.append("name", name);
                   if (editIconFile) form.append("image", editIconFile);
+                  appendPropertyTypeFlagsToFormData(form, editCatFlags);
                   await catalogMutations.updatePropertyType.mutateAsync({
                     id: editingCat.id,
                     form,
@@ -1856,7 +2834,11 @@ const Categories = () => {
                   className="grid place-items-center cursor-pointer h-24 rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-emerald-500 transition-colors"
                 >
                   {editIconPreview ? (
-                    <img src={editIconPreview} alt="" className="h-14 object-contain" />
+                    <img
+                      src={editIconPreview}
+                      alt=""
+                      className="h-14 object-contain"
+                    />
                   ) : (
                     <div className="flex flex-col items-center gap-1 text-muted-foreground">
                       <Upload className="h-5 w-5" />
@@ -1872,19 +2854,46 @@ const Categories = () => {
                   />
                 </label>
               </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-medium text-foreground/80">
+                  Property form fields for this category
+                </Label>
+                <PropertyTypeFlagsEditor
+                  flags={editCatFlags}
+                  onChange={setEditCatFlags}
+                />
+              </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => { setEditingCat(null); setEditIconPreview(""); }}>Cancel</Button>
-                <Button type="submit" variant="luxe">Save</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingCat(null);
+                    setEditIconPreview("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" variant="luxe">
+                  Save
+                </Button>
               </DialogFooter>
             </form>
           )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!editingFeat} onOpenChange={(v) => { if (!v) setEditingFeat(null); }}>
+      <Dialog
+        open={!!editingFeat}
+        onOpenChange={(v) => {
+          if (!v) setEditingFeat(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-serif text-xl">Edit feature</DialogTitle>
+            <DialogTitle className="font-serif text-xl">
+              Edit feature
+            </DialogTitle>
           </DialogHeader>
           {editingFeat && (
             <form
@@ -1915,8 +2924,16 @@ const Categories = () => {
                 <Input name="name" defaultValue={editingFeat.name} required />
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditingFeat(null)}>Cancel</Button>
-                <Button type="submit" variant="luxe">Save</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingFeat(null)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" variant="luxe">
+                  Save
+                </Button>
               </DialogFooter>
             </form>
           )}
@@ -1925,13 +2942,17 @@ const Categories = () => {
 
       <ConfirmDeleteDialog
         open={!!pendingCatDelete}
-        onOpenChange={(v) => { if (!v) setPendingCatDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingCatDelete(null);
+        }}
         title="Delete this category?"
         description={
           <>
             This will permanently remove the{" "}
-            <span className="font-medium text-foreground">"{pendingCatDelete?.label}"</span> category.
-            Listings under it will need to be re-tagged.
+            <span className="font-medium text-foreground">
+              "{pendingCatDelete?.label}"
+            </span>{" "}
+            category. Listings under it will need to be re-tagged.
           </>
         }
         confirmLabel="Delete category"
@@ -1940,12 +2961,17 @@ const Categories = () => {
 
       <ConfirmDeleteDialog
         open={!!pendingFeatDelete}
-        onOpenChange={(v) => { if (!v) setPendingFeatDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingFeatDelete(null);
+        }}
         title="Delete this feature?"
         description={
           <>
             This will permanently remove the{" "}
-            <span className="font-medium text-foreground">"{pendingFeatDelete?.label}"</span> feature.
+            <span className="font-medium text-foreground">
+              "{pendingFeatDelete?.label}"
+            </span>{" "}
+            feature.
           </>
         }
         confirmLabel="Delete feature"
@@ -2020,7 +3046,9 @@ const Banners = () => {
         await catalogMutations.createOfferBanner.mutateAsync(fd);
         void refetchOffer();
       }
-      toast.success(`${bannerType === "hero" ? "Hero" : "Offer"} banner updated`);
+      toast.success(
+        `${bannerType === "hero" ? "Hero" : "Offer"} banner updated`,
+      );
       setOpen(false);
       reset();
     } catch (err) {
@@ -2047,10 +3075,18 @@ const Banners = () => {
     if (!iso) return "—";
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return d.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
   };
 
-  const renderHeroCard = (b: { id: number; image?: string; created_at?: string }) => (
+  const renderHeroCard = (b: {
+    id: number;
+    image?: string;
+    created_at?: string;
+  }) => (
     <div key={b.id} className="max-w-md">
       <div className="rounded-xl overflow-hidden border border-border bg-card shadow-sm">
         {b.image ? (
@@ -2060,15 +3096,19 @@ const Banners = () => {
         )}
       </div>
       <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-background px-4 py-2 text-sm">
-        <span className="text-foreground/80">Added: {formatDate(b.created_at)}</span>
+        <span className="text-foreground/80">
+          Added: {formatDate(b.created_at)}
+        </span>
         <Button
           size="icon"
           variant="outline"
           className="h-8 w-8 border-rose-200 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
-          onClick={() => setPendingDelete({
-            label: "Hero banner",
-            action: () => void removeBanner(b.id, "hero"),
-          })}
+          onClick={() =>
+            setPendingDelete({
+              label: "Hero banner",
+              action: () => void removeBanner(b.id, "hero"),
+            })
+          }
           title="Delete"
         >
           <Trash2 className="h-4 w-4" />
@@ -2077,7 +3117,11 @@ const Banners = () => {
     </div>
   );
 
-  const renderOfferCard = (b: { id: number; image?: string; created_at?: string }) => (
+  const renderOfferCard = (b: {
+    id: number;
+    image?: string;
+    created_at?: string;
+  }) => (
     <div key={b.id} className="max-w-md">
       <div className="rounded-xl overflow-hidden border border-border bg-card shadow-sm">
         {b.image ? (
@@ -2087,15 +3131,19 @@ const Banners = () => {
         )}
       </div>
       <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-background px-4 py-2 text-sm">
-        <span className="text-foreground/80">Added: {formatDate(b.created_at)}</span>
+        <span className="text-foreground/80">
+          Added: {formatDate(b.created_at)}
+        </span>
         <Button
           size="icon"
           variant="outline"
           className="h-8 w-8 border-rose-200 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
-          onClick={() => setPendingDelete({
-            label: "Offer banner",
-            action: () => void removeBanner(b.id, "offer"),
-          })}
+          onClick={() =>
+            setPendingDelete({
+              label: "Offer banner",
+              action: () => void removeBanner(b.id, "offer"),
+            })
+          }
           title="Delete"
         >
           <Trash2 className="h-4 w-4" />
@@ -2109,7 +3157,9 @@ const Banners = () => {
       <div className="flex items-start justify-between mb-8 gap-4 flex-wrap">
         <div>
           <h1 className="font-serif text-3xl md:text-4xl">Banner Management</h1>
-          <p className="text-sm text-muted-foreground mt-1">Upload hero and offer banners shown on the home page.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Upload hero and offer banners shown on the home page.
+          </p>
         </div>
         <Button variant="luxe" onClick={() => setOpen(true)}>
           Add New Banner
@@ -2118,7 +3168,9 @@ const Banners = () => {
 
       <section className="mb-10">
         <h2 className="font-serif text-xl mb-1">Hero Banners</h2>
-        <p className="text-xs text-muted-foreground mb-4">Uploading a new hero banner replaces the current one on the home page.</p>
+        <p className="text-xs text-muted-foreground mb-4">
+          Uploading a new hero banner replaces the current one on the home page.
+        </p>
         {hero.length === 0 ? (
           <div className="bg-card border border-border rounded-lg px-6 py-6 text-center text-muted-foreground text-sm">
             No banners yet. Use "Add New Banner" to upload one.
@@ -2130,7 +3182,9 @@ const Banners = () => {
 
       <section>
         <h2 className="font-serif text-xl mb-1">Offer Banners</h2>
-        <p className="text-xs text-muted-foreground mb-4">Uploading a new offer banner replaces the current carousel image.</p>
+        <p className="text-xs text-muted-foreground mb-4">
+          Uploading a new offer banner replaces the current carousel image.
+        </p>
         {offer.length === 0 ? (
           <div className="bg-card border border-border rounded-lg px-6 py-6 text-center text-muted-foreground text-sm">
             No banners yet. Use "Add New Banner" to upload one.
@@ -2143,7 +3197,9 @@ const Banners = () => {
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-serif text-xl">Add New Banner</DialogTitle>
+            <DialogTitle className="font-serif text-xl">
+              Add New Banner
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={addBanner} className="space-y-5">
             <div className="space-y-2">
@@ -2162,20 +3218,34 @@ const Banners = () => {
               <Label className="text-xs font-medium">Banner Image</Label>
               <label
                 htmlFor="banner-image-upload"
-                className="grid place-items-center cursor-pointer h-40 w-full rounded-lg border-2 border-dashed border-border bg-muted/20 hover:border-blue-500 hover:bg-blue-50/30 transition-colors"
+                className="relative block h-40 w-full cursor-pointer overflow-hidden rounded-lg border-2 border-dashed border-border bg-muted/20 transition-colors hover:border-blue-500 hover:bg-blue-50/30"
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0]); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleFile(e.dataTransfer.files?.[0]);
+                }}
               >
                 {imagePreview ? (
-                  <img src={imagePreview} alt={imageName} className="h-full w-full object-cover rounded-lg" />
+                  <img
+                    src={imagePreview}
+                    alt={imageName}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
                 ) : (
-                  <div className="flex flex-col items-center gap-2 text-center px-4">
+                  <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
                     <Upload className="h-6 w-6 text-muted-foreground" />
                     <div className="text-sm">
-                      <span className="text-blue-600 font-medium">Upload a file</span>
-                      <span className="text-muted-foreground"> or drag and drop</span>
+                      <span className="text-blue-600 font-medium">
+                        Upload a file
+                      </span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        or drag and drop
+                      </span>
                     </div>
-                    <p className="text-xs text-muted-foreground">PNG, JPG, GIF, WebP up to 10MB</p>
+                    <p className="text-xs text-muted-foreground">
+                      PNG, JPG, GIF, WebP up to 10MB
+                    </p>
                   </div>
                 )}
                 <input
@@ -2189,8 +3259,16 @@ const Banners = () => {
             </div>
 
             <DialogFooter className="gap-2">
-              <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>Cancel</Button>
-              <Button type="submit" variant="luxe">Add Banner</Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="luxe">
+                Add Banner
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -2198,11 +3276,17 @@ const Banners = () => {
 
       <ConfirmDeleteDialog
         open={!!pendingDelete}
-        onOpenChange={(v) => { if (!v) setPendingDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingDelete(null);
+        }}
         title="Delete this banner?"
         description={
           <>
-            The <span className="font-medium text-foreground">{pendingDelete?.label}</span> will be permanently removed from the site.
+            The{" "}
+            <span className="font-medium text-foreground">
+              {pendingDelete?.label}
+            </span>{" "}
+            will be permanently removed from the site.
           </>
         }
         confirmLabel="Delete banner"
@@ -2325,7 +3409,10 @@ const Testimonials = () => {
     });
     try {
       if (editing.id) {
-        await catalogMutations.updateTestimonial.mutateAsync({ id: editing.id, form: payload });
+        await catalogMutations.updateTestimonial.mutateAsync({
+          id: editing.id,
+          form: payload,
+        });
         toast.success("Testimonial updated");
       } else {
         await catalogMutations.createTestimonial.mutateAsync(payload);
@@ -2368,7 +3455,9 @@ const Testimonials = () => {
     <div className="animate-fade-in">
       <div className="mb-8">
         <h1 className="font-serif text-3xl md:text-4xl">Client Stories</h1>
-        <p className="text-sm text-muted-foreground mt-1">Manage testimonials shown on the home page.</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage testimonials shown on the home page.
+        </p>
       </div>
 
       {/*
@@ -2419,10 +3508,17 @@ const Testimonials = () => {
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
           {testimonialsPager.paginated.map((t) => (
-            <article key={t.id} className="bg-card border border-border rounded-2xl p-6 hover-lift">
+            <article
+              key={t.id}
+              className="bg-card border border-border rounded-2xl p-6 hover-lift"
+            >
               <div className="flex items-center gap-3">
                 {t.avatar ? (
-                  <img src={t.avatar} alt={t.name} className="h-11 w-11 rounded-full object-cover" />
+                  <img
+                    src={t.avatar}
+                    alt={t.name}
+                    className="h-11 w-11 rounded-full object-cover"
+                  />
                 ) : (
                   <div className="h-11 w-11 rounded-full bg-sky-400 grid place-items-center font-semibold text-white">
                     {t.name[0]?.toUpperCase() ?? "?"}
@@ -2430,7 +3526,9 @@ const Testimonials = () => {
                 )}
                 <div className="min-w-0">
                   <div className="font-medium truncate">{t.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{t.role || "Client"}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {t.role || "Client"}
+                  </div>
                 </div>
               </div>
               <div className="mt-3 flex gap-0.5">
@@ -2439,13 +3537,17 @@ const Testimonials = () => {
                     key={i}
                     className={cn(
                       "h-4 w-4",
-                      i < t.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30",
+                      i < t.rating
+                        ? "fill-amber-400 text-amber-400"
+                        : "text-muted-foreground/30",
                     )}
                   />
                 ))}
               </div>
               {t.content && (
-                <p className="mt-3 text-sm text-foreground/80 leading-relaxed">"{t.content}"</p>
+                <p className="mt-3 text-sm text-foreground/80 leading-relaxed">
+                  "{t.content}"
+                </p>
               )}
               <div className="mt-4 flex items-center justify-between gap-2">
                 <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
@@ -2469,7 +3571,12 @@ const Testimonials = () => {
                     size="icon"
                     variant="outline"
                     className="h-8 w-8 border-rose-200 text-rose-500 hover:bg-rose-50"
-                    onClick={() => setPendingDelete({ label: t.name, action: () => void remove(t.id) })}
+                    onClick={() =>
+                      setPendingDelete({
+                        label: t.name,
+                        action: () => void remove(t.id),
+                      })
+                    }
                     title="Delete"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -2512,15 +3619,29 @@ const Testimonials = () => {
           <form onSubmit={save} className="space-y-4">
             <div className="space-y-2">
               <Label className="text-xs">Client name</Label>
-              <Input name="name" defaultValue={editing?.name ?? ""} placeholder="Savannah N." required />
+              <Input
+                name="name"
+                defaultValue={editing?.name ?? ""}
+                placeholder="Savannah N."
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Role / title</Label>
-              <Input name="role" defaultValue={editing?.role ?? ""} placeholder="Property Investor" />
+              <Input
+                name="role"
+                defaultValue={editing?.role ?? ""}
+                placeholder="Property Investor"
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Testimonial</Label>
-              <Textarea name="quote" rows={4} defaultValue={editing?.content ?? ""} className="resize-none" />
+              <Textarea
+                name="quote"
+                rows={4}
+                defaultValue={editing?.content ?? ""}
+                className="resize-none"
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Rating</Label>
@@ -2538,7 +3659,12 @@ const Testimonials = () => {
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Display order</Label>
-              <Input name="order" type="number" min="0" defaultValue={String(editing?.order ?? 0)} />
+              <Input
+                name="order"
+                type="number"
+                min="0"
+                defaultValue={String(editing?.order ?? 0)}
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Avatar (optional)</Label>
@@ -2550,7 +3676,8 @@ const Testimonials = () => {
                   Choose File
                 </label>
                 <span className="text-xs text-muted-foreground truncate">
-                  {avatarName || (avatarPreview ? "Current image" : "No file chosen")}
+                  {avatarName ||
+                    (avatarPreview ? "Current image" : "No file chosen")}
                 </span>
                 <input
                   id="testimonial-avatar"
@@ -2560,16 +3687,29 @@ const Testimonials = () => {
                   onChange={handleAvatar}
                 />
                 {avatarPreview && (
-                  <img src={avatarPreview} alt="" className="h-8 w-8 rounded-full object-cover ml-auto" />
+                  <img
+                    src={avatarPreview}
+                    alt=""
+                    className="h-8 w-8 rounded-full object-cover ml-auto"
+                  />
                 )}
               </div>
             </div>
             <div className="flex items-center justify-between rounded-md border border-border px-3 py-2.5">
               <Label className="text-sm">Published on site</Label>
-              <Switch checked={editPublished} onCheckedChange={setEditPublished} />
+              <Switch
+                checked={editPublished}
+                onCheckedChange={setEditPublished}
+              />
             </div>
             <DialogFooter className="gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpen(false)}
+              >
+                Cancel
+              </Button>
               <Button type="submit" variant="luxe">
                 {editing?.id ? "Save" : "Create"}
               </Button>
@@ -2580,12 +3720,17 @@ const Testimonials = () => {
 
       <ConfirmDeleteDialog
         open={!!pendingDelete}
-        onOpenChange={(v) => { if (!v) setPendingDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingDelete(null);
+        }}
         title="Delete this testimonial?"
         description={
           <>
             The story from{" "}
-            <span className="font-medium text-foreground">"{pendingDelete?.label}"</span> will be permanently removed.
+            <span className="font-medium text-foreground">
+              "{pendingDelete?.label}"
+            </span>{" "}
+            will be permanently removed.
           </>
         }
         confirmLabel="Delete testimonial"
@@ -2606,9 +3751,18 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
   const { data: citiesData, refetch: refetchCities } = useAllCities();
   const catalogMutations = useCatalogMutations();
   // Full lists power the dropdowns (add/edit dialogs) and name resolution.
-  const states = useMemo(() => statesData?.results ?? [], [statesData?.results]);
-  const districts = useMemo(() => districtsData?.results ?? [], [districtsData?.results]);
-  const cities = useMemo(() => citiesData?.results ?? [], [citiesData?.results]);
+  const states = useMemo(
+    () => statesData?.results ?? [],
+    [statesData?.results],
+  );
+  const districts = useMemo(
+    () => districtsData?.results ?? [],
+    [districtsData?.results],
+  );
+  const cities = useMemo(
+    () => citiesData?.results ?? [],
+    [citiesData?.results],
+  );
 
   // Add dialog states
   const [stateDialogOpen, setStateDialogOpen] = useState(false);
@@ -2617,7 +3771,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
 
   // Edit dialog state
   const [editingState, setEditingState] = useState<ApiState | null>(null);
-  const [editingDistrict, setEditingDistrict] = useState<ApiDistrict | null>(null);
+  const [editingDistrict, setEditingDistrict] = useState<ApiDistrict | null>(
+    null,
+  );
   const [editingCity, setEditingCity] = useState<ApiCity | null>(null);
 
   // Filters
@@ -2655,7 +3811,8 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
       page: statesPage,
       page_size: LOCATION_PAGE_SIZE,
     };
-    if (debouncedStateSearch.trim()) params.search = debouncedStateSearch.trim();
+    if (debouncedStateSearch.trim())
+      params.search = debouncedStateSearch.trim();
     return params;
   }, [statesPage, debouncedStateSearch]);
 
@@ -2664,7 +3821,8 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
       page: districtsPage,
       page_size: LOCATION_PAGE_SIZE,
     };
-    if (debouncedDistrictSearch.trim()) params.search = debouncedDistrictSearch.trim();
+    if (debouncedDistrictSearch.trim())
+      params.search = debouncedDistrictSearch.trim();
     if (stateFilter) params.state_id = Number(stateFilter);
     return params;
   }, [districtsPage, debouncedDistrictSearch, stateFilter]);
@@ -2675,13 +3833,22 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
   const pagedDistricts = districtsPageData?.results ?? [];
   const statesTotal = statesPageData?.count ?? 0;
   const districtsTotal = districtsPageData?.count ?? 0;
-  const statesTotalPages = Math.max(1, Math.ceil(statesTotal / LOCATION_PAGE_SIZE));
-  const districtsTotalPages = Math.max(1, Math.ceil(districtsTotal / LOCATION_PAGE_SIZE));
+  const statesTotalPages = Math.max(
+    1,
+    Math.ceil(statesTotal / LOCATION_PAGE_SIZE),
+  );
+  const districtsTotalPages = Math.max(
+    1,
+    Math.ceil(districtsTotal / LOCATION_PAGE_SIZE),
+  );
 
   // Delete confirmations
-  const [pendingStateDelete, setPendingStateDelete] = useState<PendingDelete>(null);
-  const [pendingDistrictDelete, setPendingDistrictDelete] = useState<PendingDelete>(null);
-  const [pendingCityDelete, setPendingCityDelete] = useState<PendingDelete>(null);
+  const [pendingStateDelete, setPendingStateDelete] =
+    useState<PendingDelete>(null);
+  const [pendingDistrictDelete, setPendingDistrictDelete] =
+    useState<PendingDelete>(null);
+  const [pendingCityDelete, setPendingCityDelete] =
+    useState<PendingDelete>(null);
 
   // -------------- State actions --------------
   const addState = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -2712,7 +3879,10 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
       return;
     }
     try {
-      await catalogMutations.updateState.mutateAsync({ id: editingState.id, body: { name } });
+      await catalogMutations.updateState.mutateAsync({
+        id: editingState.id,
+        body: { name },
+      });
       void refetchStates();
       setEditingState(null);
       toast.success("State updated");
@@ -2744,7 +3914,10 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
       return;
     }
     try {
-      await catalogMutations.createDistrict.mutateAsync({ name, state: stateId });
+      await catalogMutations.createDistrict.mutateAsync({
+        name,
+        state: stateId,
+      });
       void refetchDistricts();
       setDistrictDialogOpen(false);
       toast.success("District added");
@@ -2798,7 +3971,10 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
       return;
     }
     try {
-      await catalogMutations.createCity.mutateAsync({ name, district: districtId });
+      await catalogMutations.createCity.mutateAsync({
+        name,
+        district: districtId,
+      });
       void refetchCities();
       setCityDialogOpen(false);
       toast.success("City added");
@@ -2904,37 +4080,50 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
 
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[520px]">
-              <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                <tr>
-                  <th className="text-left p-4 font-medium w-32">ID</th>
-                  <th className="text-left p-4 font-medium">Name</th>
-                  <th className="text-right p-4 font-medium pr-6">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagedStates.length === 0 ? (
+              <table className="w-full text-sm min-w-[520px]">
+                <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                   <tr>
-                    <td colSpan={3} className="p-12 text-center text-muted-foreground">
-                      {debouncedStateSearch.trim() ? "No states match your search." : "No states yet."}
-                    </td>
+                    <th className="text-left p-4 font-medium w-32">ID</th>
+                    <th className="text-left p-4 font-medium">Name</th>
+                    <th className="text-right p-4 font-medium pr-6">Actions</th>
                   </tr>
-                ) : (
-                  pagedStates.map((s) => (
-                    <tr key={s.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="p-4 text-muted-foreground">{s.id}</td>
-                      <td className="p-4 font-medium">{s.name}</td>
-                      <td className="p-4 pr-6">
-                        <div className="flex items-center justify-end gap-2">
-                          {editBtn(() => setEditingState(s))}
-                          {deleteBtn(() => setPendingStateDelete({ label: s.name, action: () => void removeState(s) }))}
-                        </div>
+                </thead>
+                <tbody>
+                  {pagedStates.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="p-12 text-center text-muted-foreground"
+                      >
+                        {debouncedStateSearch.trim()
+                          ? "No states match your search."
+                          : "No states yet."}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    pagedStates.map((s) => (
+                      <tr
+                        key={s.id}
+                        className="border-t border-border hover:bg-muted/30"
+                      >
+                        <td className="p-4 text-muted-foreground">{s.id}</td>
+                        <td className="p-4 font-medium">{s.name}</td>
+                        <td className="p-4 pr-6">
+                          <div className="flex items-center justify-end gap-2">
+                            {editBtn(() => setEditingState(s))}
+                            {deleteBtn(() =>
+                              setPendingStateDelete({
+                                label: s.name,
+                                action: () => void removeState(s),
+                              }),
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -2944,7 +4133,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
               total={statesTotal}
               pageSize={LOCATION_PAGE_SIZE}
               onPrev={() => setStatesPage((p) => Math.max(1, p - 1))}
-              onNext={() => setStatesPage((p) => Math.min(statesTotalPages, p + 1))}
+              onNext={() =>
+                setStatesPage((p) => Math.min(statesTotalPages, p + 1))
+              }
             />
           )}
 
@@ -2952,7 +4143,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
           <Dialog open={stateDialogOpen} onOpenChange={setStateDialogOpen}>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle className="font-serif text-xl">Add state</DialogTitle>
+                <DialogTitle className="font-serif text-xl">
+                  Add state
+                </DialogTitle>
               </DialogHeader>
               <form onSubmit={addState} className="space-y-4">
                 <div className="space-y-2">
@@ -2960,28 +4153,55 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                   <Input name="name" placeholder="Kerala" required />
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setStateDialogOpen(false)}>Cancel</Button>
-                  <Button type="submit" variant="luxe">Add state</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setStateDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="luxe">
+                    Add state
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
 
           {/* Edit state dialog */}
-          <Dialog open={!!editingState} onOpenChange={(v) => { if (!v) setEditingState(null); }}>
+          <Dialog
+            open={!!editingState}
+            onOpenChange={(v) => {
+              if (!v) setEditingState(null);
+            }}
+          >
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle className="font-serif text-xl">Edit state</DialogTitle>
+                <DialogTitle className="font-serif text-xl">
+                  Edit state
+                </DialogTitle>
               </DialogHeader>
               {editingState && (
                 <form onSubmit={updateState} className="space-y-4">
                   <div className="space-y-2">
                     <Label className="text-xs">State name</Label>
-                    <Input name="name" defaultValue={editingState.name} required />
+                    <Input
+                      name="name"
+                      defaultValue={editingState.name}
+                      required
+                    />
                   </div>
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setEditingState(null)}>Cancel</Button>
-                    <Button type="submit" variant="luxe">Save</Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setEditingState(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" variant="luxe">
+                      Save
+                    </Button>
                   </DialogFooter>
                 </form>
               )}
@@ -3009,7 +4229,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Filter by state</Label>
+                <Label className="text-xs text-muted-foreground">
+                  Filter by state
+                </Label>
                 <select
                   className="h-10 w-48 rounded-full border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:border-gold"
                   value={stateFilter}
@@ -3017,11 +4239,16 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                 >
                   <option value="">All states</option>
                   {sortedStates.map((s) => (
-                    <option key={s.id} value={String(s.id)}>{s.name}</option>
+                    <option key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </option>
                   ))}
                 </select>
               </div>
-              <Button variant="luxe" onClick={() => setDistrictDialogOpen(true)}>
+              <Button
+                variant="luxe"
+                onClick={() => setDistrictDialogOpen(true)}
+              >
                 <Plus className="h-4 w-4" /> Add district
               </Button>
             </div>
@@ -3029,44 +4256,57 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
 
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[620px]">
-              <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                <tr>
-                  <th className="text-left p-4 font-medium w-24">ID</th>
-                  <th className="text-left p-4 font-medium">Name</th>
-                  <th className="text-left p-4 font-medium">State</th>
-                  <th className="text-right p-4 font-medium pr-6">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagedDistricts.length === 0 ? (
+              <table className="w-full text-sm min-w-[620px]">
+                <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                   <tr>
-                    <td colSpan={4} className="p-12 text-center text-muted-foreground">
-                      {debouncedDistrictSearch.trim() || stateFilter
-                        ? "No districts match your search."
-                        : "No districts yet."}
-                    </td>
+                    <th className="text-left p-4 font-medium w-24">ID</th>
+                    <th className="text-left p-4 font-medium">Name</th>
+                    <th className="text-left p-4 font-medium">State</th>
+                    <th className="text-right p-4 font-medium pr-6">Actions</th>
                   </tr>
-                ) : (
-                  pagedDistricts.map((d) => {
-                    const state = states.find((s) => s.id === d.state);
-                    return (
-                      <tr key={d.id} className="border-t border-border hover:bg-muted/30">
-                        <td className="p-4 text-muted-foreground">{d.id}</td>
-                        <td className="p-4 font-medium">{d.name}</td>
-                        <td className="p-4 text-foreground/80">{state?.name ?? d.state_name ?? "—"}</td>
-                        <td className="p-4 pr-6">
-                          <div className="flex items-center justify-end gap-2">
-                            {editBtn(() => setEditingDistrict(d))}
-                            {deleteBtn(() => setPendingDistrictDelete({ label: d.name, action: () => void removeDistrict(d) }))}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pagedDistricts.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="p-12 text-center text-muted-foreground"
+                      >
+                        {debouncedDistrictSearch.trim() || stateFilter
+                          ? "No districts match your search."
+                          : "No districts yet."}
+                      </td>
+                    </tr>
+                  ) : (
+                    pagedDistricts.map((d) => {
+                      const state = states.find((s) => s.id === d.state);
+                      return (
+                        <tr
+                          key={d.id}
+                          className="border-t border-border hover:bg-muted/30"
+                        >
+                          <td className="p-4 text-muted-foreground">{d.id}</td>
+                          <td className="p-4 font-medium">{d.name}</td>
+                          <td className="p-4 text-foreground/80">
+                            {state?.name ?? d.state_name ?? "—"}
+                          </td>
+                          <td className="p-4 pr-6">
+                            <div className="flex items-center justify-end gap-2">
+                              {editBtn(() => setEditingDistrict(d))}
+                              {deleteBtn(() =>
+                                setPendingDistrictDelete({
+                                  label: d.name,
+                                  action: () => void removeDistrict(d),
+                                }),
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -3076,15 +4316,22 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
               total={districtsTotal}
               pageSize={LOCATION_PAGE_SIZE}
               onPrev={() => setDistrictsPage((p) => Math.max(1, p - 1))}
-              onNext={() => setDistrictsPage((p) => Math.min(districtsTotalPages, p + 1))}
+              onNext={() =>
+                setDistrictsPage((p) => Math.min(districtsTotalPages, p + 1))
+              }
             />
           )}
 
           {/* Add district dialog */}
-          <Dialog open={districtDialogOpen} onOpenChange={setDistrictDialogOpen}>
+          <Dialog
+            open={districtDialogOpen}
+            onOpenChange={setDistrictDialogOpen}
+          >
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle className="font-serif text-xl">Add district</DialogTitle>
+                <DialogTitle className="font-serif text-xl">
+                  Add district
+                </DialogTitle>
               </DialogHeader>
               <form onSubmit={addDistrict} className="space-y-4">
                 <div className="space-y-2">
@@ -3097,7 +4344,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                   >
                     <option value="">Select state…</option>
                     {sortedStates.map((s) => (
-                      <option key={s.id} value={String(s.id)}>{s.name}</option>
+                      <option key={s.id} value={String(s.id)}>
+                        {s.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -3106,18 +4355,33 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                   <Input name="name" placeholder="Ernakulam" required />
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setDistrictDialogOpen(false)}>Cancel</Button>
-                  <Button type="submit" variant="luxe">Add district</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDistrictDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="luxe">
+                    Add district
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
 
           {/* Edit district dialog */}
-          <Dialog open={!!editingDistrict} onOpenChange={(v) => { if (!v) setEditingDistrict(null); }}>
+          <Dialog
+            open={!!editingDistrict}
+            onOpenChange={(v) => {
+              if (!v) setEditingDistrict(null);
+            }}
+          >
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle className="font-serif text-xl">Edit district</DialogTitle>
+                <DialogTitle className="font-serif text-xl">
+                  Edit district
+                </DialogTitle>
               </DialogHeader>
               {editingDistrict && (
                 <form onSubmit={updateDistrict} className="space-y-4">
@@ -3131,17 +4395,31 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                     >
                       <option value="">Select state…</option>
                       {sortedStates.map((s) => (
-                        <option key={s.id} value={String(s.id)}>{s.name}</option>
+                        <option key={s.id} value={String(s.id)}>
+                          {s.name}
+                        </option>
                       ))}
                     </select>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs">District name</Label>
-                    <Input name="name" defaultValue={editingDistrict.name} required />
+                    <Input
+                      name="name"
+                      defaultValue={editingDistrict.name}
+                      required
+                    />
                   </div>
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setEditingDistrict(null)}>Cancel</Button>
-                    <Button type="submit" variant="luxe">Save</Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setEditingDistrict(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" variant="luxe">
+                      Save
+                    </Button>
                   </DialogFooter>
                 </form>
               )}
@@ -3157,7 +4435,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
             <h1 className="font-serif text-3xl md:text-4xl">Cities</h1>
             <div className="flex items-end gap-3 flex-wrap">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Filter by district</Label>
+                <Label className="text-xs text-muted-foreground">
+                  Filter by district
+                </Label>
                 <select
                   className="h-10 w-48 rounded-full border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:border-gold"
                   value={districtFilter}
@@ -3167,7 +4447,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                   {[...districts]
                     .sort((a, b) => a.name.localeCompare(b.name))
                     .map((d) => (
-                      <option key={d.id} value={String(d.id)}>{d.name}</option>
+                      <option key={d.id} value={String(d.id)}>
+                        {d.name}
+                      </option>
                     ))}
                 </select>
               </div>
@@ -3179,43 +4461,64 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
 
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[680px]">
-              <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                <tr>
-                  <th className="text-left p-4 font-medium w-24">ID</th>
-                  <th className="text-left p-4 font-medium">City</th>
-                  <th className="text-left p-4 font-medium">District</th>
-                  <th className="text-left p-4 font-medium">State</th>
-                  <th className="text-right p-4 font-medium pr-6">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedCities.length === 0 ? (
+              <table className="w-full text-sm min-w-[680px]">
+                <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                   <tr>
-                    <td colSpan={5} className="p-12 text-center text-muted-foreground">No cities yet.</td>
+                    <th className="text-left p-4 font-medium w-24">ID</th>
+                    <th className="text-left p-4 font-medium">City</th>
+                    <th className="text-left p-4 font-medium">District</th>
+                    <th className="text-left p-4 font-medium">State</th>
+                    <th className="text-right p-4 font-medium pr-6">Actions</th>
                   </tr>
-                ) : (
-                  citiesPager.paginated.map((c) => {
-                    const district = districts.find((d) => d.id === c.district);
-                    const state = district ? states.find((s) => s.id === district.state) : undefined;
-                    return (
-                      <tr key={c.id} className="border-t border-border hover:bg-muted/30">
-                        <td className="p-4 text-muted-foreground">{c.id}</td>
-                        <td className="p-4 font-medium">{c.name}</td>
-                        <td className="p-4 text-foreground/80">{district?.name ?? c.district_name ?? "—"}</td>
-                        <td className="p-4 text-foreground/80">{state?.name ?? "—"}</td>
-                        <td className="p-4 pr-6">
-                          <div className="flex items-center justify-end gap-2">
-                            {editBtn(() => setEditingCity(c))}
-                            {deleteBtn(() => setPendingCityDelete({ label: c.name, action: () => void removeCity(c) }))}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sortedCities.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="p-12 text-center text-muted-foreground"
+                      >
+                        No cities yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    citiesPager.paginated.map((c) => {
+                      const district = districts.find(
+                        (d) => d.id === c.district,
+                      );
+                      const state = district
+                        ? states.find((s) => s.id === district.state)
+                        : undefined;
+                      return (
+                        <tr
+                          key={c.id}
+                          className="border-t border-border hover:bg-muted/30"
+                        >
+                          <td className="p-4 text-muted-foreground">{c.id}</td>
+                          <td className="p-4 font-medium">{c.name}</td>
+                          <td className="p-4 text-foreground/80">
+                            {district?.name ?? c.district_name ?? "—"}
+                          </td>
+                          <td className="p-4 text-foreground/80">
+                            {state?.name ?? "—"}
+                          </td>
+                          <td className="p-4 pr-6">
+                            <div className="flex items-center justify-end gap-2">
+                              {editBtn(() => setEditingCity(c))}
+                              {deleteBtn(() =>
+                                setPendingCityDelete({
+                                  label: c.name,
+                                  action: () => void removeCity(c),
+                                }),
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -3233,7 +4536,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
           <Dialog open={cityDialogOpen} onOpenChange={setCityDialogOpen}>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle className="font-serif text-xl">Add city</DialogTitle>
+                <DialogTitle className="font-serif text-xl">
+                  Add city
+                </DialogTitle>
               </DialogHeader>
               <form onSubmit={addCity} className="space-y-4">
                 <div className="space-y-2">
@@ -3251,7 +4556,8 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                         const state = states.find((s) => s.id === d.state);
                         return (
                           <option key={d.id} value={String(d.id)}>
-                            {d.name}{state ? ` · ${state.name}` : ""}
+                            {d.name}
+                            {state ? ` · ${state.name}` : ""}
                           </option>
                         );
                       })}
@@ -3262,18 +4568,33 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                   <Input name="name" placeholder="Kochi" required />
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setCityDialogOpen(false)}>Cancel</Button>
-                  <Button type="submit" variant="luxe">Add city</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCityDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="luxe">
+                    Add city
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
 
           {/* Edit city dialog */}
-          <Dialog open={!!editingCity} onOpenChange={(v) => { if (!v) setEditingCity(null); }}>
+          <Dialog
+            open={!!editingCity}
+            onOpenChange={(v) => {
+              if (!v) setEditingCity(null);
+            }}
+          >
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle className="font-serif text-xl">Edit city</DialogTitle>
+                <DialogTitle className="font-serif text-xl">
+                  Edit city
+                </DialogTitle>
               </DialogHeader>
               {editingCity && (
                 <form onSubmit={updateCity} className="space-y-4">
@@ -3292,7 +4613,8 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                           const state = states.find((s) => s.id === d.state);
                           return (
                             <option key={d.id} value={String(d.id)}>
-                              {d.name}{state ? ` · ${state.name}` : ""}
+                              {d.name}
+                              {state ? ` · ${state.name}` : ""}
                             </option>
                           );
                         })}
@@ -3300,11 +4622,23 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs">City name</Label>
-                    <Input name="name" defaultValue={editingCity.name} required />
+                    <Input
+                      name="name"
+                      defaultValue={editingCity.name}
+                      required
+                    />
                   </div>
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setEditingCity(null)}>Cancel</Button>
-                    <Button type="submit" variant="luxe">Save</Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setEditingCity(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" variant="luxe">
+                      Save
+                    </Button>
                   </DialogFooter>
                 </form>
               )}
@@ -3315,12 +4649,18 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
 
       <ConfirmDeleteDialog
         open={!!pendingStateDelete}
-        onOpenChange={(v) => { if (!v) setPendingStateDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingStateDelete(null);
+        }}
         title="Delete this state?"
         description={
           <>
             Deleting{" "}
-            <span className="font-medium text-foreground">"{pendingStateDelete?.label}"</span> will also remove all of its districts and cities. This action cannot be undone.
+            <span className="font-medium text-foreground">
+              "{pendingStateDelete?.label}"
+            </span>{" "}
+            will also remove all of its districts and cities. This action cannot
+            be undone.
           </>
         }
         confirmLabel="Delete state"
@@ -3329,12 +4669,17 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
 
       <ConfirmDeleteDialog
         open={!!pendingDistrictDelete}
-        onOpenChange={(v) => { if (!v) setPendingDistrictDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingDistrictDelete(null);
+        }}
         title="Delete this district?"
         description={
           <>
             Deleting{" "}
-            <span className="font-medium text-foreground">"{pendingDistrictDelete?.label}"</span> will also remove all cities under it. This action cannot be undone.
+            <span className="font-medium text-foreground">
+              "{pendingDistrictDelete?.label}"
+            </span>{" "}
+            will also remove all cities under it. This action cannot be undone.
           </>
         }
         confirmLabel="Delete district"
@@ -3343,12 +4688,17 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
 
       <ConfirmDeleteDialog
         open={!!pendingCityDelete}
-        onOpenChange={(v) => { if (!v) setPendingCityDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingCityDelete(null);
+        }}
         title="Delete this city?"
         description={
           <>
             This will permanently remove{" "}
-            <span className="font-medium text-foreground">"{pendingCityDelete?.label}"</span>.
+            <span className="font-medium text-foreground">
+              "{pendingCityDelete?.label}"
+            </span>
+            .
           </>
         }
         confirmLabel="Delete city"
@@ -3363,7 +4713,9 @@ const LocationManagement = ({ view }: { view: LocationView }) => {
 const EnquiryAdmin = () => {
   const { data, refetch } = useContacts({ page_size: 100 });
   const catalogMutations = useCatalogMutations();
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, Enquiry["status"]>>({});
+  const [statusOverrides, setStatusOverrides] = useState<
+    Record<string, Enquiry["status"]>
+  >({});
   const items = useMemo(
     () =>
       (data?.items ?? []).map((e) => ({
@@ -3386,7 +4738,8 @@ const EnquiryAdmin = () => {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-6 md:mb-8">
         <h1 className="font-serif text-3xl md:text-4xl">Enquiries</h1>
         <div className="text-[11px] sm:text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          {items.filter((e) => e.status === "New").length} new · {items.length} total
+          {items.filter((e) => e.status === "New").length} new · {items.length}{" "}
+          total
         </div>
       </div>
 
@@ -3397,66 +4750,113 @@ const EnquiryAdmin = () => {
       ) : (
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[860px]">
-            <thead className="bg-muted text-xs uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="text-left p-4">From</th>
-                <th className="text-left p-4">Property</th>
-                <th className="text-left p-4">Message</th>
-                <th className="text-left p-4">Received</th>
-                <th className="text-left p-4">Status</th>
-                <th className="text-right p-4">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {enquiriesPager.paginated.map((e) => (
-                <tr key={e.id} className="border-t border-border hover:bg-muted/40 align-top">
-                  <td className="p-4">
-                    <div className="font-medium">{e.fromName}</div>
-                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-1"><Mail className="h-3 w-3" />{e.fromEmail}</div>
-                    {e.fromPhone ? (
-                      <div className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-0.5"><PhoneIcon className="h-3 w-3" />{e.fromPhone}</div>
-                    ) : null}
-                  </td>
-                  <td className="p-4 text-foreground/80 max-w-[200px] truncate" title={e.propertyTitle}>{e.propertyTitle}</td>
-                  <td className="p-4 text-foreground/75 max-w-[320px]"><span className="line-clamp-2">{e.message}</span></td>
-                  <td className="p-4 text-muted-foreground whitespace-nowrap">{e.createdAt}</td>
-                  <td className="p-4">
-                    <Badge variant={e.status === "New" ? "default" : "secondary"}>{e.status}</Badge>
-                  </td>
-                  <td className="p-4 text-right whitespace-nowrap space-x-1">
-                    <Button size="sm" variant="ghost" onClick={() => setActive(e)} title="View"><Eye className="h-3 w-3" /></Button>
-                    {e.status !== "Replied" && (
-                      <Button size="sm" variant="ghost" onClick={() => setStatus(e.id, "Replied")} title="Mark replied"><Reply className="h-3 w-3" /></Button>
-                    )}
-                    {e.status !== "Closed" && (
-                      <Button size="sm" variant="ghost" onClick={() => setStatus(e.id, "Closed")} title="Close"><XCircle className="h-3 w-3" /></Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setPendingDelete({
-                        label: e.fromName,
-                        action: async () => {
-                          try {
-                            await catalogMutations.deleteContact.mutateAsync(Number(e.id));
-                            toast.success("Enquiry removed");
-                            void refetch();
-                          } catch (err) {
-                            toast.error(getErrorMessage(err));
-                          }
-                        },
-                      })}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </td>
+            <table className="w-full text-sm min-w-[860px]">
+              <thead className="bg-muted text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="text-left p-4">From</th>
+                  <th className="text-left p-4">Property</th>
+                  <th className="text-left p-4">Message</th>
+                  <th className="text-left p-4">Received</th>
+                  <th className="text-left p-4">Status</th>
+                  <th className="text-right p-4">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {enquiriesPager.paginated.map((e) => (
+                  <tr
+                    key={e.id}
+                    className="border-t border-border hover:bg-muted/40 align-top"
+                  >
+                    <td className="p-4">
+                      <div className="font-medium">{e.fromName}</div>
+                      <div className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-1">
+                        <Mail className="h-3 w-3" />
+                        {e.fromEmail}
+                      </div>
+                      {e.fromPhone ? (
+                        <div className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-0.5">
+                          <PhoneIcon className="h-3 w-3" />
+                          {e.fromPhone}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td
+                      className="p-4 text-foreground/80 max-w-[200px] truncate"
+                      title={e.propertyTitle}
+                    >
+                      {e.propertyTitle}
+                    </td>
+                    <td className="p-4 text-foreground/75 max-w-[320px]">
+                      <span className="line-clamp-2">{e.message}</span>
+                    </td>
+                    <td className="p-4 text-muted-foreground whitespace-nowrap">
+                      {e.createdAt}
+                    </td>
+                    <td className="p-4">
+                      <Badge
+                        variant={e.status === "New" ? "default" : "secondary"}
+                      >
+                        {e.status}
+                      </Badge>
+                    </td>
+                    <td className="p-4 text-right whitespace-nowrap space-x-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setActive(e)}
+                        title="View"
+                      >
+                        <Eye className="h-3 w-3" />
+                      </Button>
+                      {e.status !== "Replied" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setStatus(e.id, "Replied")}
+                          title="Mark replied"
+                        >
+                          <Reply className="h-3 w-3" />
+                        </Button>
+                      )}
+                      {e.status !== "Closed" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setStatus(e.id, "Closed")}
+                          title="Close"
+                        >
+                          <XCircle className="h-3 w-3" />
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() =>
+                          setPendingDelete({
+                            label: e.fromName,
+                            action: async () => {
+                              try {
+                                await catalogMutations.deleteContact.mutateAsync(
+                                  Number(e.id),
+                                );
+                                toast.success("Enquiry removed");
+                                void refetch();
+                              } catch (err) {
+                                toast.error(getErrorMessage(err));
+                              }
+                            },
+                          })
+                        }
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -3471,34 +4871,73 @@ const EnquiryAdmin = () => {
         />
       )}
 
-      <Dialog open={!!active} onOpenChange={(v) => { if (!v) setActive(null); }}>
+      <Dialog
+        open={!!active}
+        onOpenChange={(v) => {
+          if (!v) setActive(null);
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-serif text-2xl">Enquiry from {active?.fromName}</DialogTitle>
+            <DialogTitle className="font-serif text-2xl">
+              Enquiry from {active?.fromName}
+            </DialogTitle>
           </DialogHeader>
           {active && (
             <div className="space-y-4 text-sm">
               <div className="rounded-xl border border-border bg-muted/30 p-4">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Property</div>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Property
+                </div>
                 <div className="font-medium mt-1">{active.propertyTitle}</div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl border border-border p-3">
-                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Email</div>
-                  <div className="mt-1 inline-flex items-center gap-1"><Mail className="h-3 w-3" />{active.fromEmail}</div>
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    Email
+                  </div>
+                  <div className="mt-1 inline-flex items-center gap-1">
+                    <Mail className="h-3 w-3" />
+                    {active.fromEmail}
+                  </div>
                 </div>
                 <div className="rounded-xl border border-border p-3">
-                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Phone</div>
-                  <div className="mt-1 inline-flex items-center gap-1"><PhoneIcon className="h-3 w-3" />{active.fromPhone || "—"}</div>
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    Phone
+                  </div>
+                  <div className="mt-1 inline-flex items-center gap-1">
+                    <PhoneIcon className="h-3 w-3" />
+                    {active.fromPhone || "—"}
+                  </div>
                 </div>
               </div>
               <div>
-                <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Message</div>
-                <p className="rounded-xl border border-border p-3 leading-relaxed">{active.message}</p>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+                  Message
+                </div>
+                <p className="rounded-xl border border-border p-3 leading-relaxed">
+                  {active.message}
+                </p>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => { setStatus(active.id, "Closed"); setActive(null); }}>Close enquiry</Button>
-                <Button variant="luxe" onClick={() => { setStatus(active.id, "Replied"); setActive(null); }}>Mark as replied</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setStatus(active.id, "Closed");
+                    setActive(null);
+                  }}
+                >
+                  Close enquiry
+                </Button>
+                <Button
+                  variant="luxe"
+                  onClick={() => {
+                    setStatus(active.id, "Replied");
+                    setActive(null);
+                  }}
+                >
+                  Mark as replied
+                </Button>
               </div>
             </div>
           )}
@@ -3507,12 +4946,17 @@ const EnquiryAdmin = () => {
 
       <ConfirmDeleteDialog
         open={!!pendingDelete}
-        onOpenChange={(v) => { if (!v) setPendingDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingDelete(null);
+        }}
         title="Delete this enquiry?"
         description={
           <>
             The enquiry from{" "}
-            <span className="font-medium text-foreground">"{pendingDelete?.label}"</span> will be permanently removed.
+            <span className="font-medium text-foreground">
+              "{pendingDelete?.label}"
+            </span>{" "}
+            will be permanently removed.
           </>
         }
         confirmLabel="Delete enquiry"
@@ -3537,8 +4981,12 @@ const AdvertisementsAdmin = () => {
   const [adSearch, setAdSearch] = useState("");
   const [debouncedAdSearch, setDebouncedAdSearch] = useState("");
   const [adTypeFilter, setAdTypeFilter] = useState<"all" | AdType>("all");
-  const [adStatusFilter, setAdStatusFilter] = useState<"all" | "active" | "inactive">("all");
-  const [adSort, setAdSort] = useState<"newest" | "oldest" | "priority">("newest");
+  const [adStatusFilter, setAdStatusFilter] = useState<
+    "all" | "active" | "inactive"
+  >("all");
+  const [adSort, setAdSort] = useState<"newest" | "oldest" | "priority">(
+    "newest",
+  );
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedAdSearch(adSearch), 350);
@@ -3546,28 +4994,43 @@ const AdvertisementsAdmin = () => {
   }, [adSearch]);
 
   const adQueryParams = useMemo(() => {
-    const params: Record<string, string | number> = { page_size: 100, ordering: adSort };
+    const params: Record<string, string | number> = {
+      page_size: 100,
+      ordering: adSort,
+    };
     if (adTypeFilter !== "all") params.ad_type = adTypeFilter;
-    if (adStatusFilter !== "all") params.is_active = adStatusFilter === "active" ? "true" : "false";
+    if (adStatusFilter !== "all")
+      params.is_active = adStatusFilter === "active" ? "true" : "false";
     if (debouncedAdSearch.trim()) params.search = debouncedAdSearch.trim();
     return params;
   }, [adSort, adTypeFilter, adStatusFilter, debouncedAdSearch]);
 
-  const { data: adsData, refetch, isFetching: adsFetching } = useAdminAds(adQueryParams);
+  const {
+    data: adsData,
+    refetch,
+    isFetching: adsFetching,
+  } = useAdminAds(adQueryParams);
   const { data: siteSettings } = useSiteSettings();
   const [linkedPropertySearch, setLinkedPropertySearch] = useState("");
   const [linkedPropertyPage, setLinkedPropertyPage] = useState(1);
-  const [linkedPropertyPickerOpen, setLinkedPropertyPickerOpen] = useState(false);
-  const { data: propsForLink } = usePropertyList({
-    moderationStatus: "approved",
-    includeAds: false,
-    page: linkedPropertyPage,
-    pageSize: 20,
-    search: linkedPropertySearch.trim() || undefined,
-  }, { auth: true });
+  const [linkedPropertyPickerOpen, setLinkedPropertyPickerOpen] =
+    useState(false);
+  const { data: propsForLink } = usePropertyList(
+    {
+      moderationStatus: "approved",
+      includeAds: false,
+      page: linkedPropertyPage,
+      pageSize: 20,
+      search: linkedPropertySearch.trim() || undefined,
+    },
+    { auth: true },
+  );
   const catalogMutations = useCatalogMutations();
   const list = useMemo(() => adsData?.items ?? [], [adsData?.items]);
-  const linkedPropertyTotalPages = Math.max(1, Math.ceil((propsForLink?.count ?? 0) / 20));
+  const linkedPropertyTotalPages = Math.max(
+    1,
+    Math.ceil((propsForLink?.count ?? 0) / 20),
+  );
   const linkableProperties = useMemo(
     () =>
       (propsForLink?.items ?? [])
@@ -3577,10 +5040,16 @@ const AdvertisementsAdmin = () => {
   );
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Advertisement>(emptyAd());
-  const selectedLinkedProperty = linkableProperties.find((p) => p.id === draft.linkedPropertyId);
+  const selectedLinkedProperty = linkableProperties.find(
+    (p) => p.id === draft.linkedPropertyId,
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
-  const [adFiles, setAdFiles] = useState<{ desktop?: File; mobile?: File; video?: File }>({});
+  const [adFiles, setAdFiles] = useState<{
+    desktop?: File;
+    mobile?: File;
+    video?: File;
+  }>({});
   const [globalInjectEvery, setGlobalInjectEvery] = useState("5");
   const [savingGlobalInject, setSavingGlobalInject] = useState(false);
   const { data: adStatesData } = useStates();
@@ -3621,14 +5090,30 @@ const AdvertisementsAdmin = () => {
     }
   };
 
-  const setField = <K extends keyof Advertisement>(key: K, value: Advertisement[K]) => {
+  const setField = <K extends keyof Advertisement>(
+    key: K,
+    value: Advertisement[K],
+  ) => {
     setDraft((d) => ({ ...d, [key]: value }));
   };
 
-  const adStates = adStatesData?.results ?? [];
+  const adStates = useMemo(
+    () => adStatesData?.results ?? [],
+    [adStatesData?.results],
+  );
   const districtsForState = useMemo(
     () => adDistrictsData?.results ?? [],
     [adDistrictsData?.results],
+  );
+  const selectedAdStateName = useMemo(
+    () => adStates.find((s) => String(s.id) === draft.stateId)?.name ?? "",
+    [adStates, draft.stateId],
+  );
+  const selectedAdDistrictName = useMemo(
+    () =>
+      districtsForState.find((d) => String(d.id) === draft.districtId)?.name ??
+      "",
+    [districtsForState, draft.districtId],
   );
 
   const handleImageFile = (key: AdImageKey, file: File | null | undefined) => {
@@ -3645,9 +5130,22 @@ const AdvertisementsAdmin = () => {
     if (key === "mobileBanner") setAdFiles((f) => ({ ...f, mobile: file }));
     const reader = new FileReader();
     reader.onload = () => {
-      setDraft((d) => ({ ...d, [key]: typeof reader.result === "string" ? reader.result : "" }));
+      setDraft((d) => ({
+        ...d,
+        [key]: typeof reader.result === "string" ? reader.result : "",
+      }));
     };
     reader.readAsDataURL(file);
+  };
+
+  const clearAdImage = (key: AdImageKey) => {
+    setField(key, "");
+    if (key === "desktopBanner") {
+      setAdFiles((f) => ({ ...f, desktop: undefined }));
+    }
+    if (key === "mobileBanner") {
+      setAdFiles((f) => ({ ...f, mobile: undefined }));
+    }
   };
 
   const handleVideoFile = (file: File | null | undefined) => {
@@ -3663,7 +5161,10 @@ const AdvertisementsAdmin = () => {
     setAdFiles((f) => ({ ...f, video: file }));
     const reader = new FileReader();
     reader.onload = () => {
-      setDraft((d) => ({ ...d, videoUrl: typeof reader.result === "string" ? reader.result : "" }));
+      setDraft((d) => ({
+        ...d,
+        videoUrl: typeof reader.result === "string" ? reader.result : "",
+      }));
     };
     reader.readAsDataURL(file);
   };
@@ -3675,7 +5176,10 @@ const AdvertisementsAdmin = () => {
     try {
       const fd = new FormData();
       fd.append("remove_video", "true");
-      await catalogMutations.updateAd.mutateAsync({ id: Number(editingId), form: fd });
+      await catalogMutations.updateAd.mutateAsync({
+        id: Number(editingId),
+        form: fd,
+      });
       toast.success("Video removed");
       void refetch();
     } catch (err) {
@@ -3742,15 +5246,23 @@ const AdvertisementsAdmin = () => {
       toast.error("External URL is required");
       return;
     }
-    if (isPropertyAd && (!draft.stateId || !draft.districtId || !draft.city.trim())) {
-      toast.error("Location targeting (state, district, city) is required for property ads");
+    if (
+      isPropertyAd &&
+      (!draft.stateId || !draft.districtId || !draft.city.trim())
+    ) {
+      toast.error(
+        "Location targeting (state, district, city) is required for property ads",
+      );
       return;
     }
 
     try {
       const fd = buildAdFormData(draft, adFiles);
       if (editingId) {
-        await catalogMutations.updateAd.mutateAsync({ id: Number(editingId), form: fd });
+        await catalogMutations.updateAd.mutateAsync({
+          id: Number(editingId),
+          form: fd,
+        });
         toast.success("Advertisement updated");
       } else {
         await catalogMutations.createAd.mutateAsync(fd);
@@ -3766,7 +5278,9 @@ const AdvertisementsAdmin = () => {
 
   const totalAds = adsData?.count ?? list.length;
   const hasActiveFilters =
-    adSearch.trim() !== "" || adTypeFilter !== "all" || adStatusFilter !== "all";
+    adSearch.trim() !== "" ||
+    adTypeFilter !== "all" ||
+    adStatusFilter !== "all";
 
   const clearAdFilters = () => {
     setAdSearch("");
@@ -3787,7 +5301,11 @@ const AdvertisementsAdmin = () => {
             Create and manage property and generic ads shown across feeds.
           </p>
         </div>
-        <Button variant="luxe" onClick={openCreate} className="self-start sm:self-auto">
+        <Button
+          variant="luxe"
+          onClick={openCreate}
+          className="self-start sm:self-auto"
+        >
           <Plus className="h-4 w-4" /> New advertisement
         </Button>
       </div>
@@ -3795,7 +5313,9 @@ const AdvertisementsAdmin = () => {
       <div className="mb-6 bg-card border border-border rounded-2xl p-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <div className="flex-1 space-y-2">
-            <Label className="text-xs">Show after every X properties (global)</Label>
+            <Label className="text-xs">
+              Show after every X properties (global)
+            </Label>
             <Input
               type="number"
               min={1}
@@ -3805,7 +5325,8 @@ const AdvertisementsAdmin = () => {
               className="max-w-xs"
             />
             <p className="text-xs text-muted-foreground">
-              Applies to all ads in property listing feeds. Property ads are shown before generic ads.
+              Applies to all ads in property listing feeds. Property ads are
+              shown before generic ads.
             </p>
           </div>
           <Button
@@ -3838,7 +5359,9 @@ const AdvertisementsAdmin = () => {
               <Label className="text-xs">Ad type</Label>
               <select
                 value={adTypeFilter}
-                onChange={(e) => setAdTypeFilter(e.target.value as "all" | AdType)}
+                onChange={(e) =>
+                  setAdTypeFilter(e.target.value as "all" | AdType)
+                }
                 className={filterSelectClass}
               >
                 <option value="all">All types</option>
@@ -3850,7 +5373,11 @@ const AdvertisementsAdmin = () => {
               <Label className="text-xs">Status</Label>
               <select
                 value={adStatusFilter}
-                onChange={(e) => setAdStatusFilter(e.target.value as "all" | "active" | "inactive")}
+                onChange={(e) =>
+                  setAdStatusFilter(
+                    e.target.value as "all" | "active" | "inactive",
+                  )
+                }
                 className={filterSelectClass}
               >
                 <option value="all">All statuses</option>
@@ -3862,7 +5389,9 @@ const AdvertisementsAdmin = () => {
               <Label className="text-xs">Sort by</Label>
               <select
                 value={adSort}
-                onChange={(e) => setAdSort(e.target.value as "newest" | "oldest" | "priority")}
+                onChange={(e) =>
+                  setAdSort(e.target.value as "newest" | "oldest" | "priority")
+                }
                 className={filterSelectClass}
               >
                 <option value="newest">Newest first</option>
@@ -3873,10 +5402,17 @@ const AdvertisementsAdmin = () => {
           </div>
           <div className="mt-3 flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              {adsFetching ? "Updating…" : `${totalAds} ad${totalAds === 1 ? "" : "s"}`}
+              {adsFetching
+                ? "Updating…"
+                : `${totalAds} ad${totalAds === 1 ? "" : "s"}`}
             </p>
             {hasActiveFilters && (
-              <Button type="button" variant="ghost" size="sm" onClick={clearAdFilters}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearAdFilters}
+              >
                 Clear filters
               </Button>
             )}
@@ -3889,7 +5425,12 @@ const AdvertisementsAdmin = () => {
           <div className="bg-card border border-dashed rounded-2xl p-16 text-center text-muted-foreground">
             No advertisements match your filters.
             <div className="mt-3">
-              <Button type="button" variant="outline" size="sm" onClick={clearAdFilters}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={clearAdFilters}
+              >
                 Clear filters
               </Button>
             </div>
@@ -3902,12 +5443,22 @@ const AdvertisementsAdmin = () => {
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {list.map((ad) => {
-            const preview = ad.desktopBanner || ad.mobileBanner || ad.videoThumbnail;
-            const linkedProperty = linkableProperties.find((p) => p.id === ad.linkedPropertyId);
+            const preview =
+              ad.desktopBanner || ad.mobileBanner || ad.videoThumbnail;
+            const linkedProperty = linkableProperties.find(
+              (p) => p.id === ad.linkedPropertyId,
+            );
             return (
-              <div key={ad.id} className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col">
+              <div
+                key={ad.id}
+                className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col"
+              >
                 {preview ? (
-                  <img src={preview} alt={ad.title} className="h-40 w-full object-cover" />
+                  <img
+                    src={preview}
+                    alt={ad.title}
+                    className="h-40 w-full object-cover"
+                  />
                 ) : (
                   <div className="h-40 w-full bg-muted grid place-items-center text-muted-foreground text-xs uppercase tracking-wider">
                     No media
@@ -3915,13 +5466,17 @@ const AdvertisementsAdmin = () => {
                 )}
                 <div className="p-4 flex-1 flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-serif text-lg leading-tight">{ad.title}</h3>
+                    <h3 className="font-serif text-lg leading-tight">
+                      {ad.title}
+                    </h3>
                     <Badge variant={ad.active ? "default" : "secondary"}>
                       {ad.active ? "Active" : "Inactive"}
                     </Badge>
                   </div>
                   {ad.subtitle && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{ad.subtitle}</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {ad.subtitle}
+                    </p>
                   )}
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span
@@ -3940,19 +5495,31 @@ const AdvertisementsAdmin = () => {
                   </div>
                   {ad.redirectType === "property" && ad.linkedPropertyId && (
                     <div className="text-xs text-foreground/80 truncate">
-                      Linked: {linkedProperty?.title ?? `Property #${ad.linkedPropertyId}`}
+                      Linked:{" "}
+                      {linkedProperty?.title ??
+                        `Property #${ad.linkedPropertyId}`}
                     </div>
                   )}
                   <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span>{ad.priority ? `Priority ${ad.priority}` : "Default priority"}</span>
+                    <span>
+                      {ad.priority
+                        ? `Priority ${ad.priority}`
+                        : "Default priority"}
+                    </span>
                     {ad.createdAt && (
-                      <span title={`Created ${new Date(ad.createdAt).toLocaleString()}`}>
+                      <span
+                        title={`Created ${new Date(ad.createdAt).toLocaleString()}`}
+                      >
                         {new Date(ad.createdAt).toLocaleDateString()}
                       </span>
                     )}
                   </div>
                   <div className="mt-auto pt-3 flex items-center justify-end gap-2 border-t border-border">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(ad)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEdit(ad)}
+                    >
                       <Pencil className="h-3 w-3" /> Edit
                     </Button>
                     <Button
@@ -3987,9 +5554,13 @@ const AdvertisementsAdmin = () => {
           <form onSubmit={submit} className="space-y-6">
             {/* 1. Basic Information */}
             <section className="space-y-3">
-              <h3 className="font-serif text-base text-primary">1. Basic Information</h3>
+              <h3 className="font-serif text-base text-primary">
+                1. Basic Information
+              </h3>
               <div className="space-y-2">
-                <Label className="text-xs">Ad Title <span className="text-rose-500">*</span></Label>
+                <Label className="text-xs">
+                  Ad Title <span className="text-rose-500">*</span>
+                </Label>
                 <Input
                   value={draft.title}
                   onChange={(e) => setField("title", e.target.value)}
@@ -4009,10 +5580,14 @@ const AdvertisementsAdmin = () => {
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label className="text-xs">Ad Type <span className="text-rose-500">*</span></Label>
+                  <Label className="text-xs">
+                    Ad Type <span className="text-rose-500">*</span>
+                  </Label>
                   <select
                     value={draft.adType}
-                    onChange={(e) => setField("adType", e.target.value as AdType)}
+                    onChange={(e) =>
+                      setField("adType", e.target.value as AdType)
+                    }
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   >
                     <option value="property">Property Ad</option>
@@ -4020,10 +5595,14 @@ const AdvertisementsAdmin = () => {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs">Media Type <span className="text-rose-500">*</span></Label>
+                  <Label className="text-xs">
+                    Media Type <span className="text-rose-500">*</span>
+                  </Label>
                   <select
                     value={draft.mediaType}
-                    onChange={(e) => setField("mediaType", e.target.value as AdMediaType)}
+                    onChange={(e) =>
+                      setField("mediaType", e.target.value as AdMediaType)
+                    }
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   >
                     <option value="image">Image</option>
@@ -4034,15 +5613,22 @@ const AdvertisementsAdmin = () => {
               <div className="flex items-center justify-between rounded-md border border-input px-3 py-2">
                 <div>
                   <div className="text-sm font-medium">Ad Status</div>
-                  <div className="text-xs text-muted-foreground">Toggle to enable or pause this ad.</div>
+                  <div className="text-xs text-muted-foreground">
+                    Toggle to enable or pause this ad.
+                  </div>
                 </div>
-                <Switch checked={draft.active} onCheckedChange={(v) => setField("active", v)} />
+                <Switch
+                  checked={draft.active}
+                  onCheckedChange={(v) => setField("active", v)}
+                />
               </div>
             </section>
 
             {/* 2. Media Upload */}
             <section className="space-y-3">
-              <h3 className="font-serif text-base text-primary">2. Media Upload</h3>
+              <h3 className="font-serif text-base text-primary">
+                2. Media Upload
+              </h3>
               {isImageAd && (
                 <div className="grid gap-3">
                   <AdImageUploader
@@ -4050,37 +5636,46 @@ const AdvertisementsAdmin = () => {
                     label="Banner Image *"
                     preview={draft.desktopBanner}
                     onFile={(f) => handleImageFile("desktopBanner", f)}
-                    onClear={() => setField("desktopBanner", "")}
+                    onClear={() => clearAdImage("desktopBanner")}
                   />
                 </div>
               )}
               {isVideoAd && (
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label className="text-xs">Video File <span className="text-rose-500">*</span></Label>
+                    <Label className="text-xs">
+                      Video File <span className="text-rose-500">*</span>
+                    </Label>
                     <label
                       htmlFor="ad-video-upload"
-                      className="relative grid place-items-center cursor-pointer h-32 w-full rounded-lg border-2 border-dashed border-border bg-muted/20 hover:border-primary hover:bg-primary/5 transition-colors text-center px-3"
+                      className="relative block h-32 w-full cursor-pointer overflow-hidden rounded-lg border-2 border-dashed border-border bg-muted/20 transition-colors hover:border-primary hover:bg-primary/5"
                     >
                       {draft.videoUrl ? (
                         <>
-                          <video src={draft.videoUrl} className="h-full w-full object-cover rounded-md" muted />
+                          <video
+                            src={draft.videoUrl}
+                            className="absolute inset-0 h-full w-full object-cover"
+                            muted
+                          />
                           <button
                             type="button"
                             onClick={(e) => {
                               e.preventDefault();
+                              e.stopPropagation();
                               void clearAdVideo();
                             }}
-                            className="absolute top-1 right-1 rounded-full bg-black/60 text-white p-1 hover:bg-black/80"
+                            className="absolute right-1 top-1 z-10 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
                             aria-label="Remove video"
                           >
                             <XCircle className="h-3 w-3" />
                           </button>
                         </>
                       ) : (
-                        <div className="flex flex-col items-center gap-1">
+                        <div className="flex h-full flex-col items-center justify-center gap-1 px-3 text-center">
                           <Upload className="h-5 w-5 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">MP4, WebM up to 50MB</span>
+                          <span className="text-xs text-muted-foreground">
+                            MP4, WebM up to 50MB
+                          </span>
                         </div>
                       )}
                       <input
@@ -4097,7 +5692,7 @@ const AdvertisementsAdmin = () => {
                     label="Video Thumbnail"
                     preview={draft.videoThumbnail}
                     onFile={(f) => handleImageFile("videoThumbnail", f)}
-                    onClear={() => setField("videoThumbnail", "")}
+                    onClear={() => clearAdImage("videoThumbnail")}
                   />
                 </div>
               )}
@@ -4105,12 +5700,18 @@ const AdvertisementsAdmin = () => {
 
             {/* 3. Redirect Configuration */}
             <section className="space-y-3">
-              <h3 className="font-serif text-base text-primary">3. Redirect Configuration</h3>
+              <h3 className="font-serif text-base text-primary">
+                3. Redirect Configuration
+              </h3>
               <div className="space-y-2">
-                <Label className="text-xs">Redirect Type <span className="text-rose-500">*</span></Label>
+                <Label className="text-xs">
+                  Redirect Type <span className="text-rose-500">*</span>
+                </Label>
                 <select
                   value={draft.redirectType}
-                  onChange={(e) => setField("redirectType", e.target.value as AdRedirectType)}
+                  onChange={(e) =>
+                    setField("redirectType", e.target.value as AdRedirectType)
+                  }
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="property">Property</option>
@@ -4120,16 +5721,25 @@ const AdvertisementsAdmin = () => {
               </div>
               {draft.redirectType === "property" && (
                 <div className="space-y-2">
-                  <Label className="text-xs">Linked Property <span className="text-rose-500">*</span></Label>
+                  <Label className="text-xs">
+                    Linked Property <span className="text-rose-500">*</span>
+                  </Label>
                   <div className="relative">
                     <button
                       type="button"
                       className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-left text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       onClick={() => setLinkedPropertyPickerOpen((v) => !v)}
                     >
-                      <span className={cn("truncate", !draft.linkedPropertyId && "text-muted-foreground")}>
+                      <span
+                        className={cn(
+                          "truncate",
+                          !draft.linkedPropertyId && "text-muted-foreground",
+                        )}
+                      >
                         {selectedLinkedProperty?.title ??
-                          (draft.linkedPropertyId ? `Selected property #${draft.linkedPropertyId}` : "Select property…")}
+                          (draft.linkedPropertyId
+                            ? `Selected property #${draft.linkedPropertyId}`
+                            : "Select property…")}
                       </span>
                       <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                     </button>
@@ -4140,7 +5750,9 @@ const AdvertisementsAdmin = () => {
                           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                           <Input
                             value={linkedPropertySearch}
-                            onChange={(e) => setLinkedPropertySearch(e.target.value)}
+                            onChange={(e) =>
+                              setLinkedPropertySearch(e.target.value)
+                            }
                             placeholder="Search property name..."
                             className="h-9 pl-8 text-sm"
                           />
@@ -4158,14 +5770,17 @@ const AdvertisementsAdmin = () => {
                                 type="button"
                                 className={cn(
                                   "block w-full px-3 py-2 text-left text-sm transition hover:bg-muted",
-                                  draft.linkedPropertyId === p.id && "bg-muted font-semibold",
+                                  draft.linkedPropertyId === p.id &&
+                                    "bg-muted font-semibold",
                                 )}
                                 onClick={() => {
                                   setField("linkedPropertyId", p.id);
                                   setLinkedPropertyPickerOpen(false);
                                 }}
                               >
-                                <span className="block truncate">{p.title}</span>
+                                <span className="block truncate">
+                                  {p.title}
+                                </span>
                                 <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
                                   {p.location}, {p.city}
                                 </span>
@@ -4176,7 +5791,8 @@ const AdvertisementsAdmin = () => {
 
                         <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                           <span>
-                            Page {linkedPropertyPage} of {linkedPropertyTotalPages}
+                            Page {linkedPropertyPage} of{" "}
+                            {linkedPropertyTotalPages}
                           </span>
                           <div className="flex gap-1">
                             <Button
@@ -4185,7 +5801,9 @@ const AdvertisementsAdmin = () => {
                               size="sm"
                               className="h-8 px-2 text-xs"
                               disabled={linkedPropertyPage <= 1}
-                              onClick={() => setLinkedPropertyPage((p) => Math.max(1, p - 1))}
+                              onClick={() =>
+                                setLinkedPropertyPage((p) => Math.max(1, p - 1))
+                              }
                             >
                               Prev
                             </Button>
@@ -4194,8 +5812,14 @@ const AdvertisementsAdmin = () => {
                               variant="outline"
                               size="sm"
                               className="h-8 px-2 text-xs"
-                              disabled={linkedPropertyPage >= linkedPropertyTotalPages}
-                              onClick={() => setLinkedPropertyPage((p) => Math.min(linkedPropertyTotalPages, p + 1))}
+                              disabled={
+                                linkedPropertyPage >= linkedPropertyTotalPages
+                              }
+                              onClick={() =>
+                                setLinkedPropertyPage((p) =>
+                                  Math.min(linkedPropertyTotalPages, p + 1),
+                                )
+                              }
                             >
                               Next
                             </Button>
@@ -4205,13 +5829,16 @@ const AdvertisementsAdmin = () => {
                     )}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Showing 20 approved properties per page. Use search to filter by property name/location.
+                    Showing 20 approved properties per page. Use search to
+                    filter by property name/location.
                   </p>
                 </div>
               )}
               {draft.redirectType === "external" && (
                 <div className="space-y-2">
-                  <Label className="text-xs">External URL <span className="text-rose-500">*</span></Label>
+                  <Label className="text-xs">
+                    External URL <span className="text-rose-500">*</span>
+                  </Label>
                   <Input
                     type="url"
                     value={draft.externalUrl}
@@ -4235,41 +5862,92 @@ const AdvertisementsAdmin = () => {
             {/* 4. Location Targeting */}
             {isPropertyAd && (
               <section className="space-y-3">
-                <h3 className="font-serif text-base text-primary">4. Location Targeting</h3>
+                <h3 className="font-serif text-base text-primary">
+                  4. Location Targeting
+                </h3>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label className="text-xs">State <span className="text-rose-500">*</span></Label>
+                    <Label className="text-xs">
+                      State <span className="text-rose-500">*</span>
+                    </Label>
                     <select
                       value={draft.stateId}
-                      onChange={(e) => { setField("stateId", e.target.value); setField("districtId", ""); }}
+                      onChange={(e) => {
+                        setDraft((d) => ({
+                          ...d,
+                          stateId: e.target.value,
+                          districtId: "",
+                          city: "",
+                          latitude: "",
+                          longitude: "",
+                        }));
+                      }}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                       <option value="">Select state…</option>
                       {adStates.map((s) => (
-                        <option key={s.id} value={String(s.id)}>{s.name}</option>
+                        <option key={s.id} value={String(s.id)}>
+                          {s.name}
+                        </option>
                       ))}
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs">District <span className="text-rose-500">*</span></Label>
+                    <Label className="text-xs">
+                      District <span className="text-rose-500">*</span>
+                    </Label>
                     <select
                       value={draft.districtId}
-                      onChange={(e) => setField("districtId", e.target.value)}
+                      onChange={(e) => {
+                        setDraft((d) => ({
+                          ...d,
+                          districtId: e.target.value,
+                          city: "",
+                          latitude: "",
+                          longitude: "",
+                        }));
+                      }}
                       disabled={!draft.stateId}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                     >
-                      <option value="">{draft.stateId ? "Select district…" : "Select a state first"}</option>
+                      <option value="">
+                        {draft.stateId
+                          ? "Select district…"
+                          : "Select a state first"}
+                      </option>
                       {districtsForState.map((d) => (
-                        <option key={d.id} value={String(d.id)}>{d.name}</option>
+                        <option key={d.id} value={String(d.id)}>
+                          {d.name}
+                        </option>
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">City <span className="text-rose-500">*</span></Label>
-                    <Input
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label className="text-xs">
+                      Place / City <span className="text-rose-500">*</span>
+                    </Label>
+                    <OsmPlaceSearch
                       value={draft.city}
-                      onChange={(e) => setField("city", e.target.value)}
-                      placeholder="Target city"
+                      displayLabel={draft.city}
+                      stateName={selectedAdStateName}
+                      districtName={selectedAdDistrictName}
+                      disabled={!draft.districtId}
+                      placeholder={
+                        draft.districtId
+                          ? "Search place…"
+                          : "Select district first"
+                      }
+                      searchPlaceholder="Type city, town, or locality…"
+                      className={cn(!draft.districtId && "opacity-60")}
+                      onSelect={(place) =>
+                        setDraft((d) => ({
+                          ...d,
+                          city: place.city,
+                          latitude: place.latitude,
+                          longitude: place.longitude,
+                          radiusKm: d.radiusKm || "25",
+                        }))
+                      }
                     />
                   </div>
                 </div>
@@ -4278,46 +5956,50 @@ const AdvertisementsAdmin = () => {
 
             {/* 5. Geo Targeting (property ads only) */}
             {isPropertyAd && (
-            <section className="space-y-3">
-              <h3 className="font-serif text-base text-primary">5. Geo Targeting (Radius)</h3>
-              <div className="grid sm:grid-cols-3 gap-3">
-                <div className="space-y-2">
-                  <Label className="text-xs">Latitude</Label>
-                  <Input
-                    type="number"
-                    step="any"
-                    value={draft.latitude}
-                    onChange={(e) => setField("latitude", e.target.value)}
-                    placeholder="11.2588"
-                  />
+              <section className="space-y-3">
+                <h3 className="font-serif text-base text-primary">
+                  5. Geo Targeting (Radius)
+                </h3>
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Latitude</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={draft.latitude}
+                      onChange={(e) => setField("latitude", e.target.value)}
+                      placeholder="11.2588"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Longitude</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={draft.longitude}
+                      onChange={(e) => setField("longitude", e.target.value)}
+                      placeholder="75.7804"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Radius (KM)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={draft.radiusKm}
+                      onChange={(e) => setField("radiusKm", e.target.value)}
+                      placeholder="25"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Longitude</Label>
-                  <Input
-                    type="number"
-                    step="any"
-                    value={draft.longitude}
-                    onChange={(e) => setField("longitude", e.target.value)}
-                    placeholder="75.7804"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Radius (KM)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={draft.radiusKm}
-                    onChange={(e) => setField("radiusKm", e.target.value)}
-                    placeholder="25"
-                  />
-                </div>
-              </div>
-            </section>
+              </section>
             )}
 
             {/* 6. Schedule & Priority */}
             <section className="space-y-3">
-              <h3 className="font-serif text-base text-primary">6. Schedule &amp; Priority</h3>
+              <h3 className="font-serif text-base text-primary">
+                6. Schedule &amp; Priority
+              </h3>
               <div className="grid sm:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <Label className="text-xs">Start Date</Label>
@@ -4352,7 +6034,10 @@ const AdvertisementsAdmin = () => {
               <Button
                 type="button"
                 variant="outline"
-                disabled={catalogMutations.createAd.isPending || catalogMutations.updateAd.isPending}
+                disabled={
+                  catalogMutations.createAd.isPending ||
+                  catalogMutations.updateAd.isPending
+                }
                 onClick={() => handleOpenChange(false)}
               >
                 Cancel
@@ -4375,11 +6060,16 @@ const AdvertisementsAdmin = () => {
 
       <ConfirmDeleteDialog
         open={!!pendingDelete}
-        onOpenChange={(v) => { if (!v) setPendingDelete(null); }}
+        onOpenChange={(v) => {
+          if (!v) setPendingDelete(null);
+        }}
         title="Delete this advertisement?"
         description={
           <>
-            <span className="font-medium text-foreground">"{pendingDelete?.label}"</span> will be permanently removed.
+            <span className="font-medium text-foreground">
+              "{pendingDelete?.label}"
+            </span>{" "}
+            will be permanently removed.
           </>
         }
         confirmLabel="Delete ad"
@@ -4397,31 +6087,50 @@ type AdImageUploaderProps = {
   onClear: () => void;
 };
 
-const AdImageUploader = ({ id, label, preview, onFile, onClear }: AdImageUploaderProps) => (
+const AdImageUploader = ({
+  id,
+  label,
+  preview,
+  onFile,
+  onClear,
+}: AdImageUploaderProps) => (
   <div className="space-y-2">
     <Label className="text-xs">{label}</Label>
     <label
       htmlFor={id}
-      className="relative grid place-items-center cursor-pointer h-32 w-full rounded-lg border-2 border-dashed border-border bg-muted/20 hover:border-primary hover:bg-primary/5 transition-colors text-center px-3"
+      className="relative block h-32 w-full cursor-pointer overflow-hidden rounded-lg border-2 border-dashed border-border bg-muted/20 transition-colors hover:border-primary hover:bg-primary/5"
       onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0]); }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onFile(e.dataTransfer.files?.[0]);
+      }}
     >
       {preview ? (
         <>
-          <img src={preview} alt="" className="h-full w-full object-cover rounded-md" />
+          <img
+            src={preview}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
           <button
             type="button"
-            onClick={(e) => { e.preventDefault(); onClear(); }}
-            className="absolute top-1 right-1 rounded-full bg-black/60 text-white p-1 hover:bg-black/80"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClear();
+            }}
+            className="absolute right-1 top-1 z-10 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
             aria-label="Remove image"
           >
             <XCircle className="h-3 w-3" />
           </button>
         </>
       ) : (
-        <div className="flex flex-col items-center gap-1">
+        <div className="flex h-full flex-col items-center justify-center gap-1 px-3 text-center">
           <Upload className="h-5 w-5 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">PNG, JPG, WebP up to 10MB</span>
+          <span className="text-xs text-muted-foreground">
+            PNG, JPG, WebP up to 10MB
+          </span>
         </div>
       )}
       <input
@@ -4437,6 +6146,7 @@ const AdImageUploader = ({ id, label, preview, onFile, onClear }: AdImageUploade
 
 const SettingsPage = () => {
   const { data: settings, isLoading } = useSiteSettings();
+  const { data: mobileAppSettings, isLoading: isMobileAppLoading } = useMobileAppSettings();
   const catalogMutations = useCatalogMutations();
   const contactDefaults = useMemo(
     () => ({
@@ -4447,6 +6157,17 @@ const SettingsPage = () => {
     }),
     [settings],
   );
+  const [androidAppVersion, setAndroidAppVersion] = useState("");
+  const [androidForceUpdate, setAndroidForceUpdate] = useState(false);
+  const [iosAppVersion, setIosAppVersion] = useState("");
+  const [iosForceUpdate, setIosForceUpdate] = useState(false);
+
+  useEffect(() => {
+    setAndroidAppVersion(mobileAppSettings?.android_app_version ?? "");
+    setAndroidForceUpdate(Boolean(mobileAppSettings?.android_force_update));
+    setIosAppVersion(mobileAppSettings?.ios_app_version ?? "");
+    setIosForceUpdate(Boolean(mobileAppSettings?.ios_force_update));
+  }, [mobileAppSettings]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -4464,8 +6185,23 @@ const SettingsPage = () => {
     }
   };
 
+  const handleMobileAppSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    try {
+      await catalogMutations.patchMobileAppSettings.mutateAsync({
+        android_app_version: androidAppVersion.trim(),
+        android_force_update: androidForceUpdate,
+        ios_app_version: iosAppVersion.trim(),
+        ios_force_update: iosForceUpdate,
+      });
+      toast.success("Mobile app settings saved");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    }
+  };
+
   return (
-    <div className="animate-fade-in max-w-3xl">
+    <div className="animate-fade-in max-w-3xl space-y-6">
       <h1 className="font-serif text-3xl md:text-4xl mb-6">Settings</h1>
 
       <form
@@ -4481,7 +6217,9 @@ const SettingsPage = () => {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="company-phone" className="text-xs">Phone</Label>
+          <Label htmlFor="company-phone" className="text-xs">
+            Phone
+          </Label>
           <Input
             id="company-phone"
             name="phone"
@@ -4493,7 +6231,9 @@ const SettingsPage = () => {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="company-whatsapp" className="text-xs">WhatsApp number</Label>
+          <Label htmlFor="company-whatsapp" className="text-xs">
+            WhatsApp number
+          </Label>
           <Input
             id="company-whatsapp"
             name="whatsapp"
@@ -4503,12 +6243,15 @@ const SettingsPage = () => {
             className="rounded-lg"
           />
           <p className="text-xs text-muted-foreground">
-            Used for the WhatsApp button on listings and the public contact page. Can differ from the primary phone.
+            Used for the WhatsApp button on listings and the public contact
+            page. Can differ from the primary phone.
           </p>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="company-email" className="text-xs">Email</Label>
+          <Label htmlFor="company-email" className="text-xs">
+            Email
+          </Label>
           <Input
             id="company-email"
             name="email"
@@ -4521,7 +6264,9 @@ const SettingsPage = () => {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="company-address" className="text-xs">Address</Label>
+          <Label htmlFor="company-address" className="text-xs">
+            Address
+          </Label>
           <Textarea
             id="company-address"
             name="address"
@@ -4532,7 +6277,95 @@ const SettingsPage = () => {
           />
         </div>
 
-        <Button type="submit" variant="luxe">Save company contact</Button>
+        <Button type="submit" variant="luxe">
+          Save company contact
+        </Button>
+      </form>
+
+      <form
+        onSubmit={handleMobileAppSubmit}
+        className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-5"
+      >
+        <div>
+          <h2 className="font-serif text-lg">Mobile app</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Controls the version check shown to mobile app users on launch.
+          </p>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-2">
+          <div className="space-y-4 rounded-xl border border-border p-4">
+            <h3 className="font-medium text-sm">Android</h3>
+            <div className="space-y-2">
+              <Label htmlFor="android-app-version" className="text-xs">
+                App version
+              </Label>
+              <Input
+                id="android-app-version"
+                name="android_app_version"
+                value={androidAppVersion}
+                onChange={(e) => setAndroidAppVersion(e.target.value)}
+                disabled={isMobileAppLoading}
+                placeholder="1.4.3"
+                className="rounded-lg"
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border px-3 py-2.5">
+              <div>
+                <Label className="text-sm">Force update</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Requires Android users to update before continuing.
+                </p>
+              </div>
+              <Switch
+                checked={androidForceUpdate}
+                onCheckedChange={setAndroidForceUpdate}
+                disabled={isMobileAppLoading}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-xl border border-border p-4">
+            <h3 className="font-medium text-sm">iOS</h3>
+            <div className="space-y-2">
+              <Label htmlFor="ios-app-version" className="text-xs">
+                App version
+              </Label>
+              <Input
+                id="ios-app-version"
+                name="ios_app_version"
+                value={iosAppVersion}
+                onChange={(e) => setIosAppVersion(e.target.value)}
+                disabled={isMobileAppLoading}
+                placeholder="1.4.3"
+                className="rounded-lg"
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border px-3 py-2.5">
+              <div>
+                <Label className="text-sm">Force update</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Requires iOS users to update before continuing.
+                </p>
+              </div>
+              <Switch
+                checked={iosForceUpdate}
+                onCheckedChange={setIosForceUpdate}
+                disabled={isMobileAppLoading}
+              />
+            </div>
+          </div>
+        </div>
+
+        <Button
+          type="submit"
+          variant="luxe"
+          disabled={isMobileAppLoading || catalogMutations.patchMobileAppSettings.isPending}
+        >
+          {catalogMutations.patchMobileAppSettings.isPending
+            ? "Saving..."
+            : "Save mobile app settings"}
+        </Button>
       </form>
     </div>
   );

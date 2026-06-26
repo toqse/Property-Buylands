@@ -63,7 +63,7 @@ export const emptyAd = (): Advertisement => ({
   city: "",
   latitude: "",
   longitude: "",
-  radiusKm: "",
+  radiusKm: "25",
   placement: {
     homepageFeed: false,
     propertyListingFeed: true,

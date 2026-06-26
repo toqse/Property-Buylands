@@ -4,6 +4,26 @@
 
 ## API changelog
 
+### 2026-06-25
+| Area | Change |
+|------|--------|
+| **Mobile app** | Per-platform version endpoints: admin `GET`/`PATCH` `/api/properties/app-settings/` (`android_app_version`, `android_force_update`, `ios_app_version`, `ios_force_update`); public `GET` `/api/properties/app-version/`. Replaces legacy single `mobile_app_version` / `mobile_force_update` fields (removed from `site-settings`). |
+| **Catalog pagination** | `GET /api/properties/features/` and `GET /api/properties/property-types/` return paginated `{ count, next, previous, results }` (default `page_size=20`, max 1000); optional `search` on both. Feature list/detail `GET` is **public** (no token). |
+| **Location lists** | `GET` states/districts supports optional `search` name filter. State, district, and city **detail** `GET` is public. |
+| **Property filters** | New query params: `is_featured`, `features` (feature PKs, AND), `area_cent_min`/`area_cent_max`, `project_status`, `floors`, `sighting`, `parking_spaces_min`; `property_type` accepts comma-separated or repeated IDs; `ordering` (`distance`, `price`, `-price`, `created_at`; default `-created_at`, or `distance` when `latitude`+`longitude` set). `area_min`/`area_max` filter within `area_unit` (default `sqft`) without cross-unit conversion. List items include read-only `distance_km` when `latitude`+`longitude` are provided. |
+| **Property writes** | `description` optional (defaults to `""`). `built_year` is a **string** (empty when omitted). `area` / `area_cent` are decimals (up to 8 decimal places). `whatsapp_number` without a `+` prefix gets default `+91`. PATCH accepts `remove_video=true` to clear an uploaded property video. |
+| **Contacts** | `POST` response may include `email_sent` (boolean) and `notification_recipients` (string array). |
+| **Removed** | Standalone `/api/properties/nearby-places/` and `/api/properties/nearby-place-distances/` endpoints removed — use `nearby_places_data` on property create/update. |
+
+### 2026-06-17
+| Area | Change |
+|------|--------|
+| **Property types** | Each type exposes boolean **feature flags** (`has_bedrooms`, `has_bathrooms`, `has_built_year`, `has_parking_spaces`, `has_project_status`, `has_floors`, `has_sighting`, `has_area_both`, `has_furnishing`). Admin create/update sends these as multipart booleans (`true` / `false`). Clients use `property_type_details` on listings to decide which fields to show or submit. |
+| **Property create / update** | **Images optional** (max **4** total per listing). **Owner contact** fields (`contact_name`, `phone_number`, `whatsapp_number`, `email`) may be omitted on owner create — API fills from `UserProfile` / account when blank; at least one of phone or WhatsApp required after defaults. **`property_ownership`** stored as display text (e.g. `Direct Owner`, `Management`, `Builder`, `Dealer`); legacy `direct_owner` / `management` values were migrated. |
+| **Built-property fields** | For `area_unit=sqft`, `bedrooms`, `bathrooms`, and `furnishing` are **all optional** at the API (omit or send empty/`0` → `null`). `built_year` is an optional **string** (empty string when not specified). For `area_unit=cent`, bedrooms/bathrooms/furnishing are cleared to `null` when omitted. Clients should still respect **property-type flags** when collecting data. |
+| **New listing fields** | `project_status`, `floors`, `sighting` (optional strings); `area_cent` (optional positive decimal when the property type has `has_area_both=true`). |
+| **Web form (reference)** | Admin/owner UI no longer collects `google_embedded_map_link`, `youtube_video_link`, or `nearby_places_data`; city/place uses OpenStreetMap with `city`, `latitude`, `longitude`. Fields remain accepted by the API if sent directly. |
+
 ### 2026-06-02
 | Area | Change |
 |------|--------|
@@ -16,7 +36,7 @@
 |------|--------|
 | **Admin panel images** | CRUD at `/api/properties/admin-images/` — `title` (max 50) + image; max **5** images system-wide; bulk upload via `titles` JSON + `image_0`…`image_4`; mobile-friendly `{ success, message, data/results }` responses. |
 | **Property types** | `image` icon field on create/update (multipart). |
-| **Properties** | `area_unit` (`sqft` \| `cent`) controls required built-property fields (`bedrooms`, `bathrooms`, `built_year`, `furnishing`). |
+| **Properties** | `area_unit` (`sqft` \| `cent`) and property-type feature flags control which built fields clients collect; API treats `bedrooms`, `bathrooms`, `built_year`, and `furnishing` as optional. |
 
 ### 2026-05-18
 | Area | Change |
@@ -579,29 +599,31 @@ Authorization: Token 9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b
 #### List All Features
 - **URL**: `/api/properties/features/`
 - **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
+- **Auth Required**: No (public)
+- **Pagination**: Page-number (`page`, `page_size`, default `page_size=20`, max `1000`)
+- **Query Parameters**:
+  | Param | Type | Notes |
+  |-------|------|--------|
+  | `search` | string | Optional — case-insensitive match on feature name |
 - **Success Response**: 
   - **Code**: 200 OK
   - **Content**: 
     ```json
-    [
-      {
-        "id": 1,
-        "name": "Swimming Pool"
-      },
-      {
-        "id": 2,
-        "name": "Garden"
-      }
-    ]
+    {
+      "count": 2,
+      "next": null,
+      "previous": null,
+      "results": [
+        { "id": 1, "name": "Swimming Pool" },
+        { "id": 2, "name": "Garden" }
+      ]
+    }
     ```
 
 #### Get Feature Detail
 - **URL**: `/api/properties/features/{id}/`
 - **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
+- **Auth Required**: No (public)
 - **Success Response**: 
   - **Code**: 200 OK
   - **Content**: 
@@ -664,42 +686,81 @@ Authorization: Token 9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b
 
 ### Property Types
 
-Property type objects include an icon/image used in filters and listing UI. Responses return `image` as an **absolute URL** (or `null` for legacy rows not yet migrated).
+Property type objects include an icon/image used in filters and listing UI, plus **feature flags** that tell clients which property fields apply to listings of that type. Responses return `image` as an **absolute URL** (or `null` for legacy rows not yet migrated).
 
-| Field | Type | Notes |
-|-------|------|--------|
-| `id` | integer | Primary key |
-| `name` | string | Display name |
-| `image` | string \| null | Absolute icon URL when set |
-| `created_at` | string | ISO datetime |
-| `updated_at` | string | ISO datetime |
+| Field | Type | Default | Notes |
+|-------|------|---------|--------|
+| `id` | integer | — | Primary key |
+| `name` | string | — | Display name (e.g. Apartment, Plot) |
+| `image` | string \| null | — | Absolute icon URL when set |
+| `has_bedrooms` | boolean | `true` | Show/collect `bedrooms` |
+| `has_bathrooms` | boolean | `true` | Show/collect `bathrooms` |
+| `has_built_year` | boolean | `true` | Show/collect `built_year` |
+| `has_parking_spaces` | boolean | `true` | Show/collect `parking_spaces` |
+| `has_project_status` | boolean | `false` | Show/collect `project_status` |
+| `has_floors` | boolean | `false` | Show/collect `floors` |
+| `has_sighting` | boolean | `false` | Show/collect `sighting` |
+| `has_area_both` | boolean | `false` | When `true`, listing uses `area` (sq.ft) **and** `area_cent` together; `area_unit` is typically `sqft` |
+| `has_furnishing` | boolean | `true` | Show/collect `furnishing` |
+| `created_at` | string | — | ISO datetime |
+| `updated_at` | string | — | ISO datetime |
 
-Allowed upload formats: **jpg**, **jpeg**, **png**, **webp**.
+Allowed upload formats for `image`: **jpg**, **jpeg**, **png**, **webp**.
+
+**Client usage:** On property create/edit, read flags from the selected type (via `GET /api/properties/property-types/` or `property_type_details` on a listing). Only send fields whose flag is `true`. The Buylands web app also gates `built_year` / `parking_spaces` on `area_unit=sqft` even when the type flag is enabled.
 
 #### List All Property Types
 - **URL**: `/api/properties/property-types/`
 - **Method**: GET
 - **Auth Required**: No (public)
+- **Pagination**: Page-number (`page`, `page_size`, default `page_size=20`, max `1000`)
+- **Query Parameters**:
+  | Param | Type | Notes |
+  |-------|------|--------|
+  | `search` | string | Optional — case-insensitive match on type name |
 - **Success Response**: 
   - **Code**: 200 OK
   - **Content**: 
     ```json
-    [
-      {
-        "id": 1,
-        "name": "Apartment",
-        "image": "http://127.0.0.1:8844/media/property_types/icons/apartment.webp",
-        "created_at": "2026-05-15T10:30:00Z",
-        "updated_at": "2026-05-15T10:30:00Z"
-      },
-      {
-        "id": 2,
-        "name": "House",
-        "image": "http://127.0.0.1:8844/media/property_types/icons/house.webp",
-        "created_at": "2026-05-15T11:00:00Z",
-        "updated_at": "2026-05-15T11:00:00Z"
-      }
-    ]
+    {
+      "count": 2,
+      "next": null,
+      "previous": null,
+      "results": [
+        {
+          "id": 1,
+          "name": "Apartment",
+          "image": "http://127.0.0.1:8844/media/property_types/icons/apartment.webp",
+          "has_bedrooms": true,
+          "has_bathrooms": true,
+          "has_built_year": true,
+          "has_parking_spaces": true,
+          "has_project_status": false,
+          "has_floors": false,
+          "has_sighting": false,
+          "has_area_both": false,
+          "has_furnishing": true,
+          "created_at": "2026-05-15T10:30:00Z",
+          "updated_at": "2026-05-15T10:30:00Z"
+        },
+        {
+          "id": 2,
+          "name": "Plot",
+          "image": "http://127.0.0.1:8844/media/property_types/icons/plot.webp",
+          "has_bedrooms": false,
+          "has_bathrooms": false,
+          "has_built_year": false,
+          "has_parking_spaces": false,
+          "has_project_status": false,
+          "has_floors": false,
+          "has_sighting": false,
+          "has_area_both": false,
+          "has_furnishing": false,
+          "created_at": "2026-05-15T11:00:00Z",
+          "updated_at": "2026-05-15T11:00:00Z"
+        }
+      ]
+    }
     ```
 
 #### Get Property Type Detail
@@ -714,6 +775,15 @@ Allowed upload formats: **jpg**, **jpeg**, **png**, **webp**.
       "id": 1,
       "name": "Apartment",
       "image": "http://127.0.0.1:8844/media/property_types/icons/apartment.webp",
+      "has_bedrooms": true,
+      "has_bathrooms": true,
+      "has_built_year": true,
+      "has_parking_spaces": true,
+      "has_project_status": false,
+      "has_floors": false,
+      "has_sighting": false,
+      "has_area_both": false,
+      "has_furnishing": true,
       "created_at": "2026-05-15T10:30:00Z",
       "updated_at": "2026-05-15T10:30:00Z"
     }
@@ -726,10 +796,22 @@ Allowed upload formats: **jpg**, **jpeg**, **png**, **webp**.
 - **Headers**: `Authorization: Token <token>`
 - **Content-Type**: `multipart/form-data`
 - **Required fields**: `name`, `image` (file)
+- **Optional fields** (multipart booleans, default shown):
+  - `has_bedrooms=true`, `has_bathrooms=true`, `has_built_year=true`, `has_parking_spaces=true`, `has_furnishing=true`
+  - `has_project_status=false`, `has_floors=false`, `has_sighting=false`, `has_area_both=false`
 - **Request Body** (multipart):
   ```
   name=Apartment
   image=<file>
+  has_bedrooms=true
+  has_bathrooms=true
+  has_built_year=true
+  has_parking_spaces=true
+  has_furnishing=true
+  has_project_status=false
+  has_floors=false
+  has_sighting=false
+  has_area_both=false
   ```
 - **Success Response**: 
   - **Code**: 201 CREATED
@@ -739,6 +821,15 @@ Allowed upload formats: **jpg**, **jpeg**, **png**, **webp**.
       "id": 1,
       "name": "Apartment",
       "image": "http://127.0.0.1:8844/media/property_types/icons/apartment.webp",
+      "has_bedrooms": true,
+      "has_bathrooms": true,
+      "has_built_year": true,
+      "has_parking_spaces": true,
+      "has_project_status": false,
+      "has_floors": false,
+      "has_sighting": false,
+      "has_area_both": false,
+      "has_furnishing": true,
       "created_at": "2026-05-15T10:30:00Z",
       "updated_at": "2026-05-15T10:30:00Z"
     }
@@ -758,8 +849,10 @@ Allowed upload formats: **jpg**, **jpeg**, **png**, **webp**.
   ```
   name=Luxury Apartment
   image=<file>
+  has_bedrooms=true
+  has_area_both=false
   ```
-- **Notes**: `image` is **required** when the property type has no stored icon yet. If an icon already exists, `image` is optional on PATCH (send a new file only to replace it). You cannot clear `image` to empty.
+- **Notes**: `image` is **required** when the property type has no stored icon yet. If an icon already exists, `image` is optional on PATCH (send a new file only to replace it). You cannot clear `image` to empty. Feature flags may be updated independently; omitted flags keep their current values.
 - **Success Response**: 
   - **Code**: 200 OK
   - **Content**: 
@@ -768,6 +861,15 @@ Allowed upload formats: **jpg**, **jpeg**, **png**, **webp**.
       "id": 1,
       "name": "Luxury Apartment",
       "image": "http://127.0.0.1:8844/media/property_types/icons/luxury-apartment.webp",
+      "has_bedrooms": true,
+      "has_bathrooms": true,
+      "has_built_year": true,
+      "has_parking_spaces": true,
+      "has_project_status": false,
+      "has_floors": false,
+      "has_sighting": false,
+      "has_area_both": false,
+      "has_furnishing": true,
       "created_at": "2026-05-15T10:30:00Z",
       "updated_at": "2026-05-15T12:00:00Z"
     }
@@ -942,53 +1044,62 @@ image_1=<file2>
 
 #### Property object (response shape)
 
-Returned by list, detail, create, update, approve, reject, and `mine`. Write-only on create/update: `uploaded_images`, `nearby_places_data` (input); `state` / `district` / `city` accept **integer PK** or **name string** on write.
+Returned by list, detail, create, update, approve, reject, and `mine`. Write-only on create/update: `uploaded_images`, `nearby_places_data`, `property_video`, `remove_video` (PATCH); `state` / `district` / `city` accept **integer PK** or **name string** on write. `whatsapp_number` without a leading `+` is stored with default country code `+91`.
 
 | Field | Type | Notes |
 |-------|------|--------|
 | `id` | integer | Primary key |
 | `property_for` | string | `rent` \| `sell` |
-| `property_ownership` | string | `management` \| `direct_owner` |
-| `contact_name` | string | |
-| `whatsapp_number`, `phone_number` | string | |
-| `email` | string | |
+| `property_ownership` | string | Display label, e.g. `Direct Owner`, `Management`, `Builder`, `Dealer` (max 50 chars) |
+| `contact_name` | string | Seller/agent name shown on detail page |
+| `whatsapp_number`, `phone_number` | string | Seller contact numbers |
+| `email` | string | Seller contact email |
 | `state`, `district`, `city` | integer | FK ids in responses |
 | `state_name`, `district_name`, `city_name` | string | Display names |
 | `location` | object | `{ "state", "district", "city" }` names |
 | `title` | string | |
 | `slug` | string | URL segment; auto-generated from `title` if omitted on create |
 | `price` | string | Numeric or text (e.g. `"25 Lakh"`, `"Negotiable"`) |
-| `property_type` | integer | Write: PK. Read: also `property_type_details`, `property_type_name` |
-| `latitude`, `longitude` | string \| null | Decimal as string |
-| `bedrooms`, `bathrooms` | integer \| null | Required when `area_unit` = `sqft`; may be `null` for `cent` |
-| `area` | integer | |
-| `area_unit` | string | `sqft` (default) \| `cent` — controls which built-property fields are required |
-| `description` | string | |
-| `features` | integer[] | Write: feature PKs. Read: `feature_details` array |
-| `google_maps_url` | string \| null | |
-| `google_embedded_map_link` | string \| null | iframe HTML |
-| `youtube_video_link` | string \| null | |
+| `property_type` | integer | **Write-only** — `PropertyType` PK on create/update. Read: `property_type_details` (nested object with `id`) and `property_type_name` |
+| `latitude`, `longitude` | string \| null | Decimal as string; set from place picker / map |
+| `distance_km` | number \| null | Read-only; present when list filtered with `latitude`+`longitude` (rounded to 2 decimals) |
+| `bedrooms`, `bathrooms` | integer \| null | Optional; omit or `0` → `null`. Meaningful when type flag + `area_unit` allow |
+| `area` | decimal | Primary area value (sq.ft when `area_unit=sqft`, or cent count when `area_unit=cent`); up to 8 decimal places |
+| `area_unit` | string | `sqft` (default) \| `cent` |
+| `area_cent` | decimal \| null | Secondary cent value when property type `has_area_both=true`; up to 8 decimal places |
+| `description` | string | Optional; defaults to empty string |
+| `features` | integer[] | **Write-only** — feature PKs on create/update. Read: `feature_details` array |
+| `google_maps_url` | string \| null | Optional direct map link |
+| `google_embedded_map_link` | string \| null | Optional iframe HTML (legacy; not collected in current web form) |
+| `youtube_video_link` | string \| null | Optional (legacy; not collected in current web form) |
 | `property_video_url` | string \| null | Absolute media URL when a video is uploaded |
-| `video_thumbnail_url` | string \| null | Read-only; auto-generated from uploaded property video (absolute URL) |
+| `video_thumbnail_url` | string \| null | Read-only; auto-generated from uploaded property video |
 | `nearby_places` | mixed | Legacy JSON storage |
-| `nearby_places_data` | array | Normalized `[{ "name", "distance" }]` in responses |
-| `built_year` | integer \| null | Optional on every `area_unit`; stored as `null` when omitted |
-| `furnishing` | string \| null | Required when `area_unit` = `sqft`; may be `null` for `cent` |
-| `parking_spaces` | integer | Default `0` |
+| `nearby_places_data` | array | Normalized `[{ "name", "distance" }]` in responses; write-only input on create/update |
+| `built_year` | string | Optional; empty string when not specified (max 20 chars) |
+| `furnishing` | string \| null | Optional (e.g. `furnished`, `semi-furnished`, `unfurnished`) |
+| `project_status` | string \| null | Optional; when type `has_project_status=true` |
+| `floors` | string \| null | Optional; when type `has_floors=true` |
+| `sighting` | string \| null | Optional; when type `has_sighting=true` |
+| `parking_spaces` | integer | Default `0`; optional when type `has_parking_spaces=true` |
 | `is_featured` | boolean | |
-| `images` | array | `[{ "id", "image" }]` — absolute URLs |
+| `images` | array | `[{ "id", "image" }]` — absolute URLs; **optional** on create (max **4** total) |
 | `moderation_status` | string | `pending` \| `approved` \| `rejected` (read-only) |
 | `moderated_at` | string \| null | ISO datetime |
 | `moderated_by_username` | string \| null | Staff display name |
 | `created_by` | integer \| null | Owner user id who created the listing |
 | `created_at`, `updated_at` | string | ISO datetimes |
 
+### Nearby places (on property listings)
+
+Standalone `/api/properties/nearby-places/` and `/api/properties/nearby-place-distances/` endpoints were **removed**. Nearby places are stored on each property via `nearby_places_data` (see **Create Property**, **Update Property**, and **Nearby places on update** below).
+
 **Example single property (201 create / 200 detail)**:
 ```json
 {
   "id": 42,
   "property_for": "rent",
-  "property_ownership": "direct_owner",
+  "property_ownership": "Direct Owner",
   "contact_name": "Jane Owner",
   "whatsapp_number": "+971501234567",
   "phone_number": "+971501234567",
@@ -1003,8 +1114,20 @@ Returned by list, detail, create, update, approve, reject, and `mine`. Write-onl
   "title": "Luxury Apartment in Downtown",
   "slug": "luxury-apartment-in-downtown",
   "price": "1500.00",
-  "property_type": 1,
-  "property_type_details": { "id": 1, "name": "Apartment" },
+  "property_type_details": {
+    "id": 1,
+    "name": "Apartment",
+    "image": "http://127.0.0.1:8844/media/property_types/icons/apartment.webp",
+    "has_bedrooms": true,
+    "has_bathrooms": true,
+    "has_built_year": true,
+    "has_parking_spaces": true,
+    "has_project_status": false,
+    "has_floors": false,
+    "has_sighting": false,
+    "has_area_both": false,
+    "has_furnishing": true
+  },
   "property_type_name": "Apartment",
   "latitude": "9.931233",
   "longitude": "76.267303",
@@ -1012,18 +1135,21 @@ Returned by list, detail, create, update, approve, reject, and `mine`. Write-onl
   "bathrooms": 2,
   "area": 1200,
   "area_unit": "sqft",
+  "area_cent": null,
   "description": "Beautiful apartment with city view",
-  "features": [1, 2],
   "feature_details": [{ "id": 1, "name": "Pool" }, { "id": 2, "name": "Gym" }],
   "google_maps_url": "https://maps.google.com/?q=Kochi",
   "google_embedded_map_link": null,
   "youtube_video_link": null,
   "property_video_url": null,
   "video_thumbnail_url": null,
-  "nearby_places": [{ "name": "International School", "distance": 0.5 }],
-  "nearby_places_data": [{ "name": "International School", "distance": 0.5 }],
-  "built_year": 2018,
+  "nearby_places": null,
+  "nearby_places_data": [],
+  "built_year": "2018",
   "furnishing": "furnished",
+  "project_status": null,
+  "floors": null,
+  "sighting": null,
   "parking_spaces": 1,
   "is_featured": false,
   "images": [{ "id": 10, "image": "http://127.0.0.1:8844/media/property_images/img_a1b2.webp" }],
@@ -1045,24 +1171,32 @@ Returned by list, detail, create, update, approve, reject, and `mine`. Write-onl
 - **Query Parameters**:
   - `moderation_status` &mdash; **Staff only** (`is_staff`): `pending`, `approved`, `rejected`, or `all` (default). Filters the admin list; ignored for non-staff (they always get approved-only).
   - `property_for` &mdash; `rent` or `sell`
-  - `price_min`, `price_max` &mdash; Decimal amounts
-  - `ownership` &mdash; `management` or `direct_owner`
-  - `area_min`, `area_max` &mdash; Numeric; combine with `area_unit` (`sqft` default, `cent` converted to sqft)
+  - `is_featured` &mdash; `true` / `false` / `1` / `0` / `yes` / `no`
+  - `price_min`, `price_max` &mdash; Decimal amounts (only matches listings whose `price` is a pure numeric string)
+  - `ownership` &mdash; Exact match (case-insensitive), e.g. `Direct Owner`, `Management`, `Builder`, `Dealer`
+  - `area_min`, `area_max` &mdash; Numeric; combine with `area_unit` (`sqft` default when `area_min`/`area_max` used without `area_unit`)
+  - `area_cent_min`, `area_cent_max` &mdash; Filter on `area_cent` when set
   - `date_from`, `date_to` &mdash; `YYYY-MM-DD` (applies to `created_at`)
-  - `property_type` &mdash; Property type ID
+  - `property_type` &mdash; Property type ID; comma-separated (`1,2,3`) or repeated (`property_type=1&property_type=2`)
+  - `features` &mdash; Feature PK(s); comma-separated or repeated; **all** listed features must be present (AND)
   - `bedrooms_min`, `bedrooms_max`
   - `bathrooms_min`, `bathrooms_max`
+  - `parking_spaces_min` &mdash; Minimum parking spaces
+  - `project_status` &mdash; Exact match (case-insensitive)
+  - `floors` &mdash; Case-insensitive contains
+  - `sighting` &mdash; Exact match (case-insensitive)
   - `state_id`, `district_id`, `city_id`
   - `location` &mdash; Text match against state/district/city names
-  - `latitude`, `longitude` &mdash; Nearby filter: properties within `radius` km (defaults to admin `filter_radius` from site settings when `radius` omitted)
+  - `latitude`, `longitude` &mdash; Nearby filter: properties within `radius` km (defaults to admin `filter_radius` from site settings when `radius` omitted). Results include `distance_km` and default `ordering=distance` unless overridden.
   - `radius` &mdash; Optional override for nearby filter radius in kilometers (used with `latitude` + `longitude`)
   - `lat_min`, `lat_max`, `lng_min`, `lng_max` &mdash; Bounding-box coordinate filters
   - `furnishing` &mdash; Exact furnishing value (case-insensitive)
-  - `search` &mdash; Matches property title, description, feature names, or nearby places
+  - `ordering` &mdash; `distance` (default when lat/lng set), `price`, `-price`, `created_at`; otherwise default `-created_at`
+  - `search` &mdash; Matches property title, description, contact name, feature names, location names, etc. (space-separated terms are ANDed)
   - `include_ads` &mdash; Optional boolean (default `false`). When `true`, response `results` is a **mixed feed** of `{ "type": "property", "data": {...} }` and `{ "type": "ad", "data": {...} }` items. Ads are inserted after every `ad_inject_after_every_n_properties` from site settings (global, default 5). Without location params: property ads first, then generic ads. With `latitude`/`longitude` (and optional `state_id`/`district_id`/`city_id`): generic ads always included; property ads filtered by radius/region; property ads ordered before generic. Omit or set to `false` to receive plain property objects.
 - **Example Requests**:
   - `/api/properties/properties/?page=2&page_size=20&price_min=500000&price_max=2000000`
-  - `/api/properties/properties/?property_type=3&bedrooms_min=3&bathrooms_min=2&ownership=direct_owner`
+  - `/api/properties/properties/?property_type=3&bedrooms_min=3&bathrooms_min=2&ownership=Direct%20Owner`
   - `/api/properties/properties/?area_min=5&area_unit=cent&location=koch`
   - `/api/properties/properties/?property_for=rent&furnishing=furnished&search=pool`
   - `/api/properties/properties/?moderation_status=pending` (staff token only)
@@ -1083,7 +1217,7 @@ Returned by list, detail, create, update, approve, reject, and `mine`. Write-onl
         {
           "id": 1,
           "property_for": "rent",
-          "property_ownership": "management",
+          "property_ownership": "Management",
           "contact_name": "John Doe",
           "whatsapp_number": "+1234567890",
           "phone_number": "+1234567890",
@@ -1097,7 +1231,6 @@ Returned by list, detail, create, update, approve, reject, and `mine`. Write-onl
           "title": "Luxury Apartment in Downtown",
           "slug": "luxury-apartment-in-downtown",
           "price": "1500.00",
-          "property_type": 1,
           "property_type_name": "Apartment",
           "latitude": "12.971598",
           "longitude": "77.594562",
@@ -1106,13 +1239,13 @@ Returned by list, detail, create, update, approve, reject, and `mine`. Write-onl
           "area": 1200,
           "area_unit": "sqft",
           "description": "Beautiful apartment with city view",
-          "features": [1, 2],
+          "feature_details": [{ "id": 1, "name": "Pool" }, { "id": 2, "name": "Gym" }],
           "google_maps_url": "https://maps.google.com/?q=123+Main+St",
           "youtube_video_link": "https://www.youtube.com/watch?v=example",
           "property_video_url": "http://example.com/media/property/videos/tour.mp4",
           "video_thumbnail_url": "http://example.com/media/property/video_thumbs/tour_thumb_a1b2.webp",
           "nearby_places_data": [{ "name": "Shopping Mall", "distance": 1.0 }],
-          "built_year": 2018,
+          "built_year": "2018",
           "furnishing": "furnished",
           "parking_spaces": 1,
           "is_featured": false,
@@ -1186,6 +1319,8 @@ Returned by list, detail, create, update, approve, reject, and `mine`. Write-onl
 - **Moderation**: **Staff** (`is_staff`) → `moderation_status: approved`. **Owner** → `pending` (hidden from public list/detail until staff approves). `created_by` is set to the authenticated user.
 - **Property images (`uploaded_images`)**:
   - Multipart field name: `uploaded_images` (repeat the field for multiple files).
+  - **Optional** on create — a listing may have zero images.
+  - Maximum **4** images total per property (existing + new on PATCH).
   - Allowed formats: **jpg**, **jpeg**, **png**, **webp**.
   - Each file is **auto-optimized on upload** (WebP/JPEG, **≤ 300 KB**). Returns **400** if optimization fails.
 
@@ -1194,59 +1329,69 @@ Returned by list, detail, create, update, approve, reject, and `mine`. Write-onl
 | Field | Type | Allowed / notes |
 |-------|------|-----------------|
 | `property_for` | string | **Yes** — `rent` \| `sell` |
-| `property_ownership` | string | **Yes** — `management` \| `direct_owner` |
+| `property_ownership` | string | **Yes** — display label, e.g. `Direct Owner`, `Management`, `Builder`, `Dealer` |
 | `state` | int \| string | **Yes** — State PK or name (creates state if name is new) |
 | `district` | int \| string | **Yes** — District PK or name within state |
-| `city` | int \| string | **Yes** — City PK or name within district |
+| `city` | int \| string | **Yes** — City PK or name within district (web form uses OpenStreetMap place name) |
 | `title` | string | **Yes** |
 | `price` | string | **Yes** — numeric or text |
 | `property_type` | integer | **Yes** — `PropertyType` PK |
-| `area` | integer | **Yes** — positive |
-| `description` | string | **Yes** |
-| `area_unit` | string | **Yes** if sent; defaults to `sqft` when omitted — `sqft` \| `cent` |
+| `area` | decimal | **Yes** — positive; up to 8 decimal places |
+| `description` | string | No — optional; defaults to `""` |
+| `area_unit` | string | Defaults to `sqft` when omitted — `sqft` \| `cent` |
 
-**Required when `area_unit` = `sqft`** (built property; default)
+**Contact fields (POST)**
 
-| Field | Type | Notes |
-|-------|------|--------|
-| `bedrooms` | integer | positive |
-| `bathrooms` | integer | positive |
-| `furnishing` | string | non-empty |
+| Field | Type | Owner create | Staff create |
+|-------|------|--------------|--------------|
+| `contact_name` | string | Optional — defaults to owner full name (or username/email) | Required if omitted |
+| `whatsapp_number` | string | Optional — defaults to `UserProfile.whatsapp_number` | Required if omitted* |
+| `phone_number` | string | Optional — defaults to `UserProfile.phone` | Required if omitted* |
+| `email` | string | Optional — defaults to account email | Required if omitted |
 
-`built_year` is **always optional** (omit or send empty to store `null`); when provided it must be a positive integer.
+\*After defaults, **at least one** of `phone_number` or `whatsapp_number` must be non-empty for owner creates.
 
-When `area_unit` = `cent` (plot / land), the three fields above are **optional** and may be omitted or sent as empty; the API stores `null` and returns `null` in responses.
+**Built / type-specific fields (POST)** — all optional at API level
+
+Respect the selected property type's feature flags (`property_type_details` / `GET /property-types/`). The API does **not** enforce flags server-side; clients should omit fields when the flag is `false`.
+
+| Field | When to send | API notes |
+|-------|--------------|-----------|
+| `bedrooms`, `bathrooms` | `has_bedrooms` / `has_bathrooms` | Optional; positive integer or omit/empty/`0` → `null` |
+| `built_year` | `has_built_year` | Optional; free-form string (e.g. `"2018"`, `"Under construction"`) |
+| `furnishing` | `has_furnishing` | Optional string |
+| `parking_spaces` | `has_parking_spaces` | Optional integer; default `0` |
+| `project_status` | `has_project_status` | Optional string |
+| `floors` | `has_floors` | Optional string |
+| `sighting` | `has_sighting` | Optional string |
+| `area_cent` | `has_area_both` | Optional positive decimal alongside `area` (sq.ft) |
+
+When `area_unit` = `cent`, `bedrooms`, `bathrooms`, `built_year`, and `furnishing` are typically omitted and stored as `null`.
 
 **Optional fields (POST)**
 
 | Field | Type | Default / notes |
 |-------|------|-----------------|
 | `slug` | string | Auto-generated from `title` if omitted |
-| `contact_name` | string | **Owner**: defaults to owner full name (or username/email). **Staff**: required if omitted |
-| `whatsapp_number` | string | **Owner**: defaults to `UserProfile.whatsapp_number` |
-| `phone_number` | string | **Owner**: defaults to `UserProfile.phone` |
-| `email` | string | **Owner**: defaults to account email. **Staff**: required if omitted |
-| `bedrooms`, `bathrooms`, `furnishing` | — | Optional when `area_unit` = `cent` only |
-| `built_year` | integer | Optional on every `area_unit` (positive integer when supplied) |
-| `latitude`, `longitude` | decimal string | null |
-| `parking_spaces` | integer | `0` |
+| `latitude`, `longitude` | decimal string | From place picker; may be `null` |
 | `features` | integer or repeated field | Feature PKs; empty allowed |
 | `google_maps_url` | string | null |
-| `google_embedded_map_link` | string | iframe HTML; null |
-| `youtube_video_link` | string | null |
-| `property_video` | file | Write-only on create/update (multipart). mp4, mov, avi, mkv, webm. After save, the server runs ffmpeg to extract a frame and stores it as `video_thumbnail` on the model; responses expose `property_video_url` and `video_thumbnail_url` only. If ffmpeg is unavailable, the upload still succeeds but `video_thumbnail_url` stays `null`. |
-| `nearby_places_data` | JSON string or array | `[{ "name": "School", "distance": 0.5 }]` — `distance` in km |
+| `google_embedded_map_link` | string | iframe HTML; null (legacy) |
+| `youtube_video_link` | string | null (legacy) |
+| `property_video` | file | Write-only. mp4, mov, avi, mkv, webm. Auto thumbnail via ffmpeg |
+| `remove_video` | boolean | PATCH only — `true` clears uploaded video |
+| `nearby_places_data` | JSON string or array | `[{ "name": "School", "distance": 0.5 }]` — optional |
 | `is_featured` | boolean | `false` |
-| `uploaded_images` | file(s) | Repeat field for multiple images |
+| `uploaded_images` | file(s) | Repeat field; optional; max 4 total |
 
 - **Example multipart body** (conceptual):
   ```
   property_for=rent
-  property_ownership=direct_owner
+  property_ownership=Direct Owner
   state=1
   # contact_name, whatsapp_number, phone_number, email optional for owners — filled from profile when omitted
   district=2
-  city=3
+  city=Kochi
   title=Luxury Apartment in Downtown
   price=1500.00
   property_type=1
@@ -1254,29 +1399,30 @@ When `area_unit` = `cent` (plot / land), the three fields above are **optional**
   bathrooms=2
   area=1200
   area_unit=sqft
+  latitude=9.931233
+  longitude=76.267303
   description=Beautiful apartment with city view
   built_year=2018
   furnishing=furnished
   parking_spaces=1
   features=1
   features=2
-  google_maps_url=https://maps.google.com/?q=Kochi
-  nearby_places_data=[{"name":"International School","distance":0.5}]
   uploaded_images=<file1>
-  uploaded_images=<file2>
   ```
 - **Example cent listing** (built fields omitted):
   ```
   property_for=sell
-  property_ownership=direct_owner
+  property_ownership=Direct Owner
   state=1
   district=2
-  city=3
+  city=Highway Plot
   title=5 Cent Plot Near Highway
   price=45 Lakh
   property_type=3
   area=5
   area_unit=cent
+  latitude=8.524139
+  longitude=76.936638
   description=Clear title, road access
   ```
 - **Success Response** — **201 CREATED**: Full property object (see **Property object (response shape)**). Owner example includes `"moderation_status": "pending"`, `"created_by": <user id>`. Cent listings may return `"bedrooms": null`, `"bathrooms": null`, `"built_year": null`, `"furnishing": null`.
@@ -1294,8 +1440,8 @@ When `area_unit` = `cent` (plot / land), the three fields above are **optional**
 - **Auth Required**: Yes (Token) — **staff** may edit any listing; **owners** may edit only `created_by` = self
 - **Headers**: `Authorization: Token <token>`
 - **Content-Type**: `multipart/form-data`
-- **Request Body**: Any subset of create fields (all optional on PATCH). Replace nearby places by sending full `nearby_places_data` array. Append images with `uploaded_images`.
-- **`area_unit` on PATCH**: Changing to `cent` clears `bedrooms`, `bathrooms`, `built_year`, and `furnishing` to `null` when those fields are omitted in the same request. Changing to `sqft` requires `bedrooms`, `bathrooms`, and `furnishing` (in the request or already stored on the listing); `built_year` remains optional.
+- **Request Body**: Any subset of create fields (all optional on PATCH). Replace nearby places by sending full `nearby_places_data` array. Append images with `uploaded_images` (respect max 4 total). Set `remove_video=true` to delete an existing property video without uploading a replacement.
+- **`area_unit` on PATCH**: Changing to `cent` clears `bedrooms`, `bathrooms`, `built_year`, and `furnishing` to `null` when those fields are omitted in the same request. Changing to `sqft` does not require built fields — they remain optional.
 - **Success Response** — **200 OK**: Full updated property object (same shape as create response).
 - **Error Response**: **404** if not found or not owned by caller; **400** validation errors.
 
@@ -1386,6 +1532,7 @@ Send `[]` to clear all nearby places.
   |-------|------|--------|
   | `page` | int | Page number (default `1`) |
   | `page_size` | int | Items per page (default `20`, max `100`) |
+  | `search` | string | Optional — case-insensitive match on state name |
 - **Example**: `/api/properties/states/?page=1&page_size=20`
 - **Success Response**: 
   - **Code**: 200 OK
@@ -1411,8 +1558,7 @@ Send `[]` to clear all nearby places.
 #### Get State Detail
 - **URL**: `/api/properties/states/{id}/`
 - **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
+- **Auth Required**: No (public)
 - **Success Response**: 
   - **Code**: 200 OK
   - **Content**: 
@@ -1457,6 +1603,7 @@ Send `[]` to clear all nearby places.
   | `state_id` | int | Filter districts by state ID |
   | `page` | int | Page number (default `1`) |
   | `page_size` | int | Items per page (default `20`, max `100`) |
+  | `search` | string | Optional — case-insensitive match on district name |
 - **Example**: `/api/properties/districts/?state_id=1&page=1&page_size=20`
 - **Success Response**: 
   - **Code**: 200 OK
@@ -1484,8 +1631,7 @@ Send `[]` to clear all nearby places.
 #### Get District Detail
 - **URL**: `/api/properties/districts/{id}/`
 - **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
+- **Auth Required**: No (public)
 - **Success Response**: 
   - **Code**: 200 OK
   - **Content**: 
@@ -1560,8 +1706,7 @@ Send `[]` to clear all nearby places.
 #### Get City Detail
 - **URL**: `/api/properties/cities/{id}/`
 - **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
+- **Auth Required**: No (public)
 - **Success Response**: 
   - **Code**: 200 OK
   - **Content**: 
@@ -1595,194 +1740,6 @@ Send `[]` to clear all nearby places.
       "district": 1
     }
     ```
-
-### Nearby Places
-
-#### List All Nearby Places
-- **URL**: `/api/properties/nearby-places/`
-- **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Success Response**: 
-  - **Code**: 200 OK
-  - **Content**: 
-    ```json
-    [
-      {
-        "id": 1,
-        "name": "International School"
-      },
-      {
-        "id": 2,
-        "name": "Shopping Mall"
-      }
-    ]
-    ```
-
-#### Get Nearby Place Detail
-- **URL**: `/api/properties/nearby-places/{id}/`
-- **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Success Response**: 
-  - **Code**: 200 OK
-  - **Content**: 
-    ```json
-    {
-      "id": 1,
-      "name": "International School"
-    }
-    ```
-
-#### Create Nearby Place
-- **URL**: `/api/properties/nearby-places/`
-- **Method**: POST
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Request Body**:
-  ```json
-  {
-    "name": "International School"
-  }
-  ```
-- **Success Response**: 
-  - **Code**: 201 CREATED
-  - **Content**: 
-    ```json
-    {
-      "id": 1,
-      "name": "International School"
-    }
-    ```
-
-#### Update Nearby Place
-- **URL**: `/api/properties/nearby-places/{id}/`
-- **Method**: PATCH
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Request Body**:
-  ```json
-  {
-    "name": "New International School"
-  }
-  ```
-- **Success Response**: 
-  - **Code**: 200 OK
-  - **Content**: 
-    ```json
-    {
-      "id": 1,
-      "name": "New International School"
-    }
-    ```
-
-#### Delete Nearby Place
-- **URL**: `/api/properties/nearby-places/{id}/`
-- **Method**: DELETE
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Success Response**: 
-  - **Code**: 204 NO CONTENT
-
-### Nearby Place Distances
-
-#### List All Nearby Place Distances
-- **URL**: `/api/properties/nearby-place-distances/`
-- **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Success Response**: 
-  - **Code**: 200 OK
-  - **Content**: 
-    ```json
-    [
-      {
-        "id": 1,
-        "property": 1,
-        "nearby_place": 1,
-        "distance": "0.5 km"
-      },
-      {
-        "id": 2,
-        "property": 1,
-        "nearby_place": 2,
-        "distance": "1 km"
-      }
-    ]
-    ```
-
-#### Get Nearby Place Distance Detail
-- **URL**: `/api/properties/nearby-place-distances/{id}/`
-- **Method**: GET
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Success Response**: 
-  - **Code**: 200 OK
-  - **Content**: 
-    ```json
-    {
-      "id": 1,
-      "property": 1,
-      "nearby_place": 1,
-      "distance": "0.5 km"
-    }
-    ```
-
-#### Create Nearby Place Distance
-- **URL**: `/api/properties/nearby-place-distances/`
-- **Method**: POST
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Request Body**:
-  ```json
-  {
-    "property": 1,
-    "nearby_place": 1,
-    "distance": "0.5 km"
-  }
-  ```
-- **Success Response**: 
-  - **Code**: 201 CREATED
-  - **Content**: 
-    ```json
-    {
-      "id": 1,
-      "property": 1,
-      "nearby_place": 1,
-      "distance": "0.5 km"
-    }
-    ```
-
-#### Update Nearby Place Distance
-- **URL**: `/api/properties/nearby-place-distances/{id}/`
-- **Method**: PATCH
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Request Body**:
-  ```json
-  {
-    "distance": "1 km"
-  }
-  ```
-- **Success Response**: 
-  - **Code**: 200 OK
-  - **Content**: 
-    ```json
-    {
-      "id": 1,
-      "property": 1,
-      "nearby_place": 1,
-      "distance": "1 km"
-    }
-    ```
-
-#### Delete Nearby Place Distance
-- **URL**: `/api/properties/nearby-place-distances/{id}/`
-- **Method**: DELETE
-- **Auth Required**: Yes (Token)
-- **Headers**: `Authorization: Token <token>`
-- **Success Response**: 
-  - **Code**: 204 NO CONTENT
 
 ## Banner Management APIs
 
@@ -2038,6 +1995,46 @@ Send `[]` to clear all nearby places.
   ```
 - **Notes**: Values come from `SiteSettings`; used on property detail / contact CTAs. Distinct from per-owner phone on listings.
 
+### Mobile app version (admin)
+- **URL**: `/api/properties/app-settings/`
+- **Methods**: `GET` (retrieve), `PATCH` (partial update)
+- **Auth Required**: Yes — **admin** (`is_superuser` / `IsAdminUser`)
+- **Headers**: `Authorization: Token <token>`
+- **PATCH fields** (all optional):
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `android_app_version` | string | Published Android version, e.g. `1.4.3` (max 20 chars) |
+| `android_force_update` | boolean | When `true`, Android clients should block usage until update |
+| `ios_app_version` | string | Published iOS version, e.g. `1.4.3` |
+| `ios_force_update` | boolean | When `true`, iOS clients should block usage until update |
+
+- **Success Response** — **200 OK**:
+  ```json
+  {
+    "android_app_version": "1.0.0",
+    "android_force_update": false,
+    "ios_app_version": "1.0.0",
+    "ios_force_update": false
+  }
+  ```
+- **Notes**: `PUT` is not allowed (405). These fields are **not** on `/api/properties/site-settings/` — use this endpoint only.
+
+### Public mobile app version check
+- **URL**: `/api/properties/app-version/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response** — **200 OK** (same shape as admin `app-settings` GET):
+  ```json
+  {
+    "android_app_version": "1.0.0",
+    "android_force_update": false,
+    "ios_app_version": "1.0.0",
+    "ios_force_update": false
+  }
+  ```
+- **Notes**: Mobile clients compare their build version against the platform-specific field and honour `*_force_update` when the installed version is older.
+
 ## Contact Us API
 
 ### List Contact Messages (Staff: all; owners: their listings)
@@ -2064,7 +2061,7 @@ Send `[]` to clear all nearby places.
       }
     ]
     ```
-- **Note**: `property` is null for general site contact; `property_title` is empty when `property` is null.
+- **Note**: `property` is null for general site contact; `property_title` is empty when `property` is null. List responses do **not** include `email_sent` / `notification_recipients` (those appear on `POST` create only).
 
 ### Get Contact Message Detail (Staff: any; owners: own listing enquiries)
 - **URL**: `/api/properties/contacts/{id}/`
@@ -2132,9 +2129,12 @@ Send `[]` to clear all nearby places.
       "message": "I'm interested in the downtown apartment.",
       "property": 42,
       "property_title": "Luxury Apartment in Downtown",
-      "created_at": "2024-03-20T10:30:00Z"
+      "created_at": "2024-03-20T10:30:00Z",
+      "email_sent": true,
+      "notification_recipients": ["owner@example.com", "admin@example.com"]
     }
     ```
+- **Notes**: `email_sent` indicates whether the enquiry notification email was delivered. `notification_recipients` lists addresses that were targeted (owner and/or admin depending on listing).
 - **Error Response**: 
   - **Code**: 400 BAD REQUEST
   - **Content**: Validation errors
@@ -2184,7 +2184,7 @@ Canonical detail lives in the sections above. This table lists **required reques
 | `/api/properties/properties/{id}/reject/` | POST | — (staff token) | **200** property with `moderation_status: rejected` |
 | `/api/properties/properties/{id}/delete_image/` | DELETE | `image_id` (body or query) | **204** |
 
-**Create property — minimum required:** `property_for`, `property_ownership`, `contact_name`, `whatsapp_number`, `phone_number`, `email`, `state`, `district`, `city`, `title`, `price`, `property_type`, `area`, `description`; plus `bedrooms`, `bathrooms`, `furnishing` when `area_unit` is `sqft` (default). `built_year` is always optional; for `area_unit=cent`, `bedrooms`, `bathrooms`, and `furnishing` are also optional.
+**Create property — minimum required:** `property_for`, `property_ownership`, `state`, `district`, `city`, `title`, `price`, `property_type`, `area`. `description` is optional (empty string allowed). **Owner** listings may omit `contact_name`, `phone_number`, `whatsapp_number`, and `email` (filled from profile; at least one phone/WhatsApp after defaults). **Staff** must supply contact fields. `uploaded_images` optional (max 4). Built fields (`bedrooms`, `bathrooms`, `built_year`, `furnishing`, `parking_spaces`, `project_status`, `floors`, `sighting`, `area_cent`) are optional at the API — send only when the property type's feature flags apply.
 
 ### Advertisements (admin & public)
 
@@ -2206,10 +2206,14 @@ Canonical detail lives in the sections above. This table lists **required reques
 | `/api/properties/company-contact/` | GET | — | **200** `{ phone, email, address, whatsapp }` |
 | `/api/properties/site-contact/` | GET | — | **200** `{ admin_phone, admin_whatsapp, email, address }` |
 | `/api/properties/company-settings/` | GET/PATCH | PATCH: optional `phone`, `whatsapp`, `email`, `address` (admin) | **200** company fields |
+| `/api/properties/app-settings/` | GET/PATCH | PATCH: optional `android_app_version`, `android_force_update`, `ios_app_version`, `ios_force_update` (admin) | **200** mobile app fields |
+| `/api/properties/app-version/` | GET | — | **200** `{ android_app_version, android_force_update, ios_app_version, ios_force_update }` |
 
 **Migrations (2026-05-15):** `accounts.0002_owner_buyer_enquiry`, `accounts.0003_profile_address_pending_email`, `properties.0019_owner_buyer_enquiry`, `properties.0020_property_slug`, `properties.0021_testimonial_and_section_settings`.
 
 **Migrations (2026-06-02):** `advertisements.0001_initial`.
+
+**Migrations (2026-06-17 – 2026-06-25):** `properties.0030_sitesettings_mobile_app`, `0031_property_type_flags_and_fields`, `0032_convert_property_ownership`, `0033_add_has_furnishing`, `0034_optional_description_built_year_string`, `0035_property_area_decimal`, `0036_platform_mobile_app_versions`.
 
 ---
 

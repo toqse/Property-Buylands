@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { getErrorMessage } from "@/lib/api/errors";
 import { toast } from "sonner";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -10,6 +10,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/context/AuthContext";
 import { UserLocationProvider } from "@/context/UserLocationContext";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { FilterResetOnReload } from "@/components/FilterResetOnReload";
+import "@/lib/listingFilterBootstrap";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -31,6 +33,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         <Sonner />
         <UserLocationProvider>
           <AuthProvider>
+            <Suspense fallback={null}>
+              <FilterResetOnReload />
+            </Suspense>
             {children}
             <MobileBottomNav />
           </AuthProvider>

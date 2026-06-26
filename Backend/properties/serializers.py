@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from decimal import Decimal, InvalidOperation
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from .models import (
@@ -18,6 +19,7 @@ from .models import (
 )
 from .slug_utils import generate_unique_property_slug, normalize_property_slug_input
 from .utils import absolute_media_url, normalize_nearby_places_output
+from .enquiry_email import send_enquiry_notification
 
 class StateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -44,7 +46,22 @@ class FeatureSerializer(serializers.ModelSerializer):
 class PropertyTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = PropertyType
-        fields = ["id", "name", "image", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "name",
+            "image",
+            "has_bedrooms",
+            "has_bathrooms",
+            "has_built_year",
+            "has_parking_spaces",
+            "has_project_status",
+            "has_floors",
+            "has_sighting",
+            "has_area_both",
+            "has_furnishing",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def to_representation(self, instance):
@@ -125,6 +142,14 @@ class PropertySerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
     remove_video = serializers.BooleanField(write_only=True, required=False, default=False)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    built_year = serializers.CharField(
+        required=False, allow_blank=True, max_length=20, default=""
+    )
+    area = serializers.DecimalField(max_digits=18, decimal_places=8)
+    area_cent = serializers.DecimalField(
+        max_digits=18, decimal_places=8, required=False, allow_null=True
+    )
 
     class Meta:
         model = Property
@@ -138,7 +163,9 @@ class PropertySerializer(serializers.ModelSerializer):
             'google_embedded_map_link', 'youtube_video_link', 'property_video', 'property_video_url',
             'video_thumbnail', 'video_thumbnail_url',
             'latitude', 'longitude', 'distance_km',
-            'nearby_places', 'nearby_places_data', 'built_year', 'furnishing', 'parking_spaces', 'is_featured', 'images', 
+            'nearby_places', 'nearby_places_data', 'built_year', 'furnishing',
+            'project_status', 'floors', 'sighting', 'area_cent',
+            'parking_spaces', 'is_featured', 'images', 
             'uploaded_images', 'remove_video', 'created_at', 'updated_at',
             'moderation_status', 'moderated_at', 'moderated_by_username', 'created_by',
         ]
@@ -298,10 +325,10 @@ class PropertySerializer(serializers.ModelSerializer):
         except ValueError as e:
             raise serializers.ValidationError(str(e)) from e
 
-    BUILT_FIELDS = ("bedrooms", "bathrooms", "built_year", "furnishing")
-    BUILT_REQUIRED_FIELDS_SQFT = ("furnishing",)
-    BUILT_INT_FIELDS = ("bedrooms", "bathrooms", "built_year")
-    OPTIONAL_BUILT_INT_FIELDS = ("built_year", "bedrooms", "bathrooms")
+    BUILT_FIELDS = ("bedrooms", "bathrooms", "furnishing")
+    BUILT_REQUIRED_FIELDS_SQFT = ()
+    BUILT_INT_FIELDS = ("bedrooms", "bathrooms")
+    OPTIONAL_BUILT_INT_FIELDS = ("bedrooms", "bathrooms")
     VALID_AREA_UNITS = frozenset({"sqft", "cent"})
     MAX_PROPERTY_IMAGES = 4
 
@@ -344,6 +371,34 @@ class PropertySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({field_name: "Must be a positive integer."})
         return parsed
 
+    @staticmethod
+    def _normalize_positive_decimal(value, field_name):
+        try:
+            parsed = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise serializers.ValidationError(
+                {field_name: "Must be a positive number."}
+            ) from None
+        if parsed <= 0:
+            raise serializers.ValidationError(
+                {field_name: "Must be a positive number."}
+            )
+        return parsed
+
+    def _normalize_area_fields(self, attrs):
+        if "area" in attrs:
+            attrs["area"] = self._normalize_positive_decimal(attrs["area"], "area")
+        elif self.instance is None:
+            raise serializers.ValidationError({"area": "This field is required."})
+
+        if "area_cent" in attrs:
+            if self._is_blank_value(attrs["area_cent"]):
+                attrs["area_cent"] = None
+            else:
+                attrs["area_cent"] = self._normalize_positive_decimal(
+                    attrs["area_cent"], "area_cent"
+                )
+
     def _apply_cent_built_fields(self, attrs):
         switching_to_cent = self._switching_to_cent(attrs)
         is_create = self.instance is None
@@ -385,7 +440,6 @@ class PropertySerializer(serializers.ModelSerializer):
                 if field in attrs or self.instance is None:
                     attrs[field] = str(value).strip()
 
-        # built_year is optional on every area_unit; validate format only when supplied.
         # bedrooms/bathrooms are optional too: blank or 0 means "not specified" -> None.
         for field in self.OPTIONAL_BUILT_INT_FIELDS:
             value = self._merged_built_value(attrs, field)
@@ -404,8 +458,22 @@ class PropertySerializer(serializers.ModelSerializer):
             if field in attrs or self.instance is None:
                 attrs[field] = parsed
 
+        if "furnishing" in attrs and attrs["furnishing"] is not None:
+            attrs["furnishing"] = str(attrs["furnishing"]).strip()
+
         if errors:
             raise serializers.ValidationError(errors)
+
+    def _normalize_built_year(self, attrs):
+        """Optional free-form string; blank or 0 is stored as empty string."""
+        if "built_year" in attrs:
+            raw = attrs["built_year"]
+            if self._is_blank_value(raw) or str(raw).strip() == "0":
+                attrs["built_year"] = ""
+            else:
+                attrs["built_year"] = str(raw).strip()
+        elif self.instance is None:
+            attrs.setdefault("built_year", "")
 
     def validate(self, attrs):
         unit = self._effective_area_unit(attrs)
@@ -421,12 +489,14 @@ class PropertySerializer(serializers.ModelSerializer):
         else:
             self._validate_sqft_built_fields(attrs)
 
+        self._normalize_area_fields(attrs)
+        self._normalize_built_year(attrs)
         self._validate_image_count(attrs)
 
         return attrs
 
     def _validate_image_count(self, attrs):
-        """At least one image is mandatory; at most MAX_PROPERTY_IMAGES total."""
+        """At most MAX_PROPERTY_IMAGES total; images are optional."""
         uploaded_images = attrs.get("uploaded_images", [])
         if not isinstance(uploaded_images, list):
             uploaded_images = [uploaded_images] if uploaded_images else []
@@ -434,16 +504,8 @@ class PropertySerializer(serializers.ModelSerializer):
 
         if self.instance is None:
             existing_count = 0
-            if new_count < 1:
-                raise serializers.ValidationError(
-                    {"uploaded_images": "At least one property image is required."}
-                )
         else:
             existing_count = self.instance.images.count()
-            if existing_count + new_count < 1:
-                raise serializers.ValidationError(
-                    {"uploaded_images": "At least one property image is required."}
-                )
 
         if existing_count + new_count > self.MAX_PROPERTY_IMAGES:
             raise serializers.ValidationError(
@@ -717,6 +779,8 @@ class ContactSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     property_title = serializers.SerializerMethodField()
+    email_sent = serializers.SerializerMethodField()
+    notification_recipients = serializers.SerializerMethodField()
 
     class Meta:
         model = Contact
@@ -731,11 +795,26 @@ class ContactSerializer(serializers.ModelSerializer):
             'budget_range',
             'message',
             'created_at',
+            'email_sent',
+            'notification_recipients',
         ]
-        read_only_fields = ['created_at', 'property_title']
+        read_only_fields = ['created_at', 'property_title', 'email_sent', 'notification_recipients']
 
     def get_property_title(self, obj):
         return obj.property.title if obj.property_id else ""
+
+    def get_email_sent(self, obj):
+        return getattr(obj, "_email_sent", None)
+
+    def get_notification_recipients(self, obj):
+        return getattr(obj, "_notification_recipients", [])
+
+    def create(self, validated_data):
+        contact = super().create(validated_data)
+        sent, recipients = send_enquiry_notification(contact)
+        contact._email_sent = sent
+        contact._notification_recipients = recipients
+        return contact
 
 
 class TestimonialSerializer(serializers.ModelSerializer):
@@ -828,6 +907,35 @@ class CompanySettingsSerializer(serializers.Serializer):
             instance.company_email = validated_data["email"].strip()
         if "address" in validated_data:
             instance.company_address = validated_data["address"].strip()
+        instance.save()
+        return instance
+
+
+class MobileAppSettingsSerializer(serializers.Serializer):
+    """Admin read/write per-platform mobile app version and force-update flags."""
+
+    android_app_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    android_force_update = serializers.BooleanField(required=False)
+    ios_app_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    ios_force_update = serializers.BooleanField(required=False)
+
+    def to_representation(self, instance):
+        return {
+            "android_app_version": instance.android_app_version or "",
+            "android_force_update": bool(instance.android_force_update),
+            "ios_app_version": instance.ios_app_version or "",
+            "ios_force_update": bool(instance.ios_force_update),
+        }
+
+    def update(self, instance, validated_data):
+        if "android_app_version" in validated_data:
+            instance.android_app_version = validated_data["android_app_version"].strip()
+        if "android_force_update" in validated_data:
+            instance.android_force_update = validated_data["android_force_update"]
+        if "ios_app_version" in validated_data:
+            instance.ios_app_version = validated_data["ios_app_version"].strip()
+        if "ios_force_update" in validated_data:
+            instance.ios_force_update = validated_data["ios_force_update"]
         instance.save()
         return instance
 

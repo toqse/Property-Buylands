@@ -27,7 +27,7 @@ export function buildAdFormData(
     if (draft.city.trim()) fd.append("city", draft.city.trim());
     if (draft.latitude.trim()) fd.append("latitude", draft.latitude.trim());
     if (draft.longitude.trim()) fd.append("longitude", draft.longitude.trim());
-    if (draft.radiusKm) fd.append("radius_km", draft.radiusKm);
+    fd.append("radius_km", draft.radiusKm.trim() || "25");
   }
   if (draft.priority) fd.append("priority", draft.priority);
   if (draft.startDate) fd.append("start_date", draft.startDate);

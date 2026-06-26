@@ -35,29 +35,44 @@ import { PropertyCard } from "@/components/PropertyCard";
 import { CountUp } from "@/components/CountUp";
 import { usePropertyList, usePropertyLocations } from "@/hooks/api/useProperties";
 import { useHeroBanners, usePropertyTypes, useTestimonials, useFeatures } from "@/hooks/api/useCatalog";
-import { useUserLocation, type LocationStatus } from "@/context/UserLocationContext";
+import { useUserLocation } from "@/context/UserLocationContext";
+import { isBrowserReload } from "@/lib/browserReload";
 import { imageSrc } from "@/lib/image";
 import {
   CURRENT_LOCATION_VALUE,
   RADIUS_OPTIONS,
   buildLocationCoordsMap,
   getLocationSearchValue,
-  uniqueLocationLabels,
 } from "@/lib/locationFilter";
+import {
+  LocationSearchSelect,
+  locationStringToSelection,
+  type LocationSelection,
+} from "@/components/LocationSearchSelect";
 import {
   defaultSectionLocationPrefs,
   readSectionLocationPrefs,
   writeSectionLocationPrefs,
   type SectionLocationPrefs,
 } from "@/lib/listingFilterStorage";
+import {
+  appendTypeSearchFiltersToUrlParams,
+  clearSearchFiltersForFlags,
+  DEFAULT_PROPERTY_TYPE_FLAGS,
+  DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS,
+  findPropertyTypeFlags,
+  type PropertyTypeSearchFilterState,
+} from "@/lib/api/propertyForm";
+import {
+  PropertyTypeRoomSearchFields,
+  PropertyTypeSearchFields,
+} from "@/components/PropertyTypeSearchFields";
 
 const HERO_FALLBACK = "/new%20banner.png";
 
 const ALL_CATEGORY_IMAGE = "/heromain.png";
 
 type FeaturePill = { id: number; name: string };
-
-const ROOM_OPTIONS = ["Any", "1", "2", "3", "4", "5"];
 
 const PRICE_OPTIONS: { value: string; label: string; min?: number; max?: number }[] = [
   { value: "any", label: "Any price" },
@@ -73,12 +88,22 @@ const Home = () => {
   const [intent, setIntent] = useState<"buy" | "rent">("buy");
   const [q, setQ] = useState("");
   const [location, setLocation] = useState("Any");
+  const [selectedPlaceGeo, setSelectedPlaceGeo] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const selectedPlaceGeoRef = useRef<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const locationSearchCandidateRef = useRef<LocationSelection | null>(null);
   const [searchRadius, setSearchRadius] = useState("10");
   const [autoCurrentLocationDismissed, setAutoCurrentLocationDismissed] = useState(true);
   const [pendingCurrentLocation, setPendingCurrentLocation] = useState(false);
   const [cat, setCat] = useState("any");
-  const [bedrooms, setBedrooms] = useState("Any");
-  const [bathrooms, setBathrooms] = useState("Any");
+  const [typeFilters, setTypeFilters] = useState<PropertyTypeSearchFilterState>(
+    DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS,
+  );
   const [features, setFeatures] = useState<number[]>([]);
   const [priceRange, setPriceRange] = useState("any");
 
@@ -94,7 +119,9 @@ const Home = () => {
     coords,
     radiusKm,
     status,
-    requestLocation,
+    requestLocationForFilter,
+    firstVisitAutoFilterPending,
+    consumeFirstVisitAutoFilter,
   } = useUserLocation();
 
   const persistHomeLocationPrefs = useCallback((prefs: SectionLocationPrefs) => {
@@ -102,10 +129,25 @@ const Home = () => {
   }, []);
 
   useEffect(() => {
+    if (isBrowserReload()) {
+      const defaults = defaultSectionLocationPrefs(radiusKm);
+      setLocation(defaults.location);
+      setSearchRadius(defaults.searchRadius);
+      setAutoCurrentLocationDismissed(defaults.autoCurrentLocationDismissed);
+      selectedPlaceGeoRef.current = null;
+      setSelectedPlaceGeo(null);
+      return;
+    }
     const saved = readSectionLocationPrefs("home") ?? defaultSectionLocationPrefs(radiusKm);
     setLocation(saved.location);
     setSearchRadius(saved.searchRadius);
     setAutoCurrentLocationDismissed(saved.autoCurrentLocationDismissed);
+    const geo =
+      saved.latitude != null && saved.longitude != null
+        ? { latitude: saved.latitude, longitude: saved.longitude }
+        : null;
+    selectedPlaceGeoRef.current = geo;
+    setSelectedPlaceGeo(geo);
   }, [radiusKm]);
 
   const propertyForFilter = intent === "rent" ? ("rent" as const) : ("sell" as const);
@@ -113,10 +155,6 @@ const Home = () => {
     pageSize: 100,
     propertyFor: propertyForFilter,
   });
-  const locationOptions = useMemo(
-    () => uniqueLocationLabels(locationData?.results ?? []),
-    [locationData?.results],
-  );
   const locationCoordsByLabel = useMemo(
     () => buildLocationCoordsMap(locationData?.results ?? []),
     [locationData?.results],
@@ -142,16 +180,61 @@ const Home = () => {
   const { data: propertyTypesData } = usePropertyTypes();
   const fmt = new Intl.NumberFormat("en-US");
 
+  const typeFlags = useMemo(
+    () =>
+      cat === "any"
+        ? DEFAULT_PROPERTY_TYPE_FLAGS
+        : findPropertyTypeFlags(propertyTypesData?.results, cat),
+    [cat, propertyTypesData?.results],
+  );
+
+  const handleCategoryChange = useCallback(
+    (value: string) => {
+      setCat(value);
+      const flags =
+        value === "any"
+          ? DEFAULT_PROPERTY_TYPE_FLAGS
+          : findPropertyTypeFlags(propertyTypesData?.results, value);
+      setTypeFilters((prev) => ({ ...prev, ...clearSearchFiltersForFlags(flags) }));
+    },
+    [propertyTypesData?.results],
+  );
+
+  const patchTypeFilters = useCallback(
+    (patch: Partial<PropertyTypeSearchFilterState>) => {
+      setTypeFilters((prev) => ({ ...prev, ...patch }));
+    },
+    [],
+  );
+
   const locatingMe = status === "loading";
   const isCurrentLocationFilter = location === CURRENT_LOCATION_VALUE;
   const showRadiusFilter = location !== "Any";
   const hasPlaceCoordinates =
-    location !== "Any" && !isCurrentLocationFilter && locationCoordsByLabel.has(location);
+    location !== "Any" &&
+    !isCurrentLocationFilter &&
+    (locationCoordsByLabel.has(location) || selectedPlaceGeo != null);
   const textLocationQuery = getLocationSearchValue(location);
+
+  const locationSelection = useMemo(
+    () =>
+      locationStringToSelection(location, {
+        allValue: "Any",
+        allLabel: "No location filter",
+        currentLocationLabel: "My current location",
+        latitude: selectedPlaceGeo?.latitude,
+        longitude: selectedPlaceGeo?.longitude,
+        source: selectedPlaceGeo ? "osm" : undefined,
+      }),
+    [location, selectedPlaceGeo],
+  );
 
   const clearLocationFilter = useCallback(() => {
     const wasCurrentLocation = location === CURRENT_LOCATION_VALUE;
     setLocation("Any");
+    setSelectedPlaceGeo(null);
+    selectedPlaceGeoRef.current = null;
+    locationSearchCandidateRef.current = null;
     if (wasCurrentLocation) {
       setAutoCurrentLocationDismissed(true);
     }
@@ -162,43 +245,57 @@ const Home = () => {
     });
   }, [location, searchRadius, autoCurrentLocationDismissed, persistHomeLocationPrefs]);
 
-  const handleLocationChange = useCallback(
-    (value: string) => {
-      if (value === CURRENT_LOCATION_VALUE) {
-        if (!coords) {
-          setPendingCurrentLocation(true);
-          requestLocation();
-          return;
-        }
-        setAutoCurrentLocationDismissed(false);
-        setLocation(CURRENT_LOCATION_VALUE);
-        persistHomeLocationPrefs({
-          location: CURRENT_LOCATION_VALUE,
-          searchRadius,
-          autoCurrentLocationDismissed: false,
-        });
-        return;
-      }
-      if (value === "Any") {
+  const handleLocationSelect = useCallback(
+    (selection: LocationSelection | null) => {
+      locationSearchCandidateRef.current = null;
+      if (!selection || selection.source === "all") {
         clearLocationFilter();
         return;
       }
+      if (selection.source === "current") {
+        setPendingCurrentLocation(true);
+        void requestLocationForFilter().then((result) => {
+          if (!result) {
+            setPendingCurrentLocation(false);
+          }
+        });
+        return;
+      }
       setAutoCurrentLocationDismissed(true);
-      setLocation(value);
+      setLocation(selection.label);
+      let geo: { latitude: number; longitude: number } | null = null;
+      if (
+        selection.latitude != null &&
+        selection.longitude != null &&
+        Number.isFinite(selection.latitude) &&
+        Number.isFinite(selection.longitude)
+      ) {
+        geo = { latitude: selection.latitude, longitude: selection.longitude };
+      } else {
+        geo = locationCoordsByLabel.get(selection.label) ?? null;
+      }
+      selectedPlaceGeoRef.current = geo;
+      setSelectedPlaceGeo(geo);
       persistHomeLocationPrefs({
-        location: value,
+        location: selection.label,
         searchRadius,
         autoCurrentLocationDismissed: true,
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
       });
     },
     [
-      coords,
-      requestLocation,
+      requestLocationForFilter,
       clearLocationFilter,
       persistHomeLocationPrefs,
       searchRadius,
+      locationCoordsByLabel,
     ],
   );
+
+  const handleLocationSearchCandidateChange = useCallback((selection: LocationSelection | null) => {
+    locationSearchCandidateRef.current = selection;
+  }, []);
 
   useEffect(() => {
     if (pendingCurrentLocation && coords) {
@@ -214,29 +311,14 @@ const Home = () => {
   }, [pendingCurrentLocation, coords, persistHomeLocationPrefs, searchRadius]);
 
   useEffect(() => {
-    if (coords && !autoCurrentLocationDismissed && location === "Any") {
-      setLocation(CURRENT_LOCATION_VALUE);
-      setSearchRadius(String(radiusKm));
-    }
-  }, [coords, autoCurrentLocationDismissed, location, radiusKm]);
-
-  // When the user freshly grants location (status goes loading -> granted),
-  // take them straight to the listings sorted by proximity. We only react to a
-  // fresh acquisition (which always passes through "loading"); returning
-  // visitors whose coordinates are restored from storage land on "granted"
-  // directly and are NOT redirected, so the home page stays visible for them.
-  const prevLocationStatusRef = useRef<LocationStatus>(status);
-  useEffect(() => {
-    const prevStatus = prevLocationStatusRef.current;
-    prevLocationStatusRef.current = status;
-    if (prevStatus === "loading" && status === "granted" && coords) {
-      const params = new URLSearchParams();
-      params.set("lat", String(coords.latitude));
-      params.set("lng", String(coords.longitude));
-      params.set("radius", String(radiusKm));
-      navigate(`/properties?${params.toString()}`);
-    }
-  }, [status, coords, radiusKm, navigate]);
+    if (!firstVisitAutoFilterPending || !coords) return;
+    const params = new URLSearchParams();
+    params.set("lat", String(coords.latitude));
+    params.set("lng", String(coords.longitude));
+    params.set("radius", String(radiusKm));
+    navigate(`/properties?${params.toString()}`);
+    consumeFirstVisitAutoFilter();
+  }, [firstVisitAutoFilterPending, coords, radiusKm, navigate, consumeFirstVisitAutoFilter]);
 
   const useMyCurrentLocation = () => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -245,7 +327,11 @@ const Home = () => {
     }
     setPendingCurrentLocation(true);
     setAutoCurrentLocationDismissed(false);
-    requestLocation();
+    void requestLocationForFilter().then((result) => {
+      if (!result) {
+        setPendingCurrentLocation(false);
+      }
+    });
   };
 
   const featuredScrollRef = useRef<HTMLDivElement | null>(null);
@@ -311,8 +397,7 @@ const Home = () => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (cat !== "any") params.set("category", cat);
-    if (bedrooms !== "Any") params.set("bedrooms", bedrooms);
-    if (bathrooms !== "Any") params.set("bathrooms", bathrooms);
+    appendTypeSearchFiltersToUrlParams(params, typeFlags, typeFilters);
     if (features.length) params.set("features", features.join(","));
     if (priceRange !== "any") {
       const opt = PRICE_OPTIONS.find((o) => o.value === priceRange);
@@ -320,13 +405,29 @@ const Home = () => {
       if (opt?.max !== undefined) params.set("maxPrice", String(opt.max));
     }
 
+    let persistedGeo: { latitude: number; longitude: number } | null = null;
+    let persistedLocation = location;
+    const typedCandidate = location === "Any" ? locationSearchCandidateRef.current : null;
     if (location === CURRENT_LOCATION_VALUE && coords) {
       params.set("lat", String(coords.latitude));
       params.set("lng", String(coords.longitude));
       params.set("radius", searchRadius);
+    } else if (
+      typedCandidate?.latitude != null &&
+      typedCandidate.longitude != null &&
+      Number.isFinite(typedCandidate.latitude) &&
+      Number.isFinite(typedCandidate.longitude)
+    ) {
+      persistedLocation = typedCandidate.label;
+      persistedGeo = { latitude: typedCandidate.latitude, longitude: typedCandidate.longitude };
+      params.set("lat", String(typedCandidate.latitude));
+      params.set("lng", String(typedCandidate.longitude));
+      params.set("radius", searchRadius);
+      params.set("location", typedCandidate.label);
     } else if (location !== "Any" && location !== CURRENT_LOCATION_VALUE) {
-      const place = locationCoordsByLabel.get(location);
+      const place = selectedPlaceGeoRef.current ?? selectedPlaceGeo ?? locationCoordsByLabel.get(location);
       if (place) {
+        persistedGeo = { latitude: place.latitude, longitude: place.longitude };
         params.set("lat", String(place.latitude));
         params.set("lng", String(place.longitude));
         params.set("radius", searchRadius);
@@ -342,23 +443,25 @@ const Home = () => {
     const base = "/properties";
 
     persistHomeLocationPrefs({
-      location,
+      location: persistedLocation,
       searchRadius,
       autoCurrentLocationDismissed:
-        location === CURRENT_LOCATION_VALUE
+        persistedLocation === CURRENT_LOCATION_VALUE
           ? false
-          : location !== "Any"
+          : persistedLocation !== "Any"
             ? true
             : autoCurrentLocationDismissed,
+      latitude: persistedGeo?.latitude,
+      longitude: persistedGeo?.longitude,
     });
 
-    if (location !== "Any") {
-      writeSectionLocationPrefs("properties", {
-        location,
-        searchRadius,
-        autoCurrentLocationDismissed: location !== CURRENT_LOCATION_VALUE,
-      });
-    }
+    writeSectionLocationPrefs("properties", {
+      location: persistedLocation,
+      searchRadius,
+      autoCurrentLocationDismissed: persistedLocation !== CURRENT_LOCATION_VALUE,
+      latitude: persistedGeo?.latitude,
+      longitude: persistedGeo?.longitude,
+    });
 
     const qs = params.toString();
     navigate(qs ? `${base}?${qs}` : base);
@@ -512,17 +615,17 @@ const Home = () => {
       </section>
 
       <Dialog open={showFilters} onOpenChange={setShowFilters}>
-        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl gap-0 overflow-hidden rounded-3xl border-white/70 bg-white p-0 shadow-[0_28px_80px_-28px_rgba(15,23,42,0.45)] sm:w-[calc(100vw-3rem)]">
-          <DialogHeader className="border-b border-border/70 px-5 pb-4 pt-5 text-left md:px-7 md:pt-6">
+        <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl flex-col gap-0 overflow-hidden rounded-3xl border-white/70 bg-white p-0 shadow-[0_28px_80px_-28px_rgba(15,23,42,0.45)] sm:w-[calc(100vw-3rem)]">
+          <DialogHeader className="shrink-0 border-b border-border/70 px-5 pb-4 pt-5 text-left md:px-7 md:pt-6">
             <DialogTitle className="font-serif text-2xl font-medium tracking-tight text-foreground md:text-3xl">
               Refine your search
             </DialogTitle>
             <DialogDescription>
-              Choose your property intent, location, search radius, type, bedrooms, bathrooms, features, and budget.
+              Choose your property intent, location, search radius, type, features, and budget.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[calc(90vh-156px)] overflow-y-auto px-5 py-5 md:px-7 md:py-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-7 md:py-6">
             <div className="space-y-5">
               <div className="rounded-2xl border border-border/80 bg-muted/35 p-4">
                 <Label className="mb-3 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
@@ -565,19 +668,18 @@ const Home = () => {
                 </Label>
                 <div className="flex gap-2">
                   <div className="relative min-w-0 flex-1">
-                    <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#1c5fa8]" />
-                    <Select value={location} onValueChange={handleLocationChange}>
-                      <SelectTrigger className="h-11 rounded-xl border-border bg-white pl-9 text-left text-[hsl(30_14%_20%)]">
-                        <SelectValue placeholder="Select or search a location" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Any">No location filter</SelectItem>
-                        <SelectItem value={CURRENT_LOCATION_VALUE}>My current location</SelectItem>
-                        {locationOptions.map((loc) => (
-                          <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <LocationSearchSelect
+                      instanceId="home-filter-location"
+                      value={locationSelection}
+                      onChange={handleLocationSelect}
+                      onSearchCandidateChange={handleLocationSearchCandidateChange}
+                      propertyFor={propertyForFilter}
+                      variant="modal"
+                      allValue="Any"
+                      allLabel="No location filter"
+                      currentLocationLabel="My current location"
+                      placeholder="Select or search a location"
+                    />
                   </div>
                   {location !== "Any" && (
                     <Button
@@ -629,7 +731,7 @@ const Home = () => {
                   <Label className="mb-2 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
                     Property type
                   </Label>
-                  <Select value={cat} onValueChange={setCat}>
+                  <Select value={cat} onValueChange={handleCategoryChange}>
                     <SelectTrigger className="h-11 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
                       <SelectValue placeholder="All Property Types" />
                     </SelectTrigger>
@@ -662,41 +764,20 @@ const Home = () => {
                   </Select>
                 </div>
 
-                <div>
-                  <Label className="mb-2 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
-                    Bedrooms
-                  </Label>
-                  <Select value={bedrooms} onValueChange={setBedrooms}>
-                    <SelectTrigger className="h-11 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
-                      <SelectValue placeholder="Any" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ROOM_OPTIONS.map((b) => (
-                        <SelectItem key={b} value={b}>
-                          {b === "Any" ? "Any" : b === "5" ? "5+" : b}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="col-span-full">
+                  <PropertyTypeRoomSearchFields
+                    typeFlags={typeFlags}
+                    filters={typeFilters}
+                    onChange={patchTypeFilters}
+                  />
                 </div>
 
-                <div>
-                  <Label className="mb-2 block text-xs uppercase tracking-wider text-[hsl(30_10%_35%)]">
-                    Bathrooms
-                  </Label>
-                  <Select value={bathrooms} onValueChange={setBathrooms}>
-                    <SelectTrigger className="h-11 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
-                      <SelectValue placeholder="Any" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ROOM_OPTIONS.map((b) => (
-                        <SelectItem key={b} value={b}>
-                          {b === "Any" ? "Any" : b === "5" ? "5+" : b}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <PropertyTypeSearchFields
+                  typeFlags={typeFlags}
+                  filters={typeFilters}
+                  onChange={patchTypeFilters}
+                  hideRoomFilters
+                />
               </div>
 
               <div>
@@ -746,7 +827,7 @@ const Home = () => {
             </div>
           </div>
 
-          <div className="flex gap-3 border-t border-border/70 bg-white px-5 py-4 md:justify-end md:px-7">
+          <div className="shrink-0 flex gap-3 border-t border-border/70 bg-white px-5 py-4 md:justify-end md:px-7">
             <Button
               type="button"
               variant="outlineGold"
@@ -755,8 +836,7 @@ const Home = () => {
                 clearLocationFilter();
                 setSearchRadius(String(radiusKm));
                 setCat("any");
-                setBedrooms("Any");
-                setBathrooms("Any");
+                setTypeFilters(DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS);
                 setFeatures([]);
                 setPriceRange("any");
               }}
@@ -794,7 +874,7 @@ const Home = () => {
             <Link
               key={c.label}
               to={c.to}
-              className="group flex shrink-0 flex-col items-center gap-2"
+              className="group flex w-16 shrink-0 flex-col items-center gap-2"
             >
               <div className="h-16 w-16 overflow-hidden rounded-full border-2 border-[#1c5fa8] bg-white shadow-sm transition-all group-hover:border-[#0e305d] group-hover:shadow-md group-active:scale-95">
                 <img
@@ -804,7 +884,7 @@ const Home = () => {
                   className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
                 />
               </div>
-              <span className="text-[11px] font-semibold text-foreground whitespace-nowrap">{c.label}</span>
+              <span className="w-full truncate text-center text-[11px] font-semibold text-foreground">{c.label}</span>
             </Link>
           ))}
         </div>

@@ -12,6 +12,7 @@ export const queryKeys = {
   siteContact: ["siteContact"] as const,
   companyContact: ["companyContact"] as const,
   siteSettings: ["siteSettings"] as const,
+  mobileAppSettings: ["mobileAppSettings"] as const,
   contacts: (params?: unknown) => ["contacts", params] as const,
   owners: (params?: unknown) => ["owners", params] as const,
   adminAds: (params?: unknown) => ["adminAds", params] as const,

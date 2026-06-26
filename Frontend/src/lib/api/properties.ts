@@ -24,6 +24,15 @@ export function buildPropertyListParams(filters: {
   longitude?: number;
   radius?: number;
   furnishing?: string;
+  areaMin?: string | number;
+  areaMax?: string | number;
+  areaUnit?: string;
+  areaCentMin?: string | number;
+  areaCentMax?: string | number;
+  projectStatus?: string;
+  floors?: string;
+  sighting?: string;
+  parkingSpacesMin?: number;
   includeAds?: boolean;
   moderationStatus?: string;
   featured?: boolean;
@@ -50,6 +59,19 @@ export function buildPropertyListParams(filters: {
   if (filters.longitude != null) p.longitude = filters.longitude;
   if (filters.radius != null) p.radius = filters.radius;
   if (filters.furnishing) p.furnishing = filters.furnishing;
+  if (filters.areaMin != null && String(filters.areaMin).trim())
+    p.area_min = filters.areaMin;
+  if (filters.areaMax != null && String(filters.areaMax).trim())
+    p.area_max = filters.areaMax;
+  if (filters.areaUnit) p.area_unit = filters.areaUnit;
+  if (filters.areaCentMin != null && String(filters.areaCentMin).trim())
+    p.area_cent_min = filters.areaCentMin;
+  if (filters.areaCentMax != null && String(filters.areaCentMax).trim())
+    p.area_cent_max = filters.areaCentMax;
+  if (filters.projectStatus) p.project_status = filters.projectStatus;
+  if (filters.floors) p.floors = filters.floors;
+  if (filters.sighting) p.sighting = filters.sighting;
+  if (filters.parkingSpacesMin != null) p.parking_spaces_min = filters.parkingSpacesMin;
   if (filters.includeAds === true) p.include_ads = true;
   if (filters.includeAds === false) p.include_ads = false;
   if (filters.moderationStatus) p.moderation_status = filters.moderationStatus;

@@ -1,8 +1,11 @@
 """
-Quality-first compression for property listing images (max 300 KB stored).
+Quality-first compression for property listing and category icon images.
 """
+from __future__ import annotations
+
 import io
 import uuid
+from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
@@ -12,12 +15,49 @@ from PIL import Image, ImageOps
 PROPERTY_IMAGE_MAX_BYTES = 300 * 1024
 PROPERTY_IMAGE_MAX_DIMENSION = 1920
 PROPERTY_IMAGE_MIN_DIMENSION = 800
-PROPERTY_IMAGE_INITIAL_QUALITY = 85
-PROPERTY_IMAGE_MIN_QUALITY = 60
-PROPERTY_IMAGE_QUALITY_FLOOR_BEFORE_RESIZE = 70
-PROPERTY_IMAGE_QUALITY_STEP = 5
-PROPERTY_IMAGE_DIMENSION_SCALE = 0.85
+
+CATEGORY_ICON_MAX_BYTES = 80 * 1024
+CATEGORY_ICON_MAX_DIMENSION = 512
+CATEGORY_ICON_MIN_DIMENSION = 64
+
 PROPERTY_IMAGE_ALLOWED_EXTENSIONS = ("jpg", "jpeg", "png", "webp")
+
+
+@dataclass(frozen=True)
+class ImageCompressSettings:
+    max_bytes: int
+    max_dimension: int
+    min_dimension: int
+    initial_quality: int = 85
+    min_quality: int = 60
+    quality_floor_before_resize: int = 70
+    quality_step: int = 5
+    dimension_scale: float = 0.85
+    budget_error: str = "Image could not be optimized to the size limit."
+
+
+PROPERTY_IMAGE_SETTINGS = ImageCompressSettings(
+    max_bytes=PROPERTY_IMAGE_MAX_BYTES,
+    max_dimension=PROPERTY_IMAGE_MAX_DIMENSION,
+    min_dimension=PROPERTY_IMAGE_MIN_DIMENSION,
+    budget_error=(
+        "Image could not be optimized to 300 KB. "
+        "Try a simpler photo or smaller dimensions."
+    ),
+)
+
+CATEGORY_ICON_SETTINGS = ImageCompressSettings(
+    max_bytes=CATEGORY_ICON_MAX_BYTES,
+    max_dimension=CATEGORY_ICON_MAX_DIMENSION,
+    min_dimension=CATEGORY_ICON_MIN_DIMENSION,
+    initial_quality=82,
+    min_quality=55,
+    quality_floor_before_resize=65,
+    budget_error=(
+        "Category icon could not be optimized to 80 KB. "
+        "Try a simpler image or smaller dimensions."
+    ),
+)
 
 
 def is_new_image_upload(file_field) -> bool:
@@ -72,46 +112,48 @@ def _fit_max_dimension(img: Image.Image, max_dim: int) -> Image.Image:
     return img.resize(new_size, Image.Resampling.LANCZOS)
 
 
-def _compress_to_budget(img: Image.Image) -> tuple[bytes, str]:
-    """Reduce quality first, then dimensions, until within PROPERTY_IMAGE_MAX_BYTES."""
+def _compress_to_budget(
+    img: Image.Image,
+    settings: ImageCompressSettings,
+) -> tuple[bytes, str]:
+    """Reduce quality first, then dimensions, until within the byte budget."""
     working = img
-    quality = PROPERTY_IMAGE_INITIAL_QUALITY
+    quality = settings.initial_quality
 
     while True:
-        while quality >= PROPERTY_IMAGE_QUALITY_FLOOR_BEFORE_RESIZE:
+        while quality >= settings.quality_floor_before_resize:
             data, ext = _encode_image(working, quality)
-            if len(data) <= PROPERTY_IMAGE_MAX_BYTES:
+            if len(data) <= settings.max_bytes:
                 return data, ext
-            quality -= PROPERTY_IMAGE_QUALITY_STEP
+            quality -= settings.quality_step
 
-        quality = PROPERTY_IMAGE_MIN_QUALITY
-        while quality >= PROPERTY_IMAGE_MIN_QUALITY:
+        quality = settings.min_quality
+        while quality >= settings.min_quality:
             data, ext = _encode_image(working, quality)
-            if len(data) <= PROPERTY_IMAGE_MAX_BYTES:
+            if len(data) <= settings.max_bytes:
                 return data, ext
-            quality -= PROPERTY_IMAGE_QUALITY_STEP
+            quality -= settings.quality_step
 
         w, h = working.size
         longest = max(w, h)
-        if longest < PROPERTY_IMAGE_MIN_DIMENSION:
-            data, ext = _encode_image(working, PROPERTY_IMAGE_MIN_QUALITY)
-            if len(data) <= PROPERTY_IMAGE_MAX_BYTES:
+        if longest < settings.min_dimension:
+            data, ext = _encode_image(working, settings.min_quality)
+            if len(data) <= settings.max_bytes:
                 return data, ext
-            raise ValidationError(
-                "Image could not be optimized to 300 KB. Try a simpler photo or smaller dimensions."
-            )
+            raise ValidationError(settings.budget_error)
 
-        new_w = max(1, int(w * PROPERTY_IMAGE_DIMENSION_SCALE))
-        new_h = max(1, int(h * PROPERTY_IMAGE_DIMENSION_SCALE))
+        new_w = max(1, int(w * settings.dimension_scale))
+        new_h = max(1, int(h * settings.dimension_scale))
         working = working.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        quality = PROPERTY_IMAGE_INITIAL_QUALITY
+        quality = settings.initial_quality
 
 
-def compress_property_image(upload) -> ContentFile:
-    """
-    Compress an uploaded image to WebP (or JPEG fallback) at most 300 KB.
-    Preserves quality by starting at high WebP quality and only resizing when needed.
-    """
+def _compress_image_upload(
+    upload,
+    settings: ImageCompressSettings,
+    *,
+    name_prefix: str = "image",
+) -> ContentFile:
     if not upload:
         raise ValidationError("No image file provided.")
 
@@ -122,15 +164,46 @@ def compress_property_image(upload) -> ContentFile:
         raise ValidationError("Invalid or unsupported image file.") from exc
 
     img = _to_rgb(img)
-    img = _fit_max_dimension(img, PROPERTY_IMAGE_MAX_DIMENSION)
-    data, ext = _compress_to_budget(img)
+    img = _fit_max_dimension(img, settings.max_dimension)
+    data, ext = _compress_to_budget(img, settings)
 
-    if len(data) > PROPERTY_IMAGE_MAX_BYTES:
-        raise ValidationError(
-            "Image could not be optimized to 300 KB. Try a simpler photo or smaller dimensions."
-        )
+    if len(data) > settings.max_bytes:
+        raise ValidationError(settings.budget_error)
 
-    original_name = getattr(upload, "name", "image") or "image"
+    original_name = getattr(upload, "name", name_prefix) or name_prefix
     stem = original_name.rsplit(".", 1)[0][:80] if "." in original_name else original_name[:80]
     filename = f"{stem}_{uuid.uuid4().hex[:8]}.{ext}"
     return ContentFile(data, name=filename)
+
+
+def compress_property_image(upload) -> ContentFile:
+    """
+    Compress an uploaded image to WebP (or JPEG fallback) at most 300 KB.
+    Preserves quality by starting at high WebP quality and only resizing when needed.
+    """
+    return _compress_image_upload(upload, PROPERTY_IMAGE_SETTINGS)
+
+
+def compress_category_icon(upload) -> ContentFile:
+    """
+    Compress a property-type category icon to WebP (or JPEG fallback) at most 80 KB.
+    Icons are downscaled to 512 px on the longest edge.
+    """
+    return _compress_image_upload(
+        upload,
+        CATEGORY_ICON_SETTINGS,
+        name_prefix="category_icon",
+    )
+
+
+def category_icon_is_optimized(file_field) -> bool:
+    """True when the stored icon is already WebP and within the size cap."""
+    if not file_field:
+        return True
+    name = (getattr(file_field, "name", "") or "").lower()
+    if not name.endswith(".webp"):
+        return False
+    try:
+        return file_field.size <= CATEGORY_ICON_MAX_BYTES
+    except Exception:
+        return False
