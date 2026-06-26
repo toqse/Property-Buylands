@@ -110,21 +110,25 @@ def compress_ad_video(upload) -> ContentFile:
 def _materialize_video_to_temp(upload) -> tuple[str, bool]:
     """
     Return (path, should_delete) for ffmpeg input.
-    Uses on-disk FieldFile.path when available; otherwise writes upload bytes to a temp file.
+    Uses on-disk FieldFile.path when the storage backend supports it;
+    otherwise downloads bytes to a temp file (e.g. S3).
     """
     if not upload:
         return "", False
     try:
-        path = getattr(upload, "path", None)
+        path = upload.path
         if path and os.path.exists(path):
             return path, False
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, NotImplementedError):
         pass
 
     input_suffix = os.path.splitext(getattr(upload, "name", ""))[1] or ".mp4"
     with tempfile.NamedTemporaryFile(delete=False, suffix=input_suffix) as in_tmp:
         input_path = in_tmp.name
-        if hasattr(upload, "chunks"):
+        if hasattr(upload, "open"):
+            with upload.open("rb") as src:
+                shutil.copyfileobj(src, in_tmp)
+        elif hasattr(upload, "chunks"):
             for chunk in upload.chunks():
                 in_tmp.write(chunk)
         elif hasattr(upload, "read"):
