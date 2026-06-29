@@ -542,14 +542,24 @@ export function validateAndParseDraft(
     };
   }
   const parsedArea = parseMoneyValue(draft.area);
-  if (parsedArea === null || parsedArea <= 0) {
+  if (parsedArea === null || parsedArea < 0) {
     return {
       ok: false,
-      message: "Area must be a positive number",
+      message: "Area must be zero or greater",
       field: "area",
     };
   }
   areaSq = parsedArea;
+  if (draft.areaCent.trim()) {
+    const parsedCent = parseMoneyValue(draft.areaCent);
+    if (parsedCent === null || parsedCent < 0) {
+      return {
+        ok: false,
+        message: "Area (cent) must be zero or greater",
+        field: "area_cent",
+      };
+    }
+  }
   const by = draft.builtYear.trim();
   if (by) {
     const currentYear = new Date().getFullYear();

@@ -684,7 +684,7 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
     },
     {
       label: "Area",
-      value: property.areaCent
+      value: property.areaCent?.trim()
         ? `${fmt(property.area)} sq.ft / ${fmt(Number(property.areaCent) || 0)} cent`
         : `${fmt(property.area)} ${property.areaUnit === "cents" ? "cent" : "sq.ft"}`,
     },

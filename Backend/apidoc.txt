@@ -21,7 +21,7 @@
 | **Property types** | Each type exposes boolean **feature flags** (`has_bedrooms`, `has_bathrooms`, `has_built_year`, `has_parking_spaces`, `has_project_status`, `has_floors`, `has_sighting`, `has_area_both`, `has_furnishing`). Admin create/update sends these as multipart booleans (`true` / `false`). Clients use `property_type_details` on listings to decide which fields to show or submit. |
 | **Property create / update** | **Images optional** (max **4** total per listing). **Owner contact** fields (`contact_name`, `phone_number`, `whatsapp_number`, `email`) may be omitted on owner create — API fills from `UserProfile` / account when blank; at least one of phone or WhatsApp required after defaults. **`property_ownership`** stored as display text (e.g. `Direct Owner`, `Management`, `Builder`, `Dealer`); legacy `direct_owner` / `management` values were migrated. |
 | **Built-property fields** | For `area_unit=sqft`, `bedrooms`, `bathrooms`, and `furnishing` are **all optional** at the API (omit or send empty/`0` → `null`). `built_year` is an optional **string** (empty string when not specified). For `area_unit=cent`, bedrooms/bathrooms/furnishing are cleared to `null` when omitted. Clients should still respect **property-type flags** when collecting data. |
-| **New listing fields** | `project_status`, `floors`, `sighting` (optional strings); `area_cent` (optional positive decimal when the property type has `has_area_both=true`). |
+| **New listing fields** | `project_status`, `floors`, `sighting` (optional strings); `area_cent` (optional non-negative decimal when the property type has `has_area_both=true`; 0 allowed). |
 | **Web form (reference)** | Admin/owner UI no longer collects `google_embedded_map_link`, `youtube_video_link`, or `nearby_places_data`; city/place uses OpenStreetMap with `city`, `latitude`, `longitude`. Fields remain accepted by the API if sent directly. |
 
 ### 2026-06-02
@@ -1336,7 +1336,7 @@ Standalone `/api/properties/nearby-places/` and `/api/properties/nearby-place-di
 | `title` | string | **Yes** |
 | `price` | string | **Yes** — numeric or text |
 | `property_type` | integer | **Yes** — `PropertyType` PK |
-| `area` | decimal | **Yes** — positive; up to 8 decimal places |
+| `area` | decimal | **Yes** — non-negative (0 allowed); up to 8 decimal places |
 | `description` | string | No — optional; defaults to `""` |
 | `area_unit` | string | Defaults to `sqft` when omitted — `sqft` \| `cent` |
 
@@ -1364,7 +1364,7 @@ Respect the selected property type's feature flags (`property_type_details` / `G
 | `project_status` | `has_project_status` | Optional string |
 | `floors` | `has_floors` | Optional string |
 | `sighting` | `has_sighting` | Optional string |
-| `area_cent` | `has_area_both` | Optional positive decimal alongside `area` (sq.ft) |
+| `area_cent` | `has_area_both` | Optional non-negative decimal alongside `area` (sq.ft); 0 allowed |
 
 When `area_unit` = `cent`, `bedrooms`, `bathrooms`, `built_year`, and `furnishing` are typically omitted and stored as `null`.
 

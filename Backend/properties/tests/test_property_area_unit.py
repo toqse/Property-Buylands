@@ -299,6 +299,70 @@ class PropertyAreaUnitValidationTests(APITestCase):
         self.assertEqual(str(response.data["area"]), "3200.25000000")
         self.assertEqual(str(response.data["area_cent"]), "5.75000000")
 
+    def test_create_with_zero_area(self):
+        response = self.client.post(
+            self.url,
+            self._base_payload(area="0", title="Zero Area"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(str(response.data["area"]), "0.00000000")
+
+        prop = Property.objects.get(pk=response.data["id"])
+        self.assertEqual(prop.area, Decimal("0"))
+
+    def test_create_with_zero_area_cent(self):
+        both_type = PropertyType.objects.create(
+            name="Plot Both Zero Cent",
+            has_area_both=True,
+        )
+        response = self.client.post(
+            self.url,
+            self._base_payload(
+                area="3200.25",
+                area_cent="0",
+                area_unit="sqft",
+                property_type=both_type.pk,
+                title="Zero Cent Both",
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(str(response.data["area_cent"]), "0.00000000")
+
+        prop = Property.objects.get(pk=response.data["id"])
+        self.assertEqual(prop.area_cent, Decimal("0"))
+
+    def test_patch_area_cent_to_zero(self):
+        both_type = PropertyType.objects.create(
+            name="Plot Patch Zero Cent",
+            has_area_both=True,
+        )
+        create_resp = self.client.post(
+            self.url,
+            self._base_payload(
+                area="3200.25",
+                area_cent="5.75",
+                area_unit="sqft",
+                property_type=both_type.pk,
+                title="Patch Zero Cent",
+            ),
+            format="json",
+        )
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        prop_id = create_resp.data["id"]
+
+        patch_resp = self.client.patch(
+            f"{self.url}{prop_id}/",
+            {"area_cent": "0"},
+            format="json",
+        )
+        self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(str(patch_resp.data["area_cent"]), "0.00000000")
+
+        prop = Property.objects.get(pk=prop_id)
+        self.assertEqual(prop.area_cent, Decimal("0"))
+
     def test_patch_decimal_area(self):
         create_resp = self.client.post(
             self.url,

@@ -409,9 +409,23 @@ class PropertySerializer(serializers.ModelSerializer):
             )
         return parsed
 
+    @staticmethod
+    def _normalize_non_negative_decimal(value, field_name):
+        try:
+            parsed = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise serializers.ValidationError(
+                {field_name: "Must be zero or greater."}
+            ) from None
+        if parsed < 0:
+            raise serializers.ValidationError(
+                {field_name: "Must be zero or greater."}
+            )
+        return parsed
+
     def _normalize_area_fields(self, attrs):
         if "area" in attrs:
-            attrs["area"] = self._normalize_positive_decimal(attrs["area"], "area")
+            attrs["area"] = self._normalize_non_negative_decimal(attrs["area"], "area")
         elif self.instance is None:
             raise serializers.ValidationError({"area": "This field is required."})
 
@@ -419,7 +433,7 @@ class PropertySerializer(serializers.ModelSerializer):
             if self._is_blank_value(attrs["area_cent"]):
                 attrs["area_cent"] = None
             else:
-                attrs["area_cent"] = self._normalize_positive_decimal(
+                attrs["area_cent"] = self._normalize_non_negative_decimal(
                     attrs["area_cent"], "area_cent"
                 )
 
