@@ -10,6 +10,7 @@ import {
   useMyProperties,
   usePropertyMutations,
 } from "@/hooks/api/useProperties";
+import { usePropertyUploadProgress } from "@/hooks/usePropertyUploadProgress";
 import { usePropertyTypes } from "@/hooks/api/useCatalog";
 import { accountsApi } from "@/lib/api/accounts";
 import {
@@ -77,6 +78,7 @@ import {
 import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { SubmitProgressButton } from "@/components/SubmitProgressButton";
+import { PropertyUploadProgress } from "@/components/PropertyUploadProgress";
 import {
   VideoProcessingStatusBadge,
   hasPropertyUploadedVideo,
@@ -111,6 +113,8 @@ const Dashboard = () => {
     { pollVideoProcessing: true },
   );
   const propertyMutations = usePropertyMutations();
+  const addUploadProgress = usePropertyUploadProgress();
+  const editUploadProgress = usePropertyUploadProgress();
   const { data: propertyTypesData } = usePropertyTypes();
   const allProperties = allData?.items ?? [];
   const properties = myData?.items ?? [];
@@ -287,11 +291,21 @@ const Dashboard = () => {
           draft.propertyCategory,
         ),
       });
-      await propertyMutations.create.mutateAsync(fd);
-      toast.success("Property created and submitted for approval");
-      setAddOpen(false);
-      resetAddPropertyForm();
-      void refetch();
+      const onUploadProgress = addUploadProgress.makeUploadProgressHandler(
+        !!videoFile,
+      );
+      try {
+        await propertyMutations.create.mutateAsync({
+          form: fd,
+          onUploadProgress,
+        });
+        toast.success("Property created and submitted for approval");
+        setAddOpen(false);
+        resetAddPropertyForm();
+        void refetch();
+      } finally {
+        addUploadProgress.clearUploadProgress();
+      }
     } catch (err) {
       toast.error(getErrorMessage(err));
       scrollToListingField(getApiErrorField(err));
@@ -413,14 +427,22 @@ const Dashboard = () => {
           mode: "update",
         },
       );
-      await propertyMutations.update.mutateAsync({
-        id: editTarget.id,
-        form: fd,
-      });
-      toast.success(`“${editDraft.title.trim()}” updated`);
-      setEditTarget(null);
-      resetEditPropertyForm();
-      void refetch();
+      const onUploadProgress = editUploadProgress.makeUploadProgressHandler(
+        !!editVideoFile,
+      );
+      try {
+        await propertyMutations.update.mutateAsync({
+          id: editTarget.id,
+          form: fd,
+          onUploadProgress,
+        });
+        toast.success(`“${editDraft.title.trim()}” updated`);
+        setEditTarget(null);
+        resetEditPropertyForm();
+        void refetch();
+      } finally {
+        editUploadProgress.clearUploadProgress();
+      }
     } catch (err) {
       toast.error(getErrorMessage(err));
       scrollToListingField(getApiErrorField(err));
@@ -1307,7 +1329,15 @@ const Dashboard = () => {
             />
           </div>
 
-          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-2 sm:justify-end">
+          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
+            <PropertyUploadProgress
+              active={
+                propertyMutations.create.isPending &&
+                addUploadProgress.trackingVideo
+              }
+              progress={addUploadProgress.progress}
+            />
+            <div className="flex w-full gap-2 sm:justify-end">
             <Button
               type="button"
               variant="outline"
@@ -1324,8 +1354,14 @@ const Dashboard = () => {
               className="bg-blue-600 hover:bg-blue-700 text-white"
               submitting={propertyMutations.create.isPending}
               idleLabel="Create Property"
+              messages={
+                addUploadProgress.trackingVideo
+                  ? ["Uploading video…"]
+                  : undefined
+              }
               onClick={submitProp}
             />
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1372,7 +1408,15 @@ const Dashboard = () => {
               hideContact
             />
           </div>
-          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex flex-col gap-4 sm:flex-col">
+            <PropertyUploadProgress
+              active={
+                propertyMutations.update.isPending &&
+                editUploadProgress.trackingVideo
+              }
+              progress={editUploadProgress.progress}
+            />
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between w-full">
             <div className="space-y-2 w-full sm:max-w-[220px]">
               <Label>Listing status</Label>
               <Select
@@ -1416,8 +1460,14 @@ const Dashboard = () => {
                 variant="luxe"
                 submitting={propertyMutations.update.isPending}
                 idleLabel="Save changes"
+                messages={
+                  editUploadProgress.trackingVideo
+                    ? ["Uploading video…"]
+                    : undefined
+                }
                 onClick={saveEdit}
               />
+            </div>
             </div>
           </DialogFooter>
         </DialogContent>

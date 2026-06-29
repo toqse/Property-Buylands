@@ -16,6 +16,13 @@ function emitUnauthorized(): void {
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+export type UploadProgressCallback = (info: {
+  loaded: number;
+  total: number;
+  /** 0–100 when Content-Length is known; null otherwise. */
+  percent: number | null;
+}) => void;
+
 export interface ApiRequestOptions {
   method?: HttpMethod;
   body?: unknown;
@@ -23,6 +30,7 @@ export interface ApiRequestOptions {
   auth?: boolean;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  onUploadProgress?: UploadProgressCallback;
 }
 
 export interface PaginatedResponse<T> {
@@ -66,6 +74,133 @@ function buildUrl(path: string): string {
   return `${base}${normalized}`;
 }
 
+function resolveAuthToken(
+  token: string | null | undefined,
+  auth: boolean,
+): string | null {
+  if (token !== undefined) return token;
+  return auth ? getStoredToken() : null;
+}
+
+function parseXhrResponse<T>(xhr: XMLHttpRequest): T {
+  const contentType = xhr.getResponseHeader("content-type") || "";
+  let parsed: unknown = null;
+  if (xhr.status !== 204) {
+    const text = xhr.responseText;
+    if (contentType.includes("application/json")) {
+      parsed = text ? JSON.parse(text) : null;
+    } else {
+      parsed = text || null;
+    }
+  }
+
+  if (xhr.status >= 200 && xhr.status < 300) {
+    return parsed as T;
+  }
+
+  const message =
+    typeof parsed === "object" && parsed !== null && "detail" in parsed
+      ? String((parsed as { detail: unknown }).detail)
+      : `HTTP ${xhr.status}`;
+  throw new ApiError(message, xhr.status, parsed);
+}
+
+function apiRequestViaXhr<T>(
+  url: string,
+  options: ApiRequestOptions,
+): Promise<T> {
+  const {
+    method = "GET",
+    body,
+    token,
+    auth = false,
+    headers: extraHeaders = {},
+    signal,
+    onUploadProgress,
+  } = options;
+
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+
+    const authToken = resolveAuthToken(token, auth);
+    if (authToken) {
+      xhr.setRequestHeader("Authorization", `Token ${authToken}`);
+    }
+    for (const [key, value] of Object.entries(extraHeaders)) {
+      xhr.setRequestHeader(key, value);
+    }
+
+    if (onUploadProgress && body instanceof FormData) {
+      xhr.upload.addEventListener("progress", (event) => {
+        onUploadProgress({
+          loaded: event.loaded,
+          total: event.total,
+          percent: event.lengthComputable
+            ? Math.min(100, Math.round((event.loaded / event.total) * 100))
+            : null,
+        });
+      });
+    }
+
+    const onAbort = () => {
+      xhr.abort();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    xhr.onload = () => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      if (display_console_logs) {
+        console.log("Status:", xhr.status);
+        console.log("Response:", xhr.responseText);
+        console.groupEnd();
+      }
+      try {
+        if (xhr.status === 401 && authToken) {
+          emitUnauthorized();
+        }
+        resolve(parseXhrResponse<T>(xhr));
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    xhr.onerror = () => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      if (display_console_logs) {
+        console.log("Network error");
+        console.groupEnd();
+      }
+      reject(new Error("Network error"));
+    };
+
+    xhr.onabort = () => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      if (display_console_logs) {
+        console.groupEnd();
+      }
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+
+    let xhrBody: Document | XMLHttpRequestBodyInit | null | undefined;
+    if (body instanceof FormData) {
+      xhrBody = body;
+    } else if (body !== undefined && body !== null) {
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhrBody = JSON.stringify(body);
+    }
+
+    xhr.send(xhrBody);
+  });
+}
+
 export async function apiRequest<T>(
   path: string,
   options: ApiRequestOptions = {},
@@ -77,13 +212,22 @@ export async function apiRequest<T>(
     auth = false,
     headers: extraHeaders = {},
     signal,
+    onUploadProgress,
   } = options;
 
   const url = buildUrl(path);
+
+  if (onUploadProgress && body instanceof FormData) {
+    if (display_console_logs) {
+      console.group(`[API] ${method} ${url} (xhr upload)`);
+      console.log("Body:", redactForLog(body));
+    }
+    return apiRequestViaXhr<T>(url, options);
+  }
+
   const headers: Record<string, string> = { ...extraHeaders };
 
-  const authToken =
-    token !== undefined ? token : auth ? getStoredToken() : null;
+  const authToken = resolveAuthToken(token, auth);
   if (authToken) {
     headers.Authorization = `Token ${authToken}`;
   }

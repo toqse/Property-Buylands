@@ -13,6 +13,18 @@ import type { Property } from "@/data/mockData";
 import type { Advertisement } from "@/data/advertisements";
 import { queryKeys } from "./queryKeys";
 import { videoProcessingPollInterval } from "@/lib/videoProcessingStatus";
+import type { UploadProgressCallback } from "@/lib/api/client";
+
+export type PropertyFormMutationInput =
+  | FormData
+  | { form: FormData; onUploadProgress?: UploadProgressCallback };
+
+function resolvePropertyFormInput(input: PropertyFormMutationInput) {
+  if (input instanceof FormData) {
+    return { form: input, onUploadProgress: undefined as UploadProgressCallback | undefined };
+  }
+  return input;
+}
 
 export type ListingFeedItem =
   | { kind: "property"; property: Property }
@@ -102,11 +114,22 @@ export function usePropertyMutations() {
 
   return {
     create: useMutation({
-      mutationFn: (form: FormData) => propertiesApi.create(form),
+      mutationFn: (input: PropertyFormMutationInput) => {
+        const { form, onUploadProgress } = resolvePropertyFormInput(input);
+        return propertiesApi.create(form, { onUploadProgress });
+      },
       onSuccess: invalidate,
     }),
     update: useMutation({
-      mutationFn: ({ id, form }: { id: string; form: FormData }) => propertiesApi.update(id, form),
+      mutationFn: ({
+        id,
+        form,
+        onUploadProgress,
+      }: {
+        id: string;
+        form: FormData;
+        onUploadProgress?: UploadProgressCallback;
+      }) => propertiesApi.update(id, form, { onUploadProgress }),
       onSuccess: invalidate,
     }),
     remove: useMutation({

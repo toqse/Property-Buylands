@@ -15,6 +15,7 @@ import { Logo } from "@/components/Logo";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { Button } from "@/components/ui/button";
 import { SubmitProgressButton } from "@/components/SubmitProgressButton";
+import { PropertyUploadProgress } from "@/components/PropertyUploadProgress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,7 @@ import {
   usePropertyList,
   usePropertyMutations,
 } from "@/hooks/api/useProperties";
+import { usePropertyUploadProgress } from "@/hooks/usePropertyUploadProgress";
 import {
   useOwners,
   useContacts,
@@ -975,6 +977,8 @@ const PropertiesAdmin = () => {
     { auth: true, pollVideoProcessing: true },
   );
   const propertyMutations = usePropertyMutations();
+  const addUploadProgress = usePropertyUploadProgress();
+  const editUploadProgress = usePropertyUploadProgress();
   const list = useMemo(
     () =>
       (listData?.items ?? [])
@@ -1092,11 +1096,21 @@ const PropertiesAdmin = () => {
           addDraft.propertyCategory,
         ),
       });
-      await propertyMutations.create.mutateAsync(fd);
-      toast.success("Property added");
-      setAddOpen(false);
-      resetAdd();
-      void refetch();
+      const onUploadProgress = addUploadProgress.makeUploadProgressHandler(
+        !!addVideoFile,
+      );
+      try {
+        await propertyMutations.create.mutateAsync({
+          form: fd,
+          onUploadProgress,
+        });
+        toast.success("Property added");
+        setAddOpen(false);
+        resetAdd();
+        void refetch();
+      } finally {
+        addUploadProgress.clearUploadProgress();
+      }
     } catch (err) {
       toast.error(getErrorMessage(err));
       scrollToListingField(getApiErrorField(err));
@@ -1215,14 +1229,22 @@ const PropertiesAdmin = () => {
           mode: "update",
         },
       );
-      await propertyMutations.update.mutateAsync({
-        id: editTarget.id,
-        form: fd,
-      });
-      toast.success(`“${editDraft.title.trim()}” updated`);
-      setEditTarget(null);
-      resetEdit();
-      void refetch();
+      const onUploadProgress = editUploadProgress.makeUploadProgressHandler(
+        !!editVideoFile,
+      );
+      try {
+        await propertyMutations.update.mutateAsync({
+          id: editTarget.id,
+          form: fd,
+          onUploadProgress,
+        });
+        toast.success(`“${editDraft.title.trim()}” updated`);
+        setEditTarget(null);
+        resetEdit();
+        void refetch();
+      } finally {
+        editUploadProgress.clearUploadProgress();
+      }
     } catch (err) {
       toast.error(getErrorMessage(err));
       scrollToListingField(getApiErrorField(err));
@@ -1504,7 +1526,14 @@ const PropertiesAdmin = () => {
               videoInputRef={addVideoInputRef}
             />
           </div>
-          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-2 sm:justify-end">
+          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
+            <PropertyUploadProgress
+              active={
+                propertyMutations.create.isPending &&
+                addUploadProgress.trackingVideo
+              }
+              progress={addUploadProgress.progress}
+            />
             <div className="flex gap-2 justify-end w-full sm:w-auto">
               <Button
                 type="button"
@@ -1522,6 +1551,11 @@ const PropertiesAdmin = () => {
                 variant="luxe"
                 submitting={propertyMutations.create.isPending}
                 idleLabel="Create property"
+                messages={
+                  addUploadProgress.trackingVideo
+                    ? ["Uploading video…"]
+                    : undefined
+                }
                 onClick={submitAdd}
               />
             </div>
@@ -1603,7 +1637,15 @@ const PropertiesAdmin = () => {
               retryingVideoProcessing={retryingVideoId === editTarget?.id}
             />
           </div>
-          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-2 sm:justify-end">
+          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
+            <PropertyUploadProgress
+              active={
+                propertyMutations.update.isPending &&
+                editUploadProgress.trackingVideo
+              }
+              progress={editUploadProgress.progress}
+            />
+            <div className="flex gap-2 justify-end w-full sm:justify-end">
             <Button
               type="button"
               variant="outline"
@@ -1620,8 +1662,14 @@ const PropertiesAdmin = () => {
               variant="luxe"
               submitting={propertyMutations.update.isPending}
               idleLabel="Save changes"
+              messages={
+                editUploadProgress.trackingVideo
+                  ? ["Uploading video…"]
+                  : undefined
+              }
               onClick={submitEdit}
             />
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

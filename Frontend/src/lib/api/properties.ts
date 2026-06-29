@@ -99,19 +99,25 @@ export const propertiesApi = {
     ).then(unwrapPaginated);
   },
 
-  create(form: FormData) {
+  create(form: FormData, opts: { onUploadProgress?: import("@/lib/api/client").UploadProgressCallback } = {}) {
     return apiRequest<ApiProperty>("properties/properties/", {
       method: "POST",
       auth: true,
       body: form,
+      onUploadProgress: opts.onUploadProgress,
     });
   },
 
-  update(id: string | number, form: FormData) {
+  update(
+    id: string | number,
+    form: FormData,
+    opts: { onUploadProgress?: import("@/lib/api/client").UploadProgressCallback } = {},
+  ) {
     return apiRequest<ApiProperty>(`properties/properties/${id}/`, {
       method: "PATCH",
       auth: true,
       body: form,
+      onUploadProgress: opts.onUploadProgress,
     });
   },
 
