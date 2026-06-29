@@ -5131,7 +5131,7 @@ const AdvertisementsAdmin = () => {
     data: adsData,
     refetch,
     isFetching: adsFetching,
-  } = useAdminAds(adQueryParams);
+  } = useAdminAds(adQueryParams, { pollVideoProcessing: true });
   const { data: siteSettings } = useSiteSettings();
   const [linkedPropertySearch, setLinkedPropertySearch] = useState("");
   const [linkedPropertyPage, setLinkedPropertyPage] = useState(1);
@@ -5148,6 +5148,7 @@ const AdvertisementsAdmin = () => {
     { auth: true },
   );
   const catalogMutations = useCatalogMutations();
+  const adUploadProgress = usePropertyUploadProgress();
   const list = useMemo(() => adsData?.items ?? [], [adsData?.items]);
   const linkedPropertyTotalPages = Math.max(
     1,
@@ -5380,19 +5381,30 @@ const AdvertisementsAdmin = () => {
 
     try {
       const fd = buildAdFormData(draft, adFiles);
-      if (editingId) {
-        await catalogMutations.updateAd.mutateAsync({
-          id: Number(editingId),
-          form: fd,
-        });
-        toast.success("Advertisement updated");
-      } else {
-        await catalogMutations.createAd.mutateAsync(fd);
-        toast.success("Advertisement created");
+      const hasNewVideo = isVideoAd && !!adFiles.video;
+      const onUploadProgress =
+        adUploadProgress.makeUploadProgressHandler(hasNewVideo);
+      try {
+        if (editingId) {
+          await catalogMutations.updateAd.mutateAsync({
+            id: Number(editingId),
+            form: fd,
+            onUploadProgress,
+          });
+          toast.success("Advertisement updated");
+        } else {
+          await catalogMutations.createAd.mutateAsync({
+            form: fd,
+            onUploadProgress,
+          });
+          toast.success("Advertisement created");
+        }
+        setOpen(false);
+        reset();
+        void refetch();
+      } finally {
+        adUploadProgress.clearUploadProgress();
       }
-      setOpen(false);
-      reset();
-      void refetch();
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -5614,6 +5626,13 @@ const AdvertisementsAdmin = () => {
                     <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                       {ad.mediaType}
                     </span>
+                    {ad.mediaType === "video" ? (
+                      <VideoProcessingStatusBadge
+                        variant="card"
+                        status={ad.videoProcessingStatus}
+                        hasUploadedVideo={Boolean(ad.videoUrl)}
+                      />
+                    ) : null}
                   </div>
                   {ad.redirectType === "property" && ad.linkedPropertyId && (
                     <div className="text-xs text-foreground/80 truncate">
@@ -5809,23 +5828,13 @@ const AdvertisementsAdmin = () => {
                       />
                     </label>
                     {draft.videoProcessingStatus &&
-                    videoProcessingStatusLabel(draft.videoProcessingStatus) ? (
-                      <p
-                        className={cn(
-                          "text-xs",
-                          videoProcessingStatusTone(
-                            draft.videoProcessingStatus,
-                          ) === "warning" && "text-amber-600",
-                          videoProcessingStatusTone(
-                            draft.videoProcessingStatus,
-                          ) === "success" && "text-emerald-600",
-                          videoProcessingStatusTone(
-                            draft.videoProcessingStatus,
-                          ) === "destructive" && "text-destructive",
-                        )}
-                      >
-                        {videoProcessingStatusLabel(draft.videoProcessingStatus)}
-                      </p>
+                    draft.mediaType === "video" &&
+                    Boolean(draft.videoUrl) ? (
+                      <VideoProcessingStatusBadge
+                        variant="card"
+                        status={draft.videoProcessingStatus}
+                        hasUploadedVideo={Boolean(draft.videoUrl)}
+                      />
                     ) : null}
                   </div>
                   <AdImageUploader
@@ -6171,7 +6180,17 @@ const AdvertisementsAdmin = () => {
               </div>
             </section>
 
-            <DialogFooter>
+            <DialogFooter className="gap-3 flex-col sm:flex-col">
+              <PropertyUploadProgress
+                active={
+                  (editingId
+                    ? catalogMutations.updateAd.isPending
+                    : catalogMutations.createAd.isPending) &&
+                  adUploadProgress.trackingVideo
+                }
+                progress={adUploadProgress.progress}
+              />
+              <div className="flex w-full gap-2 sm:justify-end">
               <Button
                 type="button"
                 variant="outline"
@@ -6192,8 +6211,13 @@ const AdvertisementsAdmin = () => {
                     : catalogMutations.createAd.isPending
                 }
                 idleLabel={editingId ? "Save changes" : "Create advertisement"}
-                messages={AD_SUBMIT_MESSAGES}
+                messages={
+                  adUploadProgress.trackingVideo
+                    ? ["Uploading video…"]
+                    : AD_SUBMIT_MESSAGES
+                }
               />
+              </div>
             </DialogFooter>
           </form>
         </DialogContent>

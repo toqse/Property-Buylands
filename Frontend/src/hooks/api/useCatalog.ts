@@ -10,6 +10,19 @@ import { mapApiAdToUi } from "@/lib/api/mappers/advertisement";
 import { mapApiContactToEnquiry } from "@/lib/api/mappers/enquiry";
 import { mapApiTestimonialToUi } from "@/lib/api/mappers/testimonial";
 import { queryKeys } from "./queryKeys";
+import type { UploadProgressCallback } from "@/lib/api/client";
+import { videoProcessingPollInterval } from "@/lib/videoProcessingStatus";
+
+export type AdFormMutationInput =
+  | FormData
+  | { form: FormData; onUploadProgress?: UploadProgressCallback };
+
+function resolveAdFormInput(input: AdFormMutationInput) {
+  if (input instanceof FormData) {
+    return { form: input, onUploadProgress: undefined as UploadProgressCallback | undefined };
+  }
+  return input;
+}
 
 export function usePropertyTypes() {
   return useQuery({
@@ -203,13 +216,19 @@ export function useAllCities() {
   });
 }
 
-export function useAdminAds(params: Record<string, string | number> = {}) {
+export function useAdminAds(
+  params: Record<string, string | number> = {},
+  opts: { pollVideoProcessing?: boolean } = {},
+) {
   return useQuery({
     queryKey: queryKeys.adminAds(params),
     queryFn: async () => {
       const page = await advertisementsApi.listAdmin(params);
       return { ...page, items: page.results.map(mapApiAdToUi) };
     },
+    refetchInterval: opts.pollVideoProcessing
+      ? (query) => videoProcessingPollInterval(query.state.data?.items ?? [])
+      : false,
   });
 }
 
@@ -300,12 +319,22 @@ export function useCatalogMutations() {
       onSuccess: () => inv(["contacts"]),
     }),
     createAd: useMutation({
-      mutationFn: (form: FormData) => advertisementsApi.create(form),
+      mutationFn: (input: AdFormMutationInput) => {
+        const { form, onUploadProgress } = resolveAdFormInput(input);
+        return advertisementsApi.create(form, { onUploadProgress });
+      },
       onSuccess: () => inv(["adminAds", "activeAds"]),
     }),
     updateAd: useMutation({
-      mutationFn: ({ id, form }: { id: number; form: FormData }) =>
-        advertisementsApi.update(id, form),
+      mutationFn: ({
+        id,
+        form,
+        onUploadProgress,
+      }: {
+        id: number;
+        form: FormData;
+        onUploadProgress?: UploadProgressCallback;
+      }) => advertisementsApi.update(id, form, { onUploadProgress }),
       onSuccess: () => inv(["adminAds", "activeAds"]),
     }),
     deleteAd: useMutation({

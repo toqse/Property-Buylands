@@ -13,19 +13,25 @@ export const advertisementsApi = {
     return apiRequest<ApiAdvertisement>(`advertisements/${id}/`, { auth: true });
   },
 
-  create(form: FormData) {
+  create(form: FormData, opts: { onUploadProgress?: import("@/lib/api/client").UploadProgressCallback } = {}) {
     return apiRequest<ApiAdvertisement>("advertisements/", {
       method: "POST",
       auth: true,
       body: form,
+      onUploadProgress: opts.onUploadProgress,
     });
   },
 
-  update(id: number | string, form: FormData) {
+  update(
+    id: number | string,
+    form: FormData,
+    opts: { onUploadProgress?: import("@/lib/api/client").UploadProgressCallback } = {},
+  ) {
     return apiRequest<ApiAdvertisement>(`advertisements/${id}/`, {
       method: "PATCH",
       auth: true,
       body: form,
+      onUploadProgress: opts.onUploadProgress,
     });
   },
 
