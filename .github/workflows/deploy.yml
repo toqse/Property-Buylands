@@ -17,6 +17,7 @@ concurrency:
 env:
   AWS_REGION: ap-south-1
   S3_BUCKET: buylands-frontend
+  CLOUDFRONT_DOMAIN: d1qwpdq4cnnwd2.cloudfront.net
 
 jobs:
   deploy:
@@ -66,7 +67,26 @@ jobs:
             --include "*.html"
 
       - name: Invalidate CloudFront cache
+        working-directory: ${{ github.workspace }}
         run: |
+          set -euo pipefail
+
+          DIST_ID="${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}"
+          if [ -z "$DIST_ID" ]; then
+            echo "CLOUDFRONT_DISTRIBUTION_ID secret not set; looking up by domain..."
+            DIST_ID=$(aws cloudfront list-distributions \
+              --query "DistributionList.Items[?DomainName=='${{ env.CLOUDFRONT_DOMAIN }}'].Id | [0]" \
+              --output text)
+          fi
+
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ]; then
+            echo "Error: Could not resolve CloudFront distribution ID."
+            echo "Add CLOUDFRONT_DISTRIBUTION_ID to GitHub Actions secrets,"
+            echo "or confirm CLOUDFRONT_DOMAIN matches your distribution."
+            exit 1
+          fi
+
+          echo "Invalidating CloudFront distribution: $DIST_ID"
           aws cloudfront create-invalidation \
-            --distribution-id "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --distribution-id "$DIST_ID" \
             --paths "/*"
