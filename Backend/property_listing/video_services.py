@@ -169,12 +169,20 @@ def _materialize_upload_to_temp(upload) -> tuple[str, bool]:
     return input_path, True
 
 
-def prepare_video_upload(upload) -> ContentFile:
-    """
-    Validate a new video upload and return a fresh ContentFile for storage.
+def _rewind_upload(upload) -> None:
+    if hasattr(upload, "seek"):
+        try:
+            upload.seek(0)
+        except (ValueError, OSError):
+            pass
 
-    Reading the upload during validation closes or exhausts Django's temporary
-    upload handle; re-wrapping bytes avoids "read of closed file" on S3 save.
+
+def prepare_video_upload(upload):
+    """
+    Validate a new video upload and return a file object safe for storage.
+
+    For large TemporaryUploadedFile uploads, ffprobe runs on the on-disk temp
+    path and the original upload is rewound — no full-file memory copy.
     """
     if not upload:
         raise ValidationError("No video file provided.")
@@ -202,10 +210,14 @@ def prepare_video_upload(upload) -> ContentFile:
             raise ValidationError(
                 f"Video must be {VIDEO_MAX_DURATION_SECONDS} seconds or shorter."
             )
-        with open(input_path, "rb") as fh:
-            data = fh.read()
+
+        if not delete_input:
+            _rewind_upload(upload)
+            return upload
+
         original_name = getattr(upload, "name", "video.mp4") or "video.mp4"
-        return ContentFile(data, name=original_name)
+        with open(input_path, "rb") as fh:
+            return ContentFile(fh.read(), name=original_name)
     finally:
         if delete_input and input_path and os.path.exists(input_path):
             try:
@@ -418,12 +430,19 @@ def queue_video_processing(kind: str, object_id: int) -> None:
         process_property_video,
     )
 
-    if kind == "property":
-        process_property_video.delay(object_id)
-    elif kind == "advertisement":
-        process_advertisement_video.delay(object_id)
-    else:
-        raise ValueError(f"Unknown video processing kind: {kind}")
+    try:
+        if kind == "property":
+            process_property_video.delay(object_id)
+        elif kind == "advertisement":
+            process_advertisement_video.delay(object_id)
+        else:
+            raise ValueError(f"Unknown video processing kind: {kind}")
+    except Exception:
+        logger.exception(
+            "Failed to queue %s video processing for id=%s; is Redis/Celery running?",
+            kind,
+            object_id,
+        )
 
 
 def process_stored_video(

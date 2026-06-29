@@ -6,12 +6,14 @@ import { Loader2 } from "lucide-react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_MESSAGES = [
-  "Saving your Property...",
-  "Compressing the Video...",
+export const PROPERTY_SUBMIT_MESSAGES = [
+  "Saving your property...",
+  "Uploading video...",
   "Almost there...",
-  "Final Moment..",
+  "Finishing up...",
 ];
+
+const DEFAULT_MESSAGES = PROPERTY_SUBMIT_MESSAGES;
 
 export interface SubmitProgressButtonProps extends ButtonProps {
   /** When true, the button shows the cycling progress messages and is disabled. */
@@ -25,10 +27,8 @@ export interface SubmitProgressButtonProps extends ButtonProps {
 }
 
 /**
- * A submit button that walks through a sequence of reassuring progress
- * messages while an async request is in flight. The text advances on a timer
- * and holds on the final message until the request resolves, so users have
- * something to watch during slow uploads (e.g. video compression).
+ * A submit button that walks through progress messages while an async request
+ * is in flight (typically video upload to the server — compression runs later).
  */
 export function SubmitProgressButton({
   submitting,
@@ -47,7 +47,6 @@ export function SubmitProgressButton({
       return;
     }
     const id = setInterval(() => {
-      // Advance through the messages and hold on the last one until done.
       setIndex((prev) => Math.min(prev + 1, messages.length - 1));
     }, intervalMs);
     return () => clearInterval(id);

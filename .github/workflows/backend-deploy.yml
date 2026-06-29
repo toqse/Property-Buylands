@@ -52,5 +52,12 @@ jobs:
             echo "Restarting services..."
             sudo systemctl restart buylands
             sudo systemctl restart nginx
+            if systemctl list-unit-files celery.service --no-legend 2>/dev/null | grep -q celery; then
+              sudo systemctl restart celery
+              echo "Celery worker restarted."
+            else
+              echo "WARNING: celery.service not installed — video compression will not run in background."
+              echo "See Backend/deploy/VIDEO_PROCESSING.md to set up Redis + Celery."
+            fi
 
             echo "Deployment completed successfully."
