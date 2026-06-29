@@ -1363,7 +1363,7 @@ const PropertiesAdmin = () => {
   }
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in min-w-0 max-w-full">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6 md:mb-8">
         <h1 className="font-serif text-3xl md:text-4xl">All Properties</h1>
         <Button
@@ -1374,17 +1374,17 @@ const PropertiesAdmin = () => {
           <Plus className="h-4 w-4" /> Add property
         </Button>
       </div>
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="bg-card border border-border rounded-2xl overflow-hidden min-w-0">
         {/* Mobile: stacked cards (the table is too wide for small screens) */}
-        <div className="md:hidden divide-y divide-border">
+        <div className="md:hidden divide-y divide-border min-w-0">
           {propertiesPager.paginated.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               No properties yet.
             </div>
           ) : (
             propertiesPager.paginated.map((p) => (
-              <div key={p.id} className="p-3">
-                <div className="flex gap-3">
+              <div key={p.id} className="p-3 min-w-0">
+                <div className="flex gap-3 min-w-0">
                   <img
                     src={p.image}
                     className="h-16 w-20 shrink-0 rounded-lg object-cover"
@@ -1406,8 +1406,8 @@ const PropertiesAdmin = () => {
                     </div>
                   </div>
                 </div>
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-2">
+                <div className="mt-3 space-y-2.5 border-t border-border/60 pt-2.5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <Badge
                       variant={
                         p.status === "Approved" ? "default" : "secondary"
@@ -1415,7 +1415,7 @@ const PropertiesAdmin = () => {
                     >
                       {p.status}
                     </Badge>
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                       <Switch
                         checked={!!p.featured}
                         disabled={featuredPendingId === p.id}
@@ -1424,7 +1424,7 @@ const PropertiesAdmin = () => {
                       Featured
                     </label>
                     <VideoProcessingStatusBadge
-                      variant="card"
+                      variant="table"
                       status={p.videoProcessingStatus}
                       hasUploadedVideo={hasPropertyUploadedVideo(p.videoUrl)}
                       onRetry={
@@ -1435,10 +1435,11 @@ const PropertiesAdmin = () => {
                       retrying={retryingVideoId === p.id}
                     />
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="flex items-center justify-end gap-0.5">
                     <Button
                       size="sm"
                       variant="ghost"
+                      className="h-9 w-9 shrink-0 p-0"
                       onClick={() => setViewTarget(p)}
                       title="View"
                     >
@@ -1447,6 +1448,7 @@ const PropertiesAdmin = () => {
                     <Button
                       size="sm"
                       variant="ghost"
+                      className="h-9 w-9 shrink-0 p-0"
                       onClick={() => openEdit(p)}
                       title="Edit"
                     >
@@ -1455,7 +1457,7 @@ const PropertiesAdmin = () => {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-destructive hover:text-destructive"
+                      className="h-9 w-9 shrink-0 p-0 text-destructive hover:text-destructive"
                       onClick={() => setDeleteTarget(p)}
                       title="Delete"
                     >
@@ -6719,7 +6721,7 @@ const AdminPanel = () => {
     <div className="min-h-screen flex flex-col md:flex-row bg-background">
       <Sidebar />
       <MobileTopBar open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
-      <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-10 overflow-x-auto">
+      <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-10 overflow-x-hidden">
         {renderSection()}
       </main>
     </div>
