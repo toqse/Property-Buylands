@@ -38,7 +38,7 @@ const PropertyDetail = () => {
   const slugFromPath = pathname.split("/").filter(Boolean).pop();
   const id =
     slugFromPath && slugFromPath !== "properties" ? slugFromPath : routeId;
-  const { data: property, isLoading, isError } = useProperty(id);
+  const { data: property, isLoading, isError, isFetched } = useProperty(id);
   const { submitContact } = useCatalogMutations();
   // Company/admin contact is used only as a fallback when a listing has no
   // seller contact details; the actual property owner's info is preferred.
@@ -104,7 +104,7 @@ const PropertyDetail = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lightbox, totalPhotos]);
 
-  if (isLoading) {
+  if (isLoading || !isFetched) {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />

@@ -62,9 +62,9 @@ const AdminLogin = () => {
     setLoading(true);
     try {
       const res = await accountsApi.forgotPassword(email.trim());
-      if (display_console_logs && res.otp) toast.message(`Dev OTP: ${res.otp}`);
+      if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
       toast.success(res.message || "Reset code sent to your email");
-      setOtp(res.otp ?? "");
+      setOtp("");
       setForgotStep("verify");
       setResendCooldown(RESEND_COOLDOWN_SEC);
     } catch (err) {
@@ -101,9 +101,9 @@ const AdminLogin = () => {
     setLoading(true);
     try {
       const res = await accountsApi.forgotPassword(email.trim());
-      if (display_console_logs && res.otp) toast.message(`Dev OTP: ${res.otp}`);
+      if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
       toast.success(res.message || "Reset code resent");
-      setOtp(res.otp ?? "");
+      setOtp("");
       setResendCooldown(RESEND_COOLDOWN_SEC);
     } catch (err) {
       toast.error(getErrorMessage(err));

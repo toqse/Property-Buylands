@@ -77,7 +77,7 @@ export function usePropertyLocations(filters: Parameters<typeof buildPropertyLis
 
 export function useProperty(id: string | undefined) {
   const { user, hydrated } = useAuth();
-  return useQuery({
+  const query = useQuery({
     queryKey: queryKeys.property(id ?? "", user?.id),
     queryFn: async () => {
       const data = await propertiesApi.get(id!);
@@ -85,6 +85,20 @@ export function useProperty(id: string | undefined) {
     },
     enabled: !!id && hydrated,
   });
+
+  // While auth restores from localStorage the query is disabled; TanStack Query
+  // reports isLoading=false with no data — treat that as loading, not "not found".
+  const isBootstrapping = !hydrated;
+  const isLoading =
+    isBootstrapping ||
+    (!!id &&
+      (query.isPending || (query.isFetching && query.data === undefined)));
+
+  return {
+    ...query,
+    isLoading,
+    isBootstrapping,
+  };
 }
 
 export function useMyProperties(
