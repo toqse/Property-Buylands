@@ -1322,6 +1322,7 @@ const Dashboard = () => {
               existingVideoUrl={editExistingVideo}
               onDeleteExistingVideo={handleDeleteExistingVideo}
               deletingVideo={deletingVideo}
+              videoProcessingStatus={editTarget?.videoProcessingStatus}
               hideContact
             />
           </div>

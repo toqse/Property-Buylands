@@ -245,7 +245,7 @@ STORAGES = {
 # --------------------------------------------------
 # FILE UPLOAD LIMIT
 # --------------------------------------------------
-_PROPERTY_VIDEO_MAX_BYTES = 100 * 1024 * 1024
+_PROPERTY_VIDEO_MAX_BYTES = 80 * 1024 * 1024
 _MULTIPART_OVERHEAD = 5 * 1024 * 1024
 
 DATA_UPLOAD_MAX_REQUEST_SIZE = (
@@ -293,6 +293,17 @@ OTP_NOTIFY_ON_FAILURE = os.getenv("OTP_NOTIFY_ON_FAILURE", "True").lower() in ("
 
 # Optional override when the app process PATH omits /usr/bin (common under systemd/gunicorn).
 FFMPEG_BINARY = os.getenv("FFMPEG_BINARY", "/usr/bin/ffmpeg").strip() or None
+FFPROBE_BINARY = os.getenv("FFPROBE_BINARY", "/usr/bin/ffprobe").strip() or None
+
+# --------------------------------------------------
+# CELERY + REDIS
+# --------------------------------------------------
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
 
 # --------------------------------------------------
 # DEVELOPMENT LOGGING

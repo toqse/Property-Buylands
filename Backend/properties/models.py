@@ -2,6 +2,13 @@ from django.conf import settings
 from django.db import models
 from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator
 
+from property_listing.video_constants import (
+    VIDEO_ALLOWED_EXTENSIONS,
+    VIDEO_PROCESSING,
+    VIDEO_PROCESSING_STATUS_CHOICES,
+    VIDEO_READY,
+)
+
 from .image_utils import (
     compress_category_icon,
     compress_property_image,
@@ -19,7 +26,7 @@ PROPERTY_IMAGE_VALIDATORS = (
 
 
 PROPERTY_VIDEO_VALIDATORS = (
-    FileExtensionValidator(allowed_extensions=["mp4", "mov", "avi", "mkv", "webm"]),
+    FileExtensionValidator(allowed_extensions=list(VIDEO_ALLOWED_EXTENSIONS)),
     validate_property_video_file_size,
 )
 
@@ -162,6 +169,14 @@ class Property(models.Model):
         blank=True,
         validators=PROPERTY_IMAGE_VALIDATORS,
     )
+    video_processing_status = models.CharField(
+        max_length=12,
+        choices=VIDEO_PROCESSING_STATUS_CHOICES,
+        default=VIDEO_READY,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
     nearby_places = models.JSONField(blank=True, null=True, help_text="List of nearby places in format: ['place1 - 1km', 'place2 - 2km']")
     built_year = models.CharField(max_length=20, blank=True, default="")
     furnishing = models.CharField(max_length=50, null=True, blank=True)
@@ -214,30 +229,25 @@ class Property(models.Model):
     def save(self, *args, **kwargs):
         new_video = bool(self.property_video) and is_new_image_upload(self.property_video)
         clear_video = not self.property_video
+        queue_after_save = False
 
         if new_video:
-            from advertisements.video_utils import compress_ad_video
+            from property_listing.video_services import queue_video_processing, validate_video
 
-            self.property_video = compress_ad_video(self.property_video)
+            validate_video(self.property_video)
+            self.video_processing_status = VIDEO_PROCESSING
+            queue_after_save = True
 
-        super().save(*args, **kwargs)
-
-        update_fields = []
         if clear_video:
             if self.video_thumbnail:
                 self.video_thumbnail.delete(save=False)
                 self.video_thumbnail = None
-                update_fields.append("video_thumbnail")
-        elif new_video:
-            from advertisements.video_utils import generate_video_thumbnail
+            self.video_processing_status = None
 
-            thumb = generate_video_thumbnail(self.property_video)
-            if thumb is not None:
-                self.video_thumbnail = compress_property_image(thumb)
-                update_fields.append("video_thumbnail")
+        super().save(*args, **kwargs)
 
-        if update_fields:
-            super().save(update_fields=update_fields)
+        if queue_after_save:
+            queue_video_processing("property", self.pk)
 
     def __str__(self):
         return self.title

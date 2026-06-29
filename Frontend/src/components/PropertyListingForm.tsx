@@ -9,6 +9,11 @@ import {
   type SetStateAction,
 } from "react";
 import type { Property, PropertyStatus } from "@/data/mockData";
+import {
+  videoProcessingStatusLabel,
+  videoProcessingStatusTone,
+  type VideoProcessingStatus,
+} from "@/lib/videoProcessingStatus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -702,6 +707,8 @@ export type ListingFormFieldsProps = {
   onDeleteExistingVideo?: () => void;
   /** Whether the existing video is currently being deleted. */
   deletingVideo?: boolean;
+  /** Background video compression status from the API (edit mode). */
+  videoProcessingStatus?: VideoProcessingStatus;
   /** When true, hide Contact Information (owner uses account profile). */
   hideContact?: boolean;
   /** When true, hide Property Ownership (owner always lists their own property). */
@@ -723,6 +730,7 @@ export function ListingFormFields({
   existingVideoUrl,
   onDeleteExistingVideo,
   deletingVideo = false,
+  videoProcessingStatus,
   hideContact = false,
   hideOwnership = false,
 }: ListingFormFieldsProps) {
@@ -1328,6 +1336,22 @@ export function ListingFormFields({
           >
             Remove video file
           </Button>
+        ) : null}
+        {videoProcessingStatus &&
+        videoProcessingStatusLabel(videoProcessingStatus) ? (
+          <p
+            className={cn(
+              "text-sm",
+              videoProcessingStatusTone(videoProcessingStatus) === "warning" &&
+                "text-amber-600",
+              videoProcessingStatusTone(videoProcessingStatus) === "success" &&
+                "text-emerald-600",
+              videoProcessingStatusTone(videoProcessingStatus) ===
+                "destructive" && "text-destructive",
+            )}
+          >
+            {videoProcessingStatusLabel(videoProcessingStatus)}
+          </p>
         ) : null}
         {existingVideoUrl && !videoFile ? (
           <div className="space-y-2">

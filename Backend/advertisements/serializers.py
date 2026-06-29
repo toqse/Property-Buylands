@@ -1,6 +1,7 @@
 from django.http import QueryDict
 from rest_framework import serializers
 
+from property_listing.video_constants import VIDEO_READY
 from advertisements.models import Advertisement
 from properties.models import City, Property
 from properties.utils import absolute_media_url
@@ -30,7 +31,7 @@ class AdvertisementSerializer(serializers.ModelSerializer):
             "video_file",
             "remove_video",
             "video_thumbnail",
-            "processing_status",
+            "video_processing_status",
             "redirect_type",
             "linked_property",
             "linked_property_slug",
@@ -52,7 +53,7 @@ class AdvertisementSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = [
-            "processing_status",
+            "video_processing_status",
             "video_thumbnail",
             "created_by",
             "created_at",
@@ -158,6 +159,7 @@ class AdvertisementSerializer(serializers.ModelSerializer):
             if instance.video_thumbnail:
                 instance.video_thumbnail.delete(save=False)
                 instance.video_thumbnail = None
+            instance.video_processing_status = VIDEO_READY
         instance = super().update(instance, validated_data)
         if has_city:
             instance.city = self._resolve_city(city_input, instance.district)

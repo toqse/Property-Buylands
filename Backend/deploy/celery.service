@@ -1,0 +1,17 @@
+[Unit]
+Description=Celery worker for Buylands video processing
+After=network.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/Property-Buylands/Backend
+Environment="PATH=/home/ubuntu/Property-Buylands/Backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/ubuntu/Property-Buylands/Backend/venv/bin/celery -A property_listing worker --loglevel=info --concurrency=1
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

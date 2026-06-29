@@ -91,6 +91,7 @@ export function mapApiPropertyToUi(p: ApiProperty): Property {
     featured: p.is_featured,
     videoUrl: p.property_video_url || undefined,
     videoThumbnail: p.video_thumbnail_url || undefined,
+    videoProcessingStatus: p.video_processing_status ?? null,
     lat: Number(p.latitude) || 0,
     lng: Number(p.longitude) || 0,
     createdAt: p.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),

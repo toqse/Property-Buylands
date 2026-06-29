@@ -65,6 +65,7 @@ export interface ApiProperty {
   youtube_video_link?: string;
   property_video_url?: string | null;
   video_thumbnail_url?: string | null;
+  video_processing_status?: "processing" | "ready" | "failed" | null;
   nearby_places_data?: { name: string; distance: number }[];
   built_year?: string;
   furnishing?: string;
@@ -102,6 +103,7 @@ export interface ApiAdvertisement {
   mobile_image?: string | null;
   video_file?: string | null;
   video_thumbnail?: string | null;
+  video_processing_status?: "processing" | "ready" | "failed";
   redirect_type?: "property" | "external_url";
   linked_property?: number | null;
   linked_property_slug?: string | null;

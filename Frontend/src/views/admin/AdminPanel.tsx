@@ -142,6 +142,10 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
+  videoProcessingStatusLabel,
+  videoProcessingStatusTone,
+} from "@/lib/videoProcessingStatus";
+import {
   ListingFormFields,
   emptyDraft,
   propertyToDraft,
@@ -771,6 +775,22 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
           <div className="text-sm font-semibold text-foreground mb-2">
             Property video
           </div>
+          {property.videoProcessingStatus &&
+          videoProcessingStatusLabel(property.videoProcessingStatus) ? (
+            <p
+              className={cn(
+                "mb-2 text-sm",
+                videoProcessingStatusTone(property.videoProcessingStatus) ===
+                  "warning" && "text-amber-600",
+                videoProcessingStatusTone(property.videoProcessingStatus) ===
+                  "success" && "text-emerald-600",
+                videoProcessingStatusTone(property.videoProcessingStatus) ===
+                  "destructive" && "text-destructive",
+              )}
+            >
+              {videoProcessingStatusLabel(property.videoProcessingStatus)}
+            </p>
+          ) : null}
           <video
             src={property.videoUrl}
             poster={property.videoThumbnail || property.image}
@@ -1527,6 +1547,7 @@ const PropertiesAdmin = () => {
               existingVideoUrl={editExistingVideo}
               onDeleteExistingVideo={handleDeleteExistingVideo}
               deletingVideo={deletingVideo}
+              videoProcessingStatus={editTarget?.videoProcessingStatus}
             />
           </div>
           <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-2 sm:justify-end">
@@ -4970,7 +4991,7 @@ const EnquiryAdmin = () => {
 
 const AD_SUBMIT_MESSAGES = [
   "Saving Advertisement...",
-  "Compressing the Video...",
+  "Uploading video...",
   "Almost there...",
   "Final Moment...",
 ];
@@ -5154,8 +5175,8 @@ const AdvertisementsAdmin = () => {
       toast.error("Please select a video file");
       return;
     }
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error("Video must be under 50 MB");
+    if (file.size > 80 * 1024 * 1024) {
+      toast.error("Video must be under 80 MB");
       return;
     }
     setAdFiles((f) => ({ ...f, video: file }));
@@ -5674,18 +5695,37 @@ const AdvertisementsAdmin = () => {
                         <div className="flex h-full flex-col items-center justify-center gap-1 px-3 text-center">
                           <Upload className="h-5 w-5 text-muted-foreground" />
                           <span className="text-xs text-muted-foreground">
-                            MP4, WebM up to 50MB
+                            MP4, MOV, WebM up to 80MB
                           </span>
                         </div>
                       )}
                       <input
                         id="ad-video-upload"
                         type="file"
-                        accept="video/mp4,video/webm,video/ogg"
+                        accept="video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/x-m4v,video/3gpp"
                         className="sr-only"
                         onChange={(e) => handleVideoFile(e.target.files?.[0])}
                       />
                     </label>
+                    {draft.videoProcessingStatus &&
+                    videoProcessingStatusLabel(draft.videoProcessingStatus) ? (
+                      <p
+                        className={cn(
+                          "text-xs",
+                          videoProcessingStatusTone(
+                            draft.videoProcessingStatus,
+                          ) === "warning" && "text-amber-600",
+                          videoProcessingStatusTone(
+                            draft.videoProcessingStatus,
+                          ) === "success" && "text-emerald-600",
+                          videoProcessingStatusTone(
+                            draft.videoProcessingStatus,
+                          ) === "destructive" && "text-destructive",
+                        )}
+                      >
+                        {videoProcessingStatusLabel(draft.videoProcessingStatus)}
+                      </p>
+                    ) : null}
                   </div>
                   <AdImageUploader
                     id="ad-video-thumb"

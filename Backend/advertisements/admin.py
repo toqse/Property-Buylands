@@ -14,10 +14,17 @@ class AdvertisementAdmin(admin.ModelAdmin):
         "district",
         "city",
         "priority",
-        "processing_status",
+        "video_processing_status",
         "created_at",
     )
-    list_filter = ("ad_type", "media_type", "is_active", "state", "district", "city", "processing_status")
+    list_filter = (
+        "ad_type",
+        "media_type",
+        "is_active",
+        "state",
+        "district",
+        "city",
+        "video_processing_status",
+    )
     search_fields = ("title", "subtitle")
-    readonly_fields = ("processing_status", "created_at", "updated_at")
-
+    readonly_fields = ("video_processing_status", "created_at", "updated_at")

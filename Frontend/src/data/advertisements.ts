@@ -23,6 +23,7 @@ export type Advertisement = {
   mobileBanner: string;
   videoUrl: string;
   videoThumbnail: string;
+  videoProcessingStatus?: "processing" | "ready" | "failed";
   redirectType: AdRedirectType;
   linkedPropertyId: string;
   linkedPropertySlug?: string;

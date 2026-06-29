@@ -8,6 +8,7 @@ from advertisements.models import Advertisement
 from advertisements.serializers import AdvertisementPublicSerializer
 from properties.models import SiteSettings
 from properties.utils import haversine_km
+from property_listing.video_constants import VIDEO_READY
 
 DISTANCE_SORT_SENTINEL = 999999.0
 
@@ -59,7 +60,7 @@ def _location_filtered_ads(request, placement=None):
     today = date.today()
     qs = Advertisement.objects.filter(
         is_active=True,
-        processing_status=Advertisement.PROCESSING_READY,
+        video_processing_status=VIDEO_READY,
     ).filter(
         Q(start_date__isnull=True) | Q(start_date__lte=today)
     )

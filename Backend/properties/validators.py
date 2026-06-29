@@ -1,15 +1,17 @@
 from django.core.exceptions import ValidationError
 
+from property_listing.video_constants import VIDEO_MAX_BYTES
+
 from .image_utils import CATEGORY_ICON_MAX_BYTES, PROPERTY_IMAGE_MAX_BYTES
 
-PROPERTY_VIDEO_MAX_BYTES = 100 * 1024 * 1024
+PROPERTY_VIDEO_MAX_BYTES = VIDEO_MAX_BYTES
 
 
 def validate_property_video_file_size(upload):
     if not upload:
         return
     if upload.size > PROPERTY_VIDEO_MAX_BYTES:
-        raise ValidationError("Video file must be 100 MB or smaller.")
+        raise ValidationError("Video file must be 80 MB or smaller.")
 
 
 def validate_property_image_max_size(upload):

@@ -161,7 +161,7 @@ class PropertySerializer(serializers.ModelSerializer):
             'bedrooms', 
             'bathrooms', 'area', 'area_unit', 'description', 'features', 'feature_details', 'google_maps_url', 
             'google_embedded_map_link', 'youtube_video_link', 'property_video', 'property_video_url',
-            'video_thumbnail', 'video_thumbnail_url',
+            'video_thumbnail', 'video_thumbnail_url', 'video_processing_status',
             'latitude', 'longitude', 'distance_km',
             'nearby_places', 'nearby_places_data', 'built_year', 'furnishing',
             'project_status', 'floors', 'sighting', 'area_cent',
@@ -178,6 +178,7 @@ class PropertySerializer(serializers.ModelSerializer):
             'created_by',
             'video_thumbnail',
             'video_thumbnail_url',
+            'video_processing_status',
         )
         extra_kwargs = {
             'state': {'write_only': True},
@@ -698,6 +699,7 @@ class PropertySerializer(serializers.ModelSerializer):
         # Property.save() removes the orphaned thumbnail when property_video is empty.
         if remove_video and 'property_video' not in validated_data:
             instance.property_video = None
+            instance.video_processing_status = None
 
         if "slug" in validated_data:
             s = validated_data.get("slug")

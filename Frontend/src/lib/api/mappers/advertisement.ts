@@ -25,6 +25,7 @@ export function mapApiAdToUi(ad: ApiAdvertisement): Advertisement {
       "",
     videoUrl: ad.video_file_url || ad.video_file || "",
     videoThumbnail: ad.video_thumbnail_url || ad.video_thumbnail || "",
+    videoProcessingStatus: ad.video_processing_status,
     redirectType: mapRedirectType(ad.redirect_type),
     linkedPropertyId: ad.linked_property != null ? String(ad.linked_property) : "",
     linkedPropertySlug: ad.linked_property_slug || "",

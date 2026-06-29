@@ -61,6 +61,7 @@ export interface Property {
   districtId?: number;
   cityId?: number;
   videoThumbnail?: string;
+  videoProcessingStatus?: "processing" | "ready" | "failed" | null;
 }
 
 export const PROPERTIES: Property[] = [

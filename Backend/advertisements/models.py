@@ -5,8 +5,14 @@ from django.utils import timezone
 
 from advertisements.image_utils import compress_ad_image
 from advertisements.validators import validate_ad_image_max_size, validate_ad_video_max_size
-from advertisements.video_utils import compress_ad_video, generate_video_thumbnail
 from properties.image_utils import is_new_image_upload
+from property_listing.video_constants import (
+    VIDEO_ALLOWED_EXTENSIONS,
+    VIDEO_FAILED,
+    VIDEO_PROCESSING,
+    VIDEO_PROCESSING_STATUS_CHOICES,
+    VIDEO_READY,
+)
 
 AD_IMAGE_VALIDATORS = (
     FileExtensionValidator(allowed_extensions=["jpg", "jpeg", "png", "webp"]),
@@ -14,7 +20,7 @@ AD_IMAGE_VALIDATORS = (
 )
 
 AD_VIDEO_VALIDATORS = (
-    FileExtensionValidator(allowed_extensions=["mp4", "webm"]),
+    FileExtensionValidator(allowed_extensions=list(VIDEO_ALLOWED_EXTENSIONS)),
     validate_ad_video_max_size,
 )
 
@@ -39,15 +45,6 @@ class Advertisement(models.Model):
     REDIRECT_TYPE_CHOICES = [
         (REDIRECT_PROPERTY, "Property"),
         (REDIRECT_EXTERNAL_URL, "External URL"),
-    ]
-
-    PROCESSING_PENDING = "pending"
-    PROCESSING_READY = "ready"
-    PROCESSING_FAILED = "failed"
-    PROCESSING_STATUS_CHOICES = [
-        (PROCESSING_PENDING, "Pending"),
-        (PROCESSING_READY, "Ready"),
-        (PROCESSING_FAILED, "Failed"),
     ]
 
     PLACEMENT_HOMEPAGE_FEED = "homepage_feed"
@@ -93,10 +90,10 @@ class Advertisement(models.Model):
         blank=True,
         validators=AD_IMAGE_VALIDATORS,
     )
-    processing_status = models.CharField(
+    video_processing_status = models.CharField(
         max_length=12,
-        choices=PROCESSING_STATUS_CHOICES,
-        default=PROCESSING_READY,
+        choices=VIDEO_PROCESSING_STATUS_CHOICES,
+        default=VIDEO_READY,
         db_index=True,
     )
 
@@ -165,7 +162,7 @@ class Advertisement(models.Model):
         return self.title
 
     def is_live(self):
-        if not self.is_active or self.processing_status != self.PROCESSING_READY:
+        if not self.is_active or self.video_processing_status != VIDEO_READY:
             return False
         today = timezone.localdate()
         if self.start_date and self.start_date > today:
@@ -189,21 +186,22 @@ class Advertisement(models.Model):
                 max_dimension=1080,
                 min_dimension=540,
             )
-        if self.video_file and is_new_image_upload(self.video_file):
-            self.processing_status = self.PROCESSING_PENDING
+
+        new_video = bool(self.video_file) and is_new_image_upload(self.video_file)
+        queue_after_save = False
+
+        if new_video:
+            from property_listing.video_services import queue_video_processing, validate_video
+
+            self.video_processing_status = VIDEO_PROCESSING
             try:
-                self.video_file = compress_ad_video(self.video_file)
-                thumb = generate_video_thumbnail(self.video_file)
-                if thumb is not None:
-                    self.video_thumbnail = compress_ad_image(
-                        thumb,
-                        max_bytes=800 * 1024,
-                        max_dimension=1080,
-                        min_dimension=540,
-                    )
-                self.processing_status = self.PROCESSING_READY
+                validate_video(self.video_file)
+                queue_after_save = True
             except Exception:
-                self.processing_status = self.PROCESSING_FAILED
+                self.video_processing_status = VIDEO_FAILED
                 raise
+
         super().save(*args, **kwargs)
 
+        if queue_after_save:
+            queue_video_processing("advertisement", self.pk)

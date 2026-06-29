@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { registerExclusiveVideo } from "@/lib/videoCoordinator";
 import { formatPropertyAreaDisplay } from "@/lib/api/mappers/property";
+import { videoProcessingStatusLabel } from "@/lib/videoProcessingStatus";
 
 const WhatsAppIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
@@ -266,6 +267,19 @@ const PropertyDetail = () => {
       <section className="container py-5 md:py-8">
         <RevealOnScroll>
           <div className="rounded-3xl border border-border bg-card p-3 md:p-6 shadow-soft">
+            {property.videoProcessingStatus &&
+            property.videoProcessingStatus !== "ready" &&
+            videoProcessingStatusLabel(property.videoProcessingStatus) ? (
+              <p
+                className={
+                  property.videoProcessingStatus === "failed"
+                    ? "mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                    : "mb-4 rounded-xl border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm text-amber-700"
+                }
+              >
+                {videoProcessingStatusLabel(property.videoProcessingStatus)}
+              </p>
+            ) : null}
             <div className="min-w-0">
               <div className="relative rounded-2xl overflow-hidden">
                 {activeItem?.kind === "video" ? (
