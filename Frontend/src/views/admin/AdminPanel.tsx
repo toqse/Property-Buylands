@@ -1601,7 +1601,7 @@ const PropertiesAdmin = () => {
               Add property
             </DialogTitle>
           </DialogHeader>
-          <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+          <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
             <ListingFormFields
               draft={addDraft}
               setDraft={setAddDraft}
@@ -1612,6 +1612,7 @@ const PropertiesAdmin = () => {
               imageInputRef={addImageInputRef}
               videoInputRef={addVideoInputRef}
               fieldErrors={addFieldErrors}
+              lockVideoChanges={propertyMutations.create.isPending}
             />
           </div>
           <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
@@ -1667,7 +1668,7 @@ const PropertiesAdmin = () => {
               Edit property
             </DialogTitle>
           </DialogHeader>
-          <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+          <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
             {/* Listing administration — status pinned at the top, matches admin "edit" UX */}
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
               <h3 className="font-semibold text-foreground">
@@ -1725,6 +1726,7 @@ const PropertiesAdmin = () => {
               }
               retryingVideoProcessing={retryingVideoId === editTarget?.id}
               fieldErrors={editFieldErrors}
+              lockVideoChanges={propertyMutations.update.isPending}
             />
           </div>
           <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">

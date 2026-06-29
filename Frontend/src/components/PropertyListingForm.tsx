@@ -187,7 +187,7 @@ export const emptyDraft: AddPropertyDraft = {
 };
 
 const formCardClass =
-  "rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4";
+  "rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4 min-w-0";
 
 export type ListingFieldErrors = Partial<Record<string, string>>;
 
@@ -751,6 +751,8 @@ export type ListingFormFieldsProps = {
   hideOwnership?: boolean;
   /** Inline validation errors keyed by `data-field` name. */
   fieldErrors?: ListingFieldErrors;
+  /** When true, user cannot remove, replace, or change the selected/uploaded video (e.g. while save is in progress). */
+  lockVideoChanges?: boolean;
 };
 
 export function ListingFormFields({
@@ -775,6 +777,7 @@ export function ListingFormFields({
   hideContact = false,
   hideOwnership = false,
   fieldErrors = {},
+  lockVideoChanges = false,
 }: ListingFormFieldsProps) {
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const [replaceTarget, setReplaceTarget] = useState<
@@ -856,12 +859,12 @@ export function ListingFormFields({
   const fieldError = (field: string) => fieldErrors[field];
 
   return (
-    <>
+    <div className="min-w-0">
       {/* Basic Information */}
       <div className={formCardClass}>
         <h3 className="font-semibold text-foreground">Basic Information</h3>
-        <div className={cn("grid gap-4", !hideOwnership && "sm:grid-cols-2")}>
-          <div className="space-y-2">
+        <div className={cn("grid gap-4 min-w-0", !hideOwnership && "sm:grid-cols-2")}>
+          <div className="space-y-2 min-w-0">
             <Label>Property For</Label>
             <Select
               value={draft.propertyFor}
@@ -879,7 +882,7 @@ export function ListingFormFields({
             </Select>
           </div>
           {!hideOwnership ? (
-            <div className="space-y-2" data-field="ownership">
+            <div className="space-y-2 min-w-0" data-field="ownership">
               <Label>Property Ownership</Label>
               <Select
                 value={draft.ownership || undefined}
@@ -990,8 +993,8 @@ export function ListingFormFields({
       {/* Location — state/district from API; city is free text */}
       <div className={formCardClass}>
         <h3 className="font-semibold text-foreground">Location</h3>
-        <div className="grid sm:grid-cols-3 gap-4">
-          <div className="space-y-2" data-field="state">
+        <div className="grid sm:grid-cols-3 gap-4 min-w-0">
+          <div className="space-y-2 min-w-0" data-field="state">
             <Label>State</Label>
             <SearchableSelect
               value={draft.stateId || undefined}
@@ -1018,7 +1021,7 @@ export function ListingFormFields({
             />
             <ListingFieldError message={fieldError("state")} />
           </div>
-          <div className="space-y-2" data-field="district">
+          <div className="space-y-2 min-w-0" data-field="district">
             <Label>District</Label>
             <SearchableSelect
               value={draft.districtId || undefined}
@@ -1047,7 +1050,7 @@ export function ListingFormFields({
             />
             <ListingFieldError message={fieldError("district")} />
           </div>
-          <div className="space-y-2" data-field="city">
+          <div className="space-y-2 min-w-0" data-field="city">
             <Label>Place / City</Label>
             <OsmPlaceSearch
               value={draft.city}
@@ -1388,6 +1391,7 @@ export function ListingFormFields({
           accept="video/*"
           className="hidden"
           onChange={(e) => {
+            if (lockVideoChanges) return;
             const f = e.target.files?.[0];
             setVideoFile(f ?? null);
           }}
@@ -1400,6 +1404,7 @@ export function ListingFormFields({
           onDrop={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (lockVideoChanges) return;
             const f = Array.from(e.dataTransfer.files).find((file) =>
               file.type.startsWith("video/"),
             );
@@ -1425,7 +1430,7 @@ export function ListingFormFields({
                 className="h-48 w-full bg-black object-contain"
                 onClick={(e) => e.stopPropagation()}
               />
-              {onDeleteExistingVideo ? (
+              {onDeleteExistingVideo && !lockVideoChanges ? (
                 <button
                   type="button"
                   aria-label="Delete current video"
@@ -1439,6 +1444,7 @@ export function ListingFormFields({
                   <X className="h-4 w-4" />
                 </button>
               ) : null}
+              {!lockVideoChanges ? (
               <button
                 type="button"
                 className="w-full border-t border-border/60 bg-muted/30 px-4 py-2.5 text-center text-xs font-medium text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
@@ -1449,11 +1455,13 @@ export function ListingFormFields({
               >
                 Click to replace video
               </button>
+              ) : null}
             </>
           ) : videoFile ? (
             <div className="flex flex-col items-center gap-3 p-8 text-center">
               <Upload className="h-8 w-8 text-gold" />
               <p className="font-medium text-sm">{videoFile.name}</p>
+              {!lockVideoChanges ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -1467,6 +1475,7 @@ export function ListingFormFields({
               >
                 Remove selected video
               </Button>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-col items-center p-8 text-center">
@@ -1717,7 +1726,7 @@ export function ListingFormFields({
           </p>
         )}
       </div>
-    </>
+    </div>
   );
 }
 

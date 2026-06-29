@@ -77,12 +77,14 @@ export function SearchableSelect({
           aria-expanded={open}
           disabled={disabled}
           className={cn(
-            "h-10 w-full justify-between rounded-md border-input bg-background px-3 font-normal",
+            "h-10 w-full min-w-0 justify-between rounded-md border-input bg-background px-3 font-normal",
             !selected && "text-muted-foreground",
             className,
           )}
         >
-          <span className="line-clamp-1 text-left">{selected ? selected.label : placeholder}</span>
+          <span className="min-w-0 flex-1 truncate text-left">
+            {selected ? selected.label : placeholder}
+          </span>
           <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>

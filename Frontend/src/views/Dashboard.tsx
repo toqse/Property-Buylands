@@ -1402,7 +1402,7 @@ const Dashboard = () => {
                 Add a new property listing
               </DrawerDescription>
             </div>
-            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+            <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
               <ListingFormFields
                 draft={draft}
                 setDraft={setDraft}
@@ -1414,6 +1414,7 @@ const Dashboard = () => {
                 videoInputRef={videoInputRef}
                 hideContact
                 fieldErrors={addFieldErrors}
+                lockVideoChanges={propertyMutations.create.isPending}
               />
             </div>
             <div className="px-6 py-4 border-t border-border shrink-0 gap-3 flex flex-col">
@@ -1467,7 +1468,7 @@ const Dashboard = () => {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+            <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
               <ListingFormFields
                 draft={draft}
                 setDraft={setDraft}
@@ -1479,6 +1480,7 @@ const Dashboard = () => {
                 videoInputRef={videoInputRef}
                 hideContact
                 fieldErrors={addFieldErrors}
+                lockVideoChanges={propertyMutations.create.isPending}
               />
             </div>
 
@@ -1540,7 +1542,7 @@ const Dashboard = () => {
                 Edit your property listing
               </DrawerDescription>
             </div>
-            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+            <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
               <ListingFormFields
                 draft={editDraft}
                 setDraft={setEditDraft}
@@ -1566,6 +1568,7 @@ const Dashboard = () => {
               retryingVideoProcessing={retryingVideoId === editTarget?.id}
               hideContact
               fieldErrors={editFieldErrors}
+              lockVideoChanges={propertyMutations.update.isPending}
             />
             </div>
             <div className="px-6 py-4 border-t border-border shrink-0 flex flex-col gap-4">
@@ -1621,7 +1624,7 @@ const Dashboard = () => {
                 Edit property
               </DialogTitle>
             </DialogHeader>
-            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+            <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
               <ListingFormFields
                 draft={editDraft}
                 setDraft={setEditDraft}
@@ -1647,6 +1650,7 @@ const Dashboard = () => {
               retryingVideoProcessing={retryingVideoId === editTarget?.id}
               hideContact
               fieldErrors={editFieldErrors}
+              lockVideoChanges={propertyMutations.update.isPending}
             />
             </div>
             <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
