@@ -32,6 +32,8 @@ export interface Property {
   ownerName: string;
   ownerPhone: string;
   ownerEmail: string;
+  /** Backend user id of the listing creator (when exposed by API). */
+  createdBy?: number;
   status: PropertyStatus;
   featured?: boolean;
   videoUrl?: string;

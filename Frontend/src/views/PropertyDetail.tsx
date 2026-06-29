@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams, useLocation, Link, useNavigate } from "@/lib/router";
+import { useParams, useLocation, Link, useNavigate, useSearchParams } from "@/lib/router";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { useAuth } from "@/context/AuthContext";
 import { useProperty } from "@/hooks/api/useProperties";
 import { useCatalogMutations, useCompanyContact } from "@/hooks/api/useCatalog";
 import { getErrorMessage } from "@/lib/api/errors";
@@ -32,6 +33,8 @@ const PropertyDetail = () => {
   const { id: routeId } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   // This page is served as a static-export shell for many slugs (see
   // generateStaticParams + .htaccess fallback), so the route param may be the
   // shell placeholder. Always trust the actual URL: /properties/<slug>/.
@@ -139,6 +142,12 @@ const PropertyDetail = () => {
   const wa = contactWhatsapp
     ? `https://wa.me/${contactWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in "${property.title}" listed on Buylands India.`)}`
     : "";
+
+  const hideOwnerContactActions =
+    searchParams.get("from") === "dashboard" &&
+    user != null &&
+    property.createdBy != null &&
+    String(property.createdBy) === user.id;
 
   const submitEnquiry = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -414,6 +423,7 @@ const PropertyDetail = () => {
                   ₹{fmt.format(property.price)}
                   {property.priceUnit && <span className="text-sm text-muted-foreground"> {property.priceUnit}</span>}
                 </div>
+                {!hideOwnerContactActions ? (
                 <div className="mt-4 grid grid-cols-4 gap-2">
                   <Button variant="luxe" size="sm" className="h-10 w-full min-w-0 px-0" disabled={!wa} asChild={!!wa} aria-label="WhatsApp">
                     {wa ? (
@@ -440,6 +450,7 @@ const PropertyDetail = () => {
                     <Share2 className="h-4 w-4 shrink-0" />
                   </Button>
                 </div>
+                ) : null}
               </aside>
             </div>
 

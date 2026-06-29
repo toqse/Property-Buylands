@@ -866,7 +866,9 @@ const Dashboard = () => {
                             variant="outline"
                             className="h-9 min-w-0 gap-1.5 rounded-lg border-border px-2 text-foreground hover:border-[#1c5fa8]/30 hover:bg-[#eef4fc] hover:text-[#1c5fa8] sm:h-8 sm:px-3"
                             onClick={() =>
-                              navigate(`/properties/${p.slug || p.id}`)
+                              navigate(
+                                `/properties/${p.slug || p.id}?from=dashboard`,
+                              )
                             }
                           >
                             <Eye className="h-3.5 w-3.5 shrink-0" /> View

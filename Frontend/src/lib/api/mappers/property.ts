@@ -87,6 +87,7 @@ export function mapApiPropertyToUi(p: ApiProperty): Property {
     ownerName: p.contact_name || "",
     ownerPhone: p.phone_number || "",
     ownerEmail: p.email || "",
+    createdBy: p.created_by,
     status: moderationToStatus(p.moderation_status),
     featured: p.is_featured,
     videoUrl: p.property_video_url || undefined,
