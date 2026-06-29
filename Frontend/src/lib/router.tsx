@@ -8,6 +8,22 @@ type To = string;
 
 const LISTING_PATH_PREFIXES = ["/buy", "/rent", "/properties"];
 
+function normalizeAppPath(to: string): string {
+  if (!to.startsWith("/")) return to;
+  const hashIndex = to.indexOf("#");
+  const queryIndex = to.indexOf("?");
+  const cutIndex =
+    hashIndex === -1
+      ? queryIndex
+      : queryIndex === -1
+        ? hashIndex
+        : Math.min(queryIndex, hashIndex);
+  const pathOnly = cutIndex === -1 ? to : to.slice(0, cutIndex);
+  const suffix = cutIndex === -1 ? "" : to.slice(cutIndex);
+  if (pathOnly === "/" || pathOnly.endsWith("/")) return to;
+  return `${pathOnly}/${suffix}`;
+}
+
 function isListingNavigation(to: string): boolean {
   const path = to.split("?")[0] ?? to;
   return LISTING_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
@@ -49,9 +65,10 @@ export function useNavigate() {
       else router.forward();
       return;
     }
-    if (options?.replace) router.replace(to);
-    else router.push(to);
-    if (isListingNavigation(to)) {
+    const nextTo = normalizeAppPath(to);
+    if (options?.replace) router.replace(nextTo);
+    else router.push(nextTo);
+    if (isListingNavigation(nextTo)) {
       notifyListingSearchChanged();
     }
   };

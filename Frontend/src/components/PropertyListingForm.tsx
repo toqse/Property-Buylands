@@ -1309,8 +1309,7 @@ export function ListingFormFields({
             setVideoFile(f ?? null);
           }}
         />
-        <button
-          type="button"
+        <div
           onDragOver={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1323,35 +1322,78 @@ export function ListingFormFields({
             );
             if (f) setVideoFile(f);
           }}
-          onClick={() => videoInputRef.current?.click()}
+          onClick={() => {
+            if (!existingVideoUrl && !videoFile) {
+              videoInputRef.current?.click();
+            }
+          }}
           className={cn(
-            "w-full border-2 border-dashed rounded-xl p-8 text-center transition-colors hover:border-gold/60 cursor-pointer",
-            videoFile
-              ? "border-gold/40 bg-gold/5"
-              : "border-border bg-muted/20",
+            "relative w-full border-2 border-dashed rounded-xl transition-colors",
+            existingVideoUrl || videoFile
+              ? "border-gold/40 bg-black/5"
+              : "border-border bg-muted/20 p-8 text-center hover:border-gold/60 cursor-pointer",
           )}
         >
-          <Upload className="h-8 w-8 mx-auto text-gold mb-2" />
-          <p className="font-medium text-sm">
-            {videoFile
-              ? videoFile.name
-              : "Drag & drop video or click to select"}
-          </p>
-        </button>
-        {videoFile ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-destructive"
-            onClick={() => {
-              setVideoFile(null);
-              if (videoInputRef.current) videoInputRef.current.value = "";
-            }}
-          >
-            Remove video file
-          </Button>
-        ) : null}
+          {existingVideoUrl && !videoFile ? (
+            <>
+              <video
+                src={existingVideoUrl}
+                controls
+                className="h-48 w-full bg-black object-contain"
+                onClick={(e) => e.stopPropagation()}
+              />
+              {onDeleteExistingVideo ? (
+                <button
+                  type="button"
+                  aria-label="Delete current video"
+                  disabled={deletingVideo}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteExistingVideo();
+                  }}
+                  className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-md transition hover:bg-destructive/90 disabled:opacity-60"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="w-full border-t border-border/60 bg-muted/30 px-4 py-2.5 text-center text-xs font-medium text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  videoInputRef.current?.click();
+                }}
+              >
+                Click to replace video
+              </button>
+            </>
+          ) : videoFile ? (
+            <div className="flex flex-col items-center gap-3 p-8 text-center">
+              <Upload className="h-8 w-8 text-gold" />
+              <p className="font-medium text-sm">{videoFile.name}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setVideoFile(null);
+                  if (videoInputRef.current) videoInputRef.current.value = "";
+                }}
+              >
+                Remove selected video
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center p-8 text-center">
+              <Upload className="h-8 w-8 mx-auto text-gold mb-2" />
+              <p className="font-medium text-sm">
+                Drag & drop video or click to select
+              </p>
+            </div>
+          )}
+        </div>
         {videoProcessingStatus &&
         videoProcessingStatusLabel(videoProcessingStatus) ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -1380,31 +1422,6 @@ export function ListingFormFields({
                 {retryingVideoProcessing ? "Retrying…" : "Retry compression"}
               </Button>
             ) : null}
-          </div>
-        ) : null}
-        {existingVideoUrl && !videoFile ? (
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              Current video
-            </p>
-            <div className="relative w-full max-w-sm overflow-hidden rounded-xl border border-border bg-black/5">
-              <video
-                src={existingVideoUrl}
-                controls
-                className="h-44 w-full bg-black object-contain"
-              />
-              {onDeleteExistingVideo ? (
-                <button
-                  type="button"
-                  aria-label="Delete current video"
-                  disabled={deletingVideo}
-                  onClick={onDeleteExistingVideo}
-                  className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-md transition hover:bg-destructive/90 disabled:opacity-60"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              ) : null}
-            </div>
           </div>
         ) : null}
       </div>

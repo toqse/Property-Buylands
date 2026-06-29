@@ -77,7 +77,7 @@ export function VideoProcessingStatusBadge({
         aria-live="polite"
       >
         <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
-        <span className="whitespace-nowrap">Compressing…</span>
+        <span className="whitespace-nowrap">Video Processing...</span>
       </span>
     );
   }
