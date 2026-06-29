@@ -89,7 +89,9 @@ export const propertiesApi = {
   },
 
   get(idOrSlug: string) {
-    return apiRequest<ApiProperty>(`properties/properties/${idOrSlug}/`);
+    return apiRequest<ApiProperty>(`properties/properties/${idOrSlug}/`, {
+      auth: true,
+    });
   },
 
   mine(params: PropertyListParams = {}) {

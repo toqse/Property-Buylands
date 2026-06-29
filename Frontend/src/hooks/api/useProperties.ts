@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
 import {
   buildPropertyListParams,
   propertiesApi,
@@ -75,13 +76,14 @@ export function usePropertyLocations(filters: Parameters<typeof buildPropertyLis
 }
 
 export function useProperty(id: string | undefined) {
+  const { user, hydrated } = useAuth();
   return useQuery({
-    queryKey: queryKeys.property(id ?? ""),
+    queryKey: queryKeys.property(id ?? "", user?.id),
     queryFn: async () => {
       const data = await propertiesApi.get(id!);
       return mapApiPropertyToUi(data);
     },
-    enabled: !!id,
+    enabled: !!id && hydrated,
   });
 }
 

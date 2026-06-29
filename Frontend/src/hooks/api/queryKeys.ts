@@ -1,6 +1,7 @@
 export const queryKeys = {
   properties: (params?: unknown) => ["properties", params] as const,
-  property: (id: string) => ["property", id] as const,
+  property: (id: string, viewerId?: string | number | null) =>
+    ["property", id, viewerId ?? "anon"] as const,
   myProperties: (params?: unknown) => ["myProperties", params] as const,
   propertyTypes: ["propertyTypes"] as const,
   features: ["features"] as const,

@@ -155,6 +155,25 @@ class PublicVideoVisibilityTests(APITestCase):
         response = self.client.get(f"/api/properties/properties/{prop.slug}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_owner_can_retrieve_pending_property(self):
+        prop = self._property(
+            "pending-owner-detail",
+            moderation_status=Property.MODERATION_PENDING,
+        )
+        token = Token.objects.get_or_create(user=self.owner)[0]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        response = self.client.get(f"/api/properties/properties/{prop.slug}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_anonymous_cannot_retrieve_pending_property(self):
+        prop = self._property(
+            "pending-anon-detail",
+            moderation_status=Property.MODERATION_PENDING,
+        )
+        self.client.credentials()
+        response = self.client.get(f"/api/properties/properties/{prop.slug}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
 
 @override_settings(STORAGES=TEST_STORAGES)
 class RetryVideoProcessingTests(APITestCase):
