@@ -14,6 +14,8 @@ from rest_framework import serializers, viewsets, permissions, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from property_listing.video_constants import VIDEO_FAILED, VIDEO_PROCESSING, VIDEO_READY
+
 from .models import (
     AdminPanelImage,
     Feature,
@@ -56,7 +58,7 @@ from .serializers import (
     TestimonialSerializer,
     TestimonialSectionSerializer,
 )
-from .utils import annotate_queryset_distance_km, cluster_property_locations
+from .utils import annotate_queryset_distance_km, cluster_property_locations, filter_public_video_ready
 from advertisements.injector import inject_ads_into_results
 
 class StateViewSet(viewsets.ModelViewSet):
@@ -443,6 +445,44 @@ class PropertyViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(prop)
         return Response(serializer.data)
 
+    @action(detail=True, methods=["post"], url_path="retry-video-processing")
+    def retry_video_processing(self, request, pk=None):
+        """Re-queue Celery compression for a failed uploaded video (owner or staff)."""
+        prop = self.get_object()
+        user = request.user
+        if not user.is_authenticated:
+            return Response(
+                {"detail": "Authentication required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not user.is_staff and prop.created_by_id != user.id:
+            return Response(
+                {"detail": "You do not have permission to retry this property video."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not prop.property_video:
+            return Response(
+                {"detail": "No video file to process."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if prop.video_processing_status != VIDEO_FAILED:
+            return Response(
+                {
+                    "detail": (
+                        "Video processing can only be retried when status is failed."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from property_listing.video_services import queue_video_processing
+
+        prop.video_processing_status = VIDEO_PROCESSING
+        prop.save(update_fields=["video_processing_status", "updated_at"])
+        queue_video_processing("property", prop.pk)
+        serializer = self.get_serializer(prop)
+        return Response(serializer.data)
+
     @action(detail=False, methods=['get'], url_path='locations')
     def locations(self, request):
         """
@@ -460,6 +500,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
             latitude__isnull=False,
             longitude__isnull=False,
         )
+        queryset = filter_public_video_ready(queryset)
 
         property_for = (request.query_params.get('property_for') or '').strip().lower()
         if property_for in dict(Property.PROPERTY_FOR_CHOICES):
@@ -577,14 +618,26 @@ class PropertyViewSet(viewsets.ModelViewSet):
                     queryset = queryset.filter(moderation_status=ms)
         elif self.action == 'list':
             queryset = queryset.filter(moderation_status=Property.MODERATION_APPROVED)
+            queryset = filter_public_video_ready(queryset)
         else:
             if user.is_authenticated:
+                video_ready_q = (
+                    Q(property_video__isnull=True)
+                    | Q(property_video="")
+                    | Q(video_processing_status=VIDEO_READY)
+                )
                 queryset = queryset.filter(
-                    Q(moderation_status=Property.MODERATION_APPROVED)
-                    | Q(created_by=user)
+                    Q(created_by=user)
+                    | (
+                        Q(moderation_status=Property.MODERATION_APPROVED)
+                        & video_ready_q
+                    )
                 )
             else:
-                queryset = queryset.filter(moderation_status=Property.MODERATION_APPROVED)
+                queryset = queryset.filter(
+                    moderation_status=Property.MODERATION_APPROVED
+                )
+                queryset = filter_public_video_ready(queryset)
         # list: avoid select_related — combined JOIN + ORDER BY + LIMIT made Azure MySQL use a ~4s plan.
         # Other actions still prefetch FKs in one round-trip per object.
         if self.action != 'list':

@@ -29,3 +29,11 @@ export function videoProcessingStatusTone(
       return "muted";
   }
 }
+
+export function videoProcessingPollInterval(
+  items: { videoProcessingStatus?: VideoProcessingStatus }[],
+): number | false {
+  return items.some((item) => item.videoProcessingStatus === "processing")
+    ? 5000
+    : false;
+}

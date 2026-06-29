@@ -155,6 +155,16 @@ export const propertiesApi = {
     });
   },
 
+  retryVideoProcessing(id: string | number) {
+    return apiRequest<ApiProperty>(
+      `properties/properties/${id}/retry-video-processing/`,
+      {
+        method: "POST",
+        auth: true,
+      },
+    );
+  },
+
   locations(params: PropertyListParams = {}) {
     return apiRequest<PaginatedResponse<import("@/lib/api/types").ApiLocationResult>>(
       `properties/locations/${toQueryString(params)}`,

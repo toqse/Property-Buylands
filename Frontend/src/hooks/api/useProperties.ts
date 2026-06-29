@@ -12,6 +12,7 @@ import type { ApiProperty, FeedItem } from "@/lib/api/types";
 import type { Property } from "@/data/mockData";
 import type { Advertisement } from "@/data/advertisements";
 import { queryKeys } from "./queryKeys";
+import { videoProcessingPollInterval } from "@/lib/videoProcessingStatus";
 
 export type ListingFeedItem =
   | { kind: "property"; property: Property }
@@ -29,7 +30,7 @@ function normalizeFeedItem(item: FeedItem | ApiProperty): ListingFeedItem | null
 
 export function usePropertyList(
   filters: Parameters<typeof buildPropertyListParams>[0] = {},
-  opts: { auth?: boolean } = {},
+  opts: { auth?: boolean; pollVideoProcessing?: boolean } = {},
 ) {
   const params = buildPropertyListParams(filters);
   return useQuery({
@@ -41,10 +42,15 @@ export function usePropertyList(
         .filter((x): x is ListingFeedItem => x !== null);
       return { ...page, items };
     },
-    // Keep the current list visible while params change (e.g. when the user's
-    // location resolves and the query switches to nearby results), so the grid
-    // doesn't flash back to skeletons.
     placeholderData: keepPreviousData,
+    refetchInterval: opts.pollVideoProcessing
+      ? (query) => {
+          const items = (query.state.data?.items ?? [])
+            .filter((x) => x.kind === "property")
+            .map((x) => x.property);
+          return videoProcessingPollInterval(items);
+        }
+      : false,
   });
 }
 
@@ -67,7 +73,10 @@ export function useProperty(id: string | undefined) {
   });
 }
 
-export function useMyProperties(params: PropertyListParams = {}) {
+export function useMyProperties(
+  params: PropertyListParams = {},
+  opts: { pollVideoProcessing?: boolean } = {},
+) {
   return useQuery({
     queryKey: queryKeys.myProperties(params),
     queryFn: async () => {
@@ -77,6 +86,9 @@ export function useMyProperties(params: PropertyListParams = {}) {
         items: page.results.map(mapApiPropertyToUi),
       };
     },
+    refetchInterval: opts.pollVideoProcessing
+      ? (query) => videoProcessingPollInterval(query.state.data?.items ?? [])
+      : false,
   });
 }
 
@@ -108,6 +120,10 @@ export function usePropertyMutations() {
     }),
     removeVideo: useMutation({
       mutationFn: (id: string) => propertiesApi.removeVideo(id),
+      onSuccess: invalidate,
+    }),
+    retryVideoProcessing: useMutation({
+      mutationFn: (id: string) => propertiesApi.retryVideoProcessing(id),
       onSuccess: invalidate,
     }),
     approve: useMutation({

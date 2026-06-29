@@ -146,6 +146,10 @@ import {
   videoProcessingStatusTone,
 } from "@/lib/videoProcessingStatus";
 import {
+  VideoProcessingStatusBadge,
+  hasPropertyUploadedVideo,
+} from "@/components/VideoProcessingStatusBadge";
+import {
   ListingFormFields,
   emptyDraft,
   propertyToDraft,
@@ -968,7 +972,7 @@ const PropertiesAdmin = () => {
       includeAds: false,
       pageSize: 100,
     },
-    { auth: true },
+    { auth: true, pollVideoProcessing: true },
   );
   const propertyMutations = usePropertyMutations();
   const list = useMemo(
@@ -1013,6 +1017,7 @@ const PropertiesAdmin = () => {
   const [featuredPendingId, setFeaturedPendingId] = useState<string | null>(
     null,
   );
+  const [retryingVideoId, setRetryingVideoId] = useState<string | null>(null);
   const toggleFeatured = async (p: Property) => {
     setFeaturedPendingId(p.id);
     const form = new FormData();
@@ -1144,6 +1149,24 @@ const PropertiesAdmin = () => {
       toast.error(getErrorMessage(err));
     } finally {
       setDeletingVideo(false);
+    }
+  };
+
+  const handleRetryVideoProcessing = async (property: Property) => {
+    setRetryingVideoId(property.id);
+    try {
+      await propertyMutations.retryVideoProcessing.mutateAsync(property.id);
+      if (editTarget?.id === property.id) {
+        setEditTarget((prev) =>
+          prev ? { ...prev, videoProcessingStatus: "processing" } : prev,
+        );
+      }
+      await refetch();
+      toast.success("Video compression restarted");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRetryingVideoId(null);
     }
   };
 
@@ -1291,6 +1314,17 @@ const PropertiesAdmin = () => {
                       />
                       Featured
                     </label>
+                    <VideoProcessingStatusBadge
+                      variant="card"
+                      status={p.videoProcessingStatus}
+                      hasUploadedVideo={hasPropertyUploadedVideo(p.videoUrl)}
+                      onRetry={
+                        p.videoProcessingStatus === "failed"
+                          ? () => void handleRetryVideoProcessing(p)
+                          : undefined
+                      }
+                      retrying={retryingVideoId === p.id}
+                    />
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button
@@ -1334,6 +1368,7 @@ const PropertiesAdmin = () => {
                 <th className="text-left p-4">Owner</th>
                 <th className="text-left p-4">Price</th>
                 <th className="text-left p-4">Status</th>
+                <th className="text-left p-4">Video status</th>
                 <th className="text-left p-4">Featured</th>
                 <th className="text-right p-4">Actions</th>
               </tr>
@@ -1342,7 +1377,7 @@ const PropertiesAdmin = () => {
               {propertiesPager.paginated.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="p-12 text-center text-muted-foreground"
                   >
                     No properties yet.
@@ -1381,6 +1416,18 @@ const PropertiesAdmin = () => {
                       >
                         {p.status}
                       </Badge>
+                    </td>
+                    <td className="p-4">
+                      <VideoProcessingStatusBadge
+                        status={p.videoProcessingStatus}
+                        hasUploadedVideo={hasPropertyUploadedVideo(p.videoUrl)}
+                        onRetry={
+                          p.videoProcessingStatus === "failed"
+                            ? () => void handleRetryVideoProcessing(p)
+                            : undefined
+                        }
+                        retrying={retryingVideoId === p.id}
+                      />
                     </td>
                     <td className="p-4">
                       <Switch
@@ -1548,6 +1595,12 @@ const PropertiesAdmin = () => {
               onDeleteExistingVideo={handleDeleteExistingVideo}
               deletingVideo={deletingVideo}
               videoProcessingStatus={editTarget?.videoProcessingStatus}
+              onRetryVideoProcessing={
+                editTarget?.videoProcessingStatus === "failed"
+                  ? () => void handleRetryVideoProcessing(editTarget)
+                  : undefined
+              }
+              retryingVideoProcessing={retryingVideoId === editTarget?.id}
             />
           </div>
           <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-2 sm:justify-end">

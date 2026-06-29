@@ -5,6 +5,19 @@ import math
 import re
 from decimal import Decimal
 
+from django.db.models import Q
+
+from property_listing.video_constants import VIDEO_READY
+
+
+def filter_public_video_ready(queryset):
+    """Exclude uploaded videos that are not yet compressed (processing/failed)."""
+    return queryset.filter(
+        Q(property_video__isnull=True)
+        | Q(property_video="")
+        | Q(video_processing_status=VIDEO_READY)
+    )
+
 
 def absolute_media_url(request, file_field):
     """Build an absolute URL for a Django FileField, or None when unset."""

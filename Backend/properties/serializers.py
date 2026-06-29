@@ -18,7 +18,7 @@ from .models import (
     Testimonial,
 )
 from .slug_utils import generate_unique_property_slug, normalize_property_slug_input
-from .utils import absolute_media_url, normalize_nearby_places_output
+from .utils import absolute_media_url, filter_public_video_ready, normalize_nearby_places_output
 from .enquiry_email import send_enquiry_notification
 
 class StateSerializer(serializers.ModelSerializer):
@@ -776,7 +776,9 @@ class AdminPanelImageSerializer(serializers.ModelSerializer):
 
 class ContactSerializer(serializers.ModelSerializer):
     property = serializers.PrimaryKeyRelatedField(
-        queryset=Property.objects.filter(moderation_status=Property.MODERATION_APPROVED),
+        queryset=filter_public_video_ready(
+            Property.objects.filter(moderation_status=Property.MODERATION_APPROVED)
+        ),
         required=False,
         allow_null=True,
     )

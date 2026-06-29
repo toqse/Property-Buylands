@@ -77,6 +77,10 @@ import {
 import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { SubmitProgressButton } from "@/components/SubmitProgressButton";
+import {
+  VideoProcessingStatusBadge,
+  hasPropertyUploadedVideo,
+} from "@/components/VideoProcessingStatusBadge";
 import { cn } from "@/lib/utils";
 import {
   ListingFormFields,
@@ -94,12 +98,18 @@ const Dashboard = () => {
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Unfiltered portfolio — drives the summary cards and the "has any listings" check.
-  const { data: allData, refetch } = useMyProperties({ page_size: 50 });
+  const { data: allData, refetch } = useMyProperties(
+    { page_size: 50 },
+    { pollVideoProcessing: true },
+  );
   // Server-side search — only the visible listing table reacts to the query.
-  const { data: myData, isFetching: isSearching } = useMyProperties({
-    page_size: 50,
-    ...(debouncedSearch ? { search: debouncedSearch } : {}),
-  });
+  const { data: myData, isFetching: isSearching } = useMyProperties(
+    {
+      page_size: 50,
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    },
+    { pollVideoProcessing: true },
+  );
   const propertyMutations = usePropertyMutations();
   const { data: propertyTypesData } = usePropertyTypes();
   const allProperties = allData?.items ?? [];
@@ -131,6 +141,7 @@ const Dashboard = () => {
   const editVideoInputRef = useRef<HTMLInputElement>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<Property | null>(null);
+  const [retryingVideoId, setRetryingVideoId] = useState<string | null>(null);
 
   const [propertiesPage, setPropertiesPage] = useState(1);
   const [propertiesPageSize, setPropertiesPageSize] = useState(5);
@@ -333,6 +344,24 @@ const Dashboard = () => {
       toast.error(getErrorMessage(err));
     } finally {
       setDeletingVideo(false);
+    }
+  };
+
+  const handleRetryVideoProcessing = async (property: Property) => {
+    setRetryingVideoId(property.id);
+    try {
+      await propertyMutations.retryVideoProcessing.mutateAsync(property.id);
+      if (editTarget?.id === property.id) {
+        setEditTarget((prev) =>
+          prev ? { ...prev, videoProcessingStatus: "processing" } : prev,
+        );
+      }
+      await refetch();
+      toast.success("Video compression restarted");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRetryingVideoId(null);
     }
   };
 
@@ -667,13 +696,24 @@ const Dashboard = () => {
                         </span>
                       </div>
 
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center rounded-full bg-[#eef4fc] px-2.5 py-1 text-[11px] font-medium text-[#1c5fa8]">
                           {p.type}
                         </span>
                         <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/75">
                           {p.category}
                         </span>
+                        <VideoProcessingStatusBadge
+                          variant="card"
+                          status={p.videoProcessingStatus}
+                          hasUploadedVideo={hasPropertyUploadedVideo(p.videoUrl)}
+                          onRetry={
+                            p.videoProcessingStatus === "failed"
+                              ? () => void handleRetryVideoProcessing(p)
+                              : undefined
+                          }
+                          retrying={retryingVideoId === p.id}
+                        />
                       </div>
 
                       {(p.features?.length ?? 0) > 0 && (
@@ -1323,6 +1363,12 @@ const Dashboard = () => {
               onDeleteExistingVideo={handleDeleteExistingVideo}
               deletingVideo={deletingVideo}
               videoProcessingStatus={editTarget?.videoProcessingStatus}
+              onRetryVideoProcessing={
+                editTarget?.videoProcessingStatus === "failed"
+                  ? () => void handleRetryVideoProcessing(editTarget)
+                  : undefined
+              }
+              retryingVideoProcessing={retryingVideoId === editTarget?.id}
               hideContact
             />
           </div>

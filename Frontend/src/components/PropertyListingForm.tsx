@@ -709,6 +709,9 @@ export type ListingFormFieldsProps = {
   deletingVideo?: boolean;
   /** Background video compression status from the API (edit mode). */
   videoProcessingStatus?: VideoProcessingStatus;
+  /** Retry failed background video processing. */
+  onRetryVideoProcessing?: () => void;
+  retryingVideoProcessing?: boolean;
   /** When true, hide Contact Information (owner uses account profile). */
   hideContact?: boolean;
   /** When true, hide Property Ownership (owner always lists their own property). */
@@ -731,6 +734,8 @@ export function ListingFormFields({
   onDeleteExistingVideo,
   deletingVideo = false,
   videoProcessingStatus,
+  onRetryVideoProcessing,
+  retryingVideoProcessing = false,
   hideContact = false,
   hideOwnership = false,
 }: ListingFormFieldsProps) {
@@ -1339,19 +1344,33 @@ export function ListingFormFields({
         ) : null}
         {videoProcessingStatus &&
         videoProcessingStatusLabel(videoProcessingStatus) ? (
-          <p
-            className={cn(
-              "text-sm",
-              videoProcessingStatusTone(videoProcessingStatus) === "warning" &&
-                "text-amber-600",
-              videoProcessingStatusTone(videoProcessingStatus) === "success" &&
-                "text-emerald-600",
-              videoProcessingStatusTone(videoProcessingStatus) ===
-                "destructive" && "text-destructive",
-            )}
-          >
-            {videoProcessingStatusLabel(videoProcessingStatus)}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p
+              className={cn(
+                "text-sm",
+                videoProcessingStatusTone(videoProcessingStatus) === "warning" &&
+                  "text-amber-600",
+                videoProcessingStatusTone(videoProcessingStatus) === "success" &&
+                  "text-emerald-600",
+                videoProcessingStatusTone(videoProcessingStatus) ===
+                  "destructive" && "text-destructive",
+              )}
+            >
+              {videoProcessingStatusLabel(videoProcessingStatus)}
+            </p>
+            {videoProcessingStatus === "failed" && onRetryVideoProcessing ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1"
+                disabled={retryingVideoProcessing}
+                onClick={onRetryVideoProcessing}
+              >
+                {retryingVideoProcessing ? "Retrying…" : "Retry compression"}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         {existingVideoUrl && !videoFile ? (
           <div className="space-y-2">
