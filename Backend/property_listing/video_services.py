@@ -150,20 +150,32 @@ def _materialize_upload_to_temp(upload) -> tuple[str, bool]:
     input_suffix = os.path.splitext(getattr(upload, "name", ""))[1] or ".mp4"
     with tempfile.NamedTemporaryFile(delete=False, suffix=input_suffix) as in_tmp:
         input_path = in_tmp.name
-        if hasattr(upload, "open"):
-            with upload.open("rb") as src:
-                shutil.copyfileobj(src, in_tmp)
-        elif hasattr(upload, "chunks"):
+        if hasattr(upload, "chunks"):
             for chunk in upload.chunks():
                 in_tmp.write(chunk)
         elif hasattr(upload, "read"):
             in_tmp.write(upload.read())
+        elif hasattr(upload, "open"):
+            src = upload.open("rb")
+            try:
+                shutil.copyfileobj(src, in_tmp)
+            finally:
+                if hasattr(upload, "seek"):
+                    try:
+                        upload.seek(0)
+                    except (ValueError, OSError):
+                        pass
 
     return input_path, True
 
 
-def validate_video(upload) -> None:
-    """Validate extension, MIME type, file size, and duration before accepting an upload."""
+def prepare_video_upload(upload) -> ContentFile:
+    """
+    Validate a new video upload and return a fresh ContentFile for storage.
+
+    Reading the upload during validation closes or exhausts Django's temporary
+    upload handle; re-wrapping bytes avoids "read of closed file" on S3 save.
+    """
     if not upload:
         raise ValidationError("No video file provided.")
 
@@ -190,12 +202,21 @@ def validate_video(upload) -> None:
             raise ValidationError(
                 f"Video must be {VIDEO_MAX_DURATION_SECONDS} seconds or shorter."
             )
+        with open(input_path, "rb") as fh:
+            data = fh.read()
+        original_name = getattr(upload, "name", "video.mp4") or "video.mp4"
+        return ContentFile(data, name=original_name)
     finally:
         if delete_input and input_path and os.path.exists(input_path):
             try:
                 os.remove(input_path)
             except OSError:
                 pass
+
+
+def validate_video(upload) -> None:
+    """Validate extension, MIME type, file size, and duration before accepting an upload."""
+    prepare_video_upload(upload)
 
 
 def compress_video(input_path: str, output_path: str) -> None:

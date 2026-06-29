@@ -191,11 +191,11 @@ class Advertisement(models.Model):
         queue_after_save = False
 
         if new_video:
-            from property_listing.video_services import queue_video_processing, validate_video
+            from property_listing.video_services import prepare_video_upload, queue_video_processing
 
             self.video_processing_status = VIDEO_PROCESSING
             try:
-                validate_video(self.video_file)
+                self.video_file = prepare_video_upload(self.video_file)
                 queue_after_save = True
             except Exception:
                 self.video_processing_status = VIDEO_FAILED

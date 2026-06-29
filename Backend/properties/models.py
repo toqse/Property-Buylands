@@ -232,9 +232,9 @@ class Property(models.Model):
         queue_after_save = False
 
         if new_video:
-            from property_listing.video_services import queue_video_processing, validate_video
+            from property_listing.video_services import prepare_video_upload, queue_video_processing
 
-            validate_video(self.property_video)
+            self.property_video = prepare_video_upload(self.property_video)
             self.video_processing_status = VIDEO_PROCESSING
             queue_after_save = True
 
