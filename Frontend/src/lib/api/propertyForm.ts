@@ -288,7 +288,7 @@ export function appendPropertyTypeFlagsToFormData(
 
 /**
  * Validate the image selection for a property submission.
- * Images are optional; at most {@link MAX_PROPERTY_IMAGES} are allowed.
+ * At most {@link MAX_PROPERTY_IMAGES} are allowed.
  * In edit mode pass the count of already-saved images via `existingImages`.
  * Returns an error message string, or `null` when valid.
  */
@@ -305,9 +305,8 @@ export function validatePropertyImages(opts: {
 
 /**
  * A property must have at least one photo or one video.
- * In edit mode, already-saved media (existing images / existing uploaded video)
- * count toward this via `existingImages` / `hasVideo`. A YouTube link also
- * counts as a video. Returns an error message string, or `null` when valid.
+ * In edit mode, already-saved media counts via `existingImages` / `hasVideo`.
+ * A YouTube link also counts as a video. Returns an error message string, or `null` when valid.
  */
 export function validatePropertyMedia(opts: {
   newImages: number;

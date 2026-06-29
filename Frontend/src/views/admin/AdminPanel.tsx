@@ -28,6 +28,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   Select,
@@ -158,8 +168,9 @@ import {
   propertyToDraft,
   validateAndParseDraft,
   buildPropertyFromValidatedDraft,
-  scrollToListingField,
+  applyListingValidationError,
   type AddPropertyDraft,
+  type ListingFieldErrors,
 } from "@/components/PropertyListingForm";
 import { OsmPlaceSearch } from "@/components/ui/osm-place-search";
 
@@ -995,6 +1006,7 @@ const PropertiesAdmin = () => {
   const [addDraft, setAddDraft] = useState<AddPropertyDraft>(emptyDraft);
   const [addImageFiles, setAddImageFiles] = useState<File[]>([]);
   const [addVideoFile, setAddVideoFile] = useState<File | null>(null);
+  const [addFieldErrors, setAddFieldErrors] = useState<ListingFieldErrors>({});
   const addImageInputRef = useRef<HTMLInputElement>(null);
   const addVideoInputRef = useRef<HTMLInputElement>(null);
 
@@ -1010,7 +1022,16 @@ const PropertiesAdmin = () => {
   const [editExistingVideo, setEditExistingVideo] = useState<string | null>(
     null,
   );
+  const [editFieldErrors, setEditFieldErrors] = useState<ListingFieldErrors>(
+    {},
+  );
   const [deletingImageIds, setDeletingImageIds] = useState<number[]>([]);
+  const [pendingDeleteImageIds, setPendingDeleteImageIds] = useState<number[]>(
+    [],
+  );
+  const [imageDeleteConfirmId, setImageDeleteConfirmId] = useState<
+    number | null
+  >(null);
   const [deletingVideo, setDeletingVideo] = useState(false);
   const editImageInputRef = useRef<HTMLInputElement>(null);
   const editVideoInputRef = useRef<HTMLInputElement>(null);
@@ -1045,6 +1066,7 @@ const PropertiesAdmin = () => {
     setAddDraft(emptyDraft);
     setAddImageFiles([]);
     setAddVideoFile(null);
+    setAddFieldErrors({});
     if (addImageInputRef.current) addImageInputRef.current.value = "";
     if (addVideoInputRef.current) addVideoInputRef.current.value = "";
   };
@@ -1055,23 +1077,34 @@ const PropertiesAdmin = () => {
     setEditExistingImages([]);
     setEditExistingVideo(null);
     setDeletingImageIds([]);
+    setPendingDeleteImageIds([]);
+    setImageDeleteConfirmId(null);
     setDeletingVideo(false);
+    setEditFieldErrors({});
     if (editImageInputRef.current) editImageInputRef.current.value = "";
     if (editVideoInputRef.current) editVideoInputRef.current.value = "";
   };
 
   const submitAdd = async () => {
+    setAddFieldErrors({});
     const parsed = validateAndParseDraft(addDraft);
     if (!parsed.ok) {
-      toast.error(parsed.message);
-      scrollToListingField(parsed.field);
+      applyListingValidationError(
+        setAddFieldErrors,
+        parsed.message,
+        parsed.field,
+      );
       return;
     }
     const imageError = validatePropertyImages({
       newImages: addImageFiles.length,
     });
     if (imageError) {
-      toast.error(imageError);
+      applyListingValidationError(
+        setAddFieldErrors,
+        imageError,
+        "uploaded_images",
+      );
       return;
     }
     const mediaError = validatePropertyMedia({
@@ -1079,7 +1112,11 @@ const PropertiesAdmin = () => {
       hasVideo: !!addVideoFile || !!addDraft.youtubeLink.trim(),
     });
     if (mediaError) {
-      toast.error(mediaError);
+      applyListingValidationError(
+        setAddFieldErrors,
+        mediaError,
+        "uploaded_images",
+      );
       return;
     }
     try {
@@ -1087,7 +1124,11 @@ const PropertiesAdmin = () => {
         (t) => t.name.toLowerCase() === addDraft.propertyCategory.toLowerCase(),
       )?.id;
       if (!typeId) {
-        toast.error("Please select a valid property type");
+        applyListingValidationError(
+          setAddFieldErrors,
+          "Please select a valid property type",
+          "property_type",
+        );
         return;
       }
       const fd = buildPropertyFormData(addDraft, addImageFiles, addVideoFile, {
@@ -1114,8 +1155,13 @@ const PropertiesAdmin = () => {
         addUploadProgress.clearUploadProgress();
       }
     } catch (err) {
-      toast.error(getErrorMessage(err));
-      scrollToListingField(getApiErrorField(err));
+      const apiField = getApiErrorField(err);
+      const message = getErrorMessage(err);
+      if (apiField) {
+        applyListingValidationError(setAddFieldErrors, message, apiField);
+      } else {
+        toast.error(message);
+      }
     }
   };
 
@@ -1131,14 +1177,22 @@ const PropertiesAdmin = () => {
       !p.videoUrl.includes("youtu.be");
     setEditExistingVideo(isUploadedVideo ? p.videoUrl! : null);
     setDeletingImageIds([]);
+    setPendingDeleteImageIds([]);
+    setImageDeleteConfirmId(null);
     setDeletingVideo(false);
     if (editImageInputRef.current) editImageInputRef.current.value = "";
     if (editVideoInputRef.current) editVideoInputRef.current.value = "";
     setEditTarget(p);
   };
 
-  const handleDeleteExistingImage = async (imageId: number) => {
-    if (!editTarget) return;
+  const requestDeleteExistingImage = (imageId: number) => {
+    setImageDeleteConfirmId(imageId);
+  };
+
+  const confirmDeleteExistingImage = async () => {
+    if (!editTarget || imageDeleteConfirmId == null) return;
+    const imageId = imageDeleteConfirmId;
+    setImageDeleteConfirmId(null);
     setDeletingImageIds((prev) => [...prev, imageId]);
     try {
       await propertyMutations.deleteImage.mutateAsync({
@@ -1152,6 +1206,14 @@ const PropertiesAdmin = () => {
     } finally {
       setDeletingImageIds((prev) => prev.filter((id) => id !== imageId));
     }
+  };
+
+  const handleReplaceExistingImage = (imageId: number, file: File) => {
+    setEditExistingImages((prev) => prev.filter((img) => img.id !== imageId));
+    setEditImageFiles([file]);
+    setPendingDeleteImageIds((prev) =>
+      prev.includes(imageId) ? prev : [...prev, imageId],
+    );
   };
 
   const handleDeleteExistingVideo = async () => {
@@ -1188,10 +1250,14 @@ const PropertiesAdmin = () => {
 
   const submitEdit = async () => {
     if (!editTarget) return;
+    setEditFieldErrors({});
     const parsed = validateAndParseDraft(editDraft);
     if (!parsed.ok) {
-      toast.error(parsed.message);
-      scrollToListingField(parsed.field);
+      applyListingValidationError(
+        setEditFieldErrors,
+        parsed.message,
+        parsed.field,
+      );
       return;
     }
     const imageError = validatePropertyImages({
@@ -1199,7 +1265,11 @@ const PropertiesAdmin = () => {
       existingImages: editExistingImages.length,
     });
     if (imageError) {
-      toast.error(imageError);
+      applyListingValidationError(
+        setEditFieldErrors,
+        imageError,
+        "uploaded_images",
+      );
       return;
     }
     const mediaError = validatePropertyMedia({
@@ -1209,7 +1279,11 @@ const PropertiesAdmin = () => {
         !!editVideoFile || !!editExistingVideo || !!editDraft.youtubeLink.trim(),
     });
     if (mediaError) {
-      toast.error(mediaError);
+      applyListingValidationError(
+        setEditFieldErrors,
+        mediaError,
+        "uploaded_images",
+      );
       return;
     }
     try {
@@ -1240,6 +1314,12 @@ const PropertiesAdmin = () => {
           form: fd,
           onUploadProgress,
         });
+        for (const imageId of pendingDeleteImageIds) {
+          await propertyMutations.deleteImage.mutateAsync({
+            id: editTarget.id,
+            imageId,
+          });
+        }
         toast.success(`“${editDraft.title.trim()}” updated`);
         setEditTarget(null);
         resetEdit();
@@ -1248,8 +1328,13 @@ const PropertiesAdmin = () => {
         editUploadProgress.clearUploadProgress();
       }
     } catch (err) {
-      toast.error(getErrorMessage(err));
-      scrollToListingField(getApiErrorField(err));
+      const apiField = getApiErrorField(err);
+      const message = getErrorMessage(err);
+      if (apiField) {
+        applyListingValidationError(setEditFieldErrors, message, apiField);
+      } else {
+        toast.error(message);
+      }
     }
   };
 
@@ -1526,6 +1611,7 @@ const PropertiesAdmin = () => {
               setVideoFile={setAddVideoFile}
               imageInputRef={addImageInputRef}
               videoInputRef={addVideoInputRef}
+              fieldErrors={addFieldErrors}
             />
           </div>
           <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
@@ -1625,7 +1711,8 @@ const PropertiesAdmin = () => {
               imageInputRef={editImageInputRef}
               videoInputRef={editVideoInputRef}
               existingImages={editExistingImages}
-              onDeleteExistingImage={handleDeleteExistingImage}
+              onDeleteExistingImage={requestDeleteExistingImage}
+              onReplaceExistingImage={handleReplaceExistingImage}
               deletingImageIds={deletingImageIds}
               existingVideoUrl={editExistingVideo}
               onDeleteExistingVideo={handleDeleteExistingVideo}
@@ -1637,6 +1724,7 @@ const PropertiesAdmin = () => {
                   : undefined
               }
               retryingVideoProcessing={retryingVideoId === editTarget?.id}
+              fieldErrors={editFieldErrors}
             />
           </div>
           <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
@@ -1675,6 +1763,35 @@ const PropertiesAdmin = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete image confirmation */}
+      <AlertDialog
+        open={imageDeleteConfirmId != null}
+        onOpenChange={(open) => {
+          if (!open) setImageDeleteConfirmId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-serif text-2xl">
+              Remove this image?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This image will be deleted from the property. You can add another
+              image before saving if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void confirmDeleteExistingImage()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove image
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete confirmation */}
       <Dialog

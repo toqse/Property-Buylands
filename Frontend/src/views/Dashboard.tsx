@@ -5,13 +5,14 @@ import { useNavigate } from "@/lib/router";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { useAuth } from "@/context/AuthContext";
-import { type Property, type PropertyStatus } from "@/data/mockData";
+import { type Property } from "@/data/mockData";
 import {
   useMyProperties,
   usePropertyMutations,
 } from "@/hooks/api/useProperties";
 import { usePropertyVideoStatusPolling } from "@/hooks/api/usePropertyVideoStatusPolling";
 import { usePropertyUploadProgress } from "@/hooks/usePropertyUploadProgress";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { usePropertyTypes } from "@/hooks/api/useCatalog";
 import { accountsApi } from "@/lib/api/accounts";
 import {
@@ -45,6 +46,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -90,8 +97,9 @@ import {
   emptyDraft,
   propertyToDraft,
   validateAndParseDraft,
-  scrollToListingField,
+  applyListingValidationError,
   type AddPropertyDraft,
+  type ListingFieldErrors,
 } from "@/components/PropertyListingForm";
 
 const Dashboard = () => {
@@ -127,6 +135,7 @@ const Dashboard = () => {
   const [draft, setDraft] = useState<AddPropertyDraft>(emptyDraft);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [addFieldErrors, setAddFieldErrors] = useState<ListingFieldErrors>({});
 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -135,20 +144,29 @@ const Dashboard = () => {
   const [editDraft, setEditDraft] = useState<AddPropertyDraft>(emptyDraft);
   const [editImageFiles, setEditImageFiles] = useState<File[]>([]);
   const [editVideoFile, setEditVideoFile] = useState<File | null>(null);
-  const [editStatus, setEditStatus] = useState<PropertyStatus>("Pending");
   const [editExistingImages, setEditExistingImages] = useState<
     { id: number; url: string }[]
   >([]);
   const [editExistingVideo, setEditExistingVideo] = useState<string | null>(
     null,
   );
+  const [editFieldErrors, setEditFieldErrors] = useState<ListingFieldErrors>(
+    {},
+  );
   const [deletingImageIds, setDeletingImageIds] = useState<number[]>([]);
+  const [pendingDeleteImageIds, setPendingDeleteImageIds] = useState<number[]>(
+    [],
+  );
+  const [imageDeleteConfirmId, setImageDeleteConfirmId] = useState<
+    number | null
+  >(null);
   const [deletingVideo, setDeletingVideo] = useState(false);
   const editImageInputRef = useRef<HTMLInputElement>(null);
   const editVideoInputRef = useRef<HTMLInputElement>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<Property | null>(null);
   const [retryingVideoId, setRetryingVideoId] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   const [propertiesPage, setPropertiesPage] = useState(1);
   const [propertiesPageSize, setPropertiesPageSize] = useState(5);
@@ -240,6 +258,7 @@ const Dashboard = () => {
     setDraft(emptyDraft);
     setImageFiles([]);
     setVideoFile(null);
+    setAddFieldErrors({});
     if (imageInputRef.current) imageInputRef.current.value = "";
     if (videoInputRef.current) videoInputRef.current.value = "";
   };
@@ -251,22 +270,33 @@ const Dashboard = () => {
     setEditExistingImages([]);
     setEditExistingVideo(null);
     setDeletingImageIds([]);
+    setPendingDeleteImageIds([]);
+    setImageDeleteConfirmId(null);
     setDeletingVideo(false);
+    setEditFieldErrors({});
     if (editImageInputRef.current) editImageInputRef.current.value = "";
     if (editVideoInputRef.current) editVideoInputRef.current.value = "";
   };
 
   const submitProp = async () => {
     if (!user) return;
+    setAddFieldErrors({});
     const parsed = validateAndParseDraft(draft);
     if (!parsed.ok) {
-      toast.error(parsed.message);
-      scrollToListingField(parsed.field);
+      applyListingValidationError(
+        setAddFieldErrors,
+        parsed.message,
+        parsed.field,
+      );
       return;
     }
     const imageError = validatePropertyImages({ newImages: imageFiles.length });
     if (imageError) {
-      toast.error(imageError);
+      applyListingValidationError(
+        setAddFieldErrors,
+        imageError,
+        "uploaded_images",
+      );
       return;
     }
     const mediaError = validatePropertyMedia({
@@ -274,7 +304,11 @@ const Dashboard = () => {
       hasVideo: !!videoFile || !!draft.youtubeLink.trim(),
     });
     if (mediaError) {
-      toast.error(mediaError);
+      applyListingValidationError(
+        setAddFieldErrors,
+        mediaError,
+        "uploaded_images",
+      );
       return;
     }
     try {
@@ -282,7 +316,11 @@ const Dashboard = () => {
         (t) => t.name.toLowerCase() === draft.propertyCategory.toLowerCase(),
       )?.id;
       if (!typeId) {
-        toast.error("Please select a valid property type");
+        applyListingValidationError(
+          setAddFieldErrors,
+          "Please select a valid property type",
+          "property_type",
+        );
         return;
       }
       const fd = buildPropertyFormData(draft, imageFiles, videoFile, {
@@ -310,14 +348,18 @@ const Dashboard = () => {
         addUploadProgress.clearUploadProgress();
       }
     } catch (err) {
-      toast.error(getErrorMessage(err));
-      scrollToListingField(getApiErrorField(err));
+      const apiField = getApiErrorField(err);
+      const message = getErrorMessage(err);
+      if (apiField) {
+        applyListingValidationError(setAddFieldErrors, message, apiField);
+      } else {
+        toast.error(message);
+      }
     }
   };
 
   const openEdit = (p: Property) => {
     setEditDraft(propertyToDraft(p));
-    setEditStatus(p.status);
     setEditImageFiles([]);
     setEditVideoFile(null);
     setEditExistingImages(p.images ?? []);
@@ -327,14 +369,22 @@ const Dashboard = () => {
       !p.videoUrl.includes("youtu.be");
     setEditExistingVideo(isUploadedVideo ? p.videoUrl! : null);
     setDeletingImageIds([]);
+    setPendingDeleteImageIds([]);
+    setImageDeleteConfirmId(null);
     setDeletingVideo(false);
     if (editImageInputRef.current) editImageInputRef.current.value = "";
     if (editVideoInputRef.current) editVideoInputRef.current.value = "";
     setEditTarget(p);
   };
 
-  const handleDeleteExistingImage = async (imageId: number) => {
-    if (!editTarget) return;
+  const requestDeleteExistingImage = (imageId: number) => {
+    setImageDeleteConfirmId(imageId);
+  };
+
+  const confirmDeleteExistingImage = async () => {
+    if (!editTarget || imageDeleteConfirmId == null) return;
+    const imageId = imageDeleteConfirmId;
+    setImageDeleteConfirmId(null);
     setDeletingImageIds((prev) => [...prev, imageId]);
     try {
       await propertyMutations.deleteImage.mutateAsync({
@@ -348,6 +398,14 @@ const Dashboard = () => {
     } finally {
       setDeletingImageIds((prev) => prev.filter((id) => id !== imageId));
     }
+  };
+
+  const handleReplaceExistingImage = (imageId: number, file: File) => {
+    setEditExistingImages((prev) => prev.filter((img) => img.id !== imageId));
+    setEditImageFiles([file]);
+    setPendingDeleteImageIds((prev) =>
+      prev.includes(imageId) ? prev : [...prev, imageId],
+    );
   };
 
   const handleDeleteExistingVideo = async () => {
@@ -384,10 +442,14 @@ const Dashboard = () => {
 
   const saveEdit = async () => {
     if (!editTarget || !user) return;
+    setEditFieldErrors({});
     const parsed = validateAndParseDraft(editDraft);
     if (!parsed.ok) {
-      toast.error(parsed.message);
-      scrollToListingField(parsed.field);
+      applyListingValidationError(
+        setEditFieldErrors,
+        parsed.message,
+        parsed.field,
+      );
       return;
     }
     const imageError = validatePropertyImages({
@@ -395,7 +457,11 @@ const Dashboard = () => {
       existingImages: editExistingImages.length,
     });
     if (imageError) {
-      toast.error(imageError);
+      applyListingValidationError(
+        setEditFieldErrors,
+        imageError,
+        "uploaded_images",
+      );
       return;
     }
     const mediaError = validatePropertyMedia({
@@ -407,7 +473,11 @@ const Dashboard = () => {
         !!editDraft.youtubeLink.trim(),
     });
     if (mediaError) {
-      toast.error(mediaError);
+      applyListingValidationError(
+        setEditFieldErrors,
+        mediaError,
+        "uploaded_images",
+      );
       return;
     }
     try {
@@ -439,6 +509,12 @@ const Dashboard = () => {
           form: fd,
           onUploadProgress,
         });
+        for (const imageId of pendingDeleteImageIds) {
+          await propertyMutations.deleteImage.mutateAsync({
+            id: editTarget.id,
+            imageId,
+          });
+        }
         toast.success(`“${editDraft.title.trim()}” updated`);
         setEditTarget(null);
         resetEditPropertyForm();
@@ -447,8 +523,13 @@ const Dashboard = () => {
         editUploadProgress.clearUploadProgress();
       }
     } catch (err) {
-      toast.error(getErrorMessage(err));
-      scrollToListingField(getApiErrorField(err));
+      const apiField = getApiErrorField(err);
+      const message = getErrorMessage(err);
+      if (apiField) {
+        applyListingValidationError(setEditFieldErrors, message, apiField);
+      } else {
+        toast.error(message);
+      }
     }
   };
 
@@ -1303,178 +1384,337 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Add property — single scrollable form */}
-      <Dialog
-        open={addOpen}
-        onOpenChange={(v) => {
-          setAddOpen(v);
-          if (!v) resetAddPropertyForm();
-        }}
-      >
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0 space-y-1">
-            <DialogTitle className="font-serif text-2xl">
-              Add property
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
-            <ListingFormFields
-              draft={draft}
-              setDraft={setDraft}
-              imageFiles={imageFiles}
-              setImageFiles={setImageFiles}
-              videoFile={videoFile}
-              setVideoFile={setVideoFile}
-              imageInputRef={imageInputRef}
-              videoInputRef={videoInputRef}
-              hideContact
-            />
-          </div>
-
-          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
-            <PropertyUploadProgress
-              active={
-                propertyMutations.create.isPending &&
-                addUploadProgress.trackingVideo
-              }
-              progress={addUploadProgress.progress}
-            />
-            <div className="flex w-full gap-2 sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={propertyMutations.create.isPending}
-              onClick={() => {
-                setAddOpen(false);
-                resetAddPropertyForm();
-              }}
-            >
-              Cancel
-            </Button>
-            <SubmitProgressButton
-              type="button"
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              submitting={propertyMutations.create.isPending}
-              idleLabel="Create Property"
-              messages={
-                addUploadProgress.trackingVideo
-                  ? ["Uploading video…"]
-                  : undefined
-              }
-              onClick={submitProp}
-            />
+      {/* Add property — bottom sheet on mobile, dialog on desktop */}
+      {isMobile ? (
+        <Drawer
+          open={addOpen}
+          onOpenChange={(v) => {
+            setAddOpen(v);
+            if (!v) resetAddPropertyForm();
+          }}
+        >
+          <DrawerContent className="bottom-[60px] z-50 mt-0 max-h-[calc(100dvh-5rem)] rounded-t-3xl flex flex-col gap-0 p-0">
+            <div className="px-6 pt-2 pb-2 shrink-0">
+              <DrawerTitle className="font-serif text-2xl">
+                Add property
+              </DrawerTitle>
+              <DrawerDescription className="sr-only">
+                Add a new property listing
+              </DrawerDescription>
             </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit property dialog — same fields as Add */}
-      <Dialog
-        open={!!editTarget}
-        onOpenChange={(v) => {
-          if (!v) {
-            setEditTarget(null);
-            resetEditPropertyForm();
-          }
-        }}
-      >
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-            <DialogTitle className="font-serif text-2xl">
-              Edit property
-            </DialogTitle>
-          </DialogHeader>
-          <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
-            <ListingFormFields
-              draft={editDraft}
-              setDraft={setEditDraft}
-              imageFiles={editImageFiles}
-              setImageFiles={setEditImageFiles}
-              videoFile={editVideoFile}
-              setVideoFile={setEditVideoFile}
-              imageInputRef={editImageInputRef}
-              videoInputRef={editVideoInputRef}
-              existingImages={editExistingImages}
-              onDeleteExistingImage={handleDeleteExistingImage}
-              deletingImageIds={deletingImageIds}
-              existingVideoUrl={editExistingVideo}
-              onDeleteExistingVideo={handleDeleteExistingVideo}
-              deletingVideo={deletingVideo}
-              videoProcessingStatus={editTarget?.videoProcessingStatus}
-              onRetryVideoProcessing={
-                editTarget?.videoProcessingStatus === "failed"
-                  ? () => void handleRetryVideoProcessing(editTarget)
-                  : undefined
-              }
-              retryingVideoProcessing={retryingVideoId === editTarget?.id}
-              hideContact
-            />
-          </div>
-          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex flex-col gap-4 sm:flex-col">
-            <PropertyUploadProgress
-              active={
-                propertyMutations.update.isPending &&
-                editUploadProgress.trackingVideo
-              }
-              progress={editUploadProgress.progress}
-            />
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between w-full">
-            <div className="space-y-2 w-full sm:max-w-[220px]">
-              <Label>Listing status</Label>
-              <Select
-                value={editStatus}
-                onValueChange={(v) => setEditStatus(v as PropertyStatus)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(
-                    [
-                      "Approved",
-                      "Pending",
-                      "Rejected",
-                      "Sold",
-                      "Rented",
-                    ] as const
-                  ).map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex gap-2 justify-end w-full sm:w-auto">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={propertyMutations.update.isPending}
-                onClick={() => {
-                  setEditTarget(null);
-                  resetEditPropertyForm();
-                }}
-              >
-                Cancel
-              </Button>
-              <SubmitProgressButton
-                type="button"
-                variant="luxe"
-                submitting={propertyMutations.update.isPending}
-                idleLabel="Save changes"
-                messages={
-                  editUploadProgress.trackingVideo
-                    ? ["Uploading video…"]
-                    : undefined
-                }
-                onClick={saveEdit}
+            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+              <ListingFormFields
+                draft={draft}
+                setDraft={setDraft}
+                imageFiles={imageFiles}
+                setImageFiles={setImageFiles}
+                videoFile={videoFile}
+                setVideoFile={setVideoFile}
+                imageInputRef={imageInputRef}
+                videoInputRef={videoInputRef}
+                hideContact
+                fieldErrors={addFieldErrors}
               />
             </div>
+            <div className="px-6 py-4 border-t border-border shrink-0 gap-3 flex flex-col">
+              <PropertyUploadProgress
+                active={
+                  propertyMutations.create.isPending &&
+                  addUploadProgress.trackingVideo
+                }
+                progress={addUploadProgress.progress}
+              />
+              <div className="flex w-full gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={propertyMutations.create.isPending}
+                  onClick={() => {
+                    setAddOpen(false);
+                    resetAddPropertyForm();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <SubmitProgressButton
+                  type="button"
+                  className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
+                  submitting={propertyMutations.create.isPending}
+                  idleLabel="Create Property"
+                  messages={
+                    addUploadProgress.trackingVideo
+                      ? ["Uploading video…"]
+                      : undefined
+                  }
+                  onClick={submitProp}
+                />
+              </div>
             </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        <Dialog
+          open={addOpen}
+          onOpenChange={(v) => {
+            setAddOpen(v);
+            if (!v) resetAddPropertyForm();
+          }}
+        >
+          <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+            <DialogHeader className="px-6 pt-6 pb-2 shrink-0 space-y-1">
+              <DialogTitle className="font-serif text-2xl">
+                Add property
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+              <ListingFormFields
+                draft={draft}
+                setDraft={setDraft}
+                imageFiles={imageFiles}
+                setImageFiles={setImageFiles}
+                videoFile={videoFile}
+                setVideoFile={setVideoFile}
+                imageInputRef={imageInputRef}
+                videoInputRef={videoInputRef}
+                hideContact
+                fieldErrors={addFieldErrors}
+              />
+            </div>
+
+            <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
+              <PropertyUploadProgress
+                active={
+                  propertyMutations.create.isPending &&
+                  addUploadProgress.trackingVideo
+                }
+                progress={addUploadProgress.progress}
+              />
+              <div className="flex w-full gap-2 sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={propertyMutations.create.isPending}
+                  onClick={() => {
+                    setAddOpen(false);
+                    resetAddPropertyForm();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <SubmitProgressButton
+                  type="button"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  submitting={propertyMutations.create.isPending}
+                  idleLabel="Create Property"
+                  messages={
+                    addUploadProgress.trackingVideo
+                      ? ["Uploading video…"]
+                      : undefined
+                  }
+                  onClick={submitProp}
+                />
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Edit property — bottom sheet on mobile, dialog on desktop */}
+      {isMobile ? (
+        <Drawer
+          open={!!editTarget}
+          onOpenChange={(v) => {
+            if (!v) {
+              setEditTarget(null);
+              resetEditPropertyForm();
+            }
+          }}
+        >
+          <DrawerContent className="bottom-[60px] z-50 mt-0 max-h-[calc(100dvh-5rem)] rounded-t-3xl flex flex-col gap-0 p-0">
+            <div className="px-6 pt-2 pb-2 shrink-0">
+              <DrawerTitle className="font-serif text-2xl">
+                Edit property
+              </DrawerTitle>
+              <DrawerDescription className="sr-only">
+                Edit your property listing
+              </DrawerDescription>
+            </div>
+            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+              <ListingFormFields
+                draft={editDraft}
+                setDraft={setEditDraft}
+                imageFiles={editImageFiles}
+                setImageFiles={setEditImageFiles}
+                videoFile={editVideoFile}
+                setVideoFile={setEditVideoFile}
+                imageInputRef={editImageInputRef}
+                videoInputRef={editVideoInputRef}
+                existingImages={editExistingImages}
+                onDeleteExistingImage={requestDeleteExistingImage}
+                onReplaceExistingImage={handleReplaceExistingImage}
+                deletingImageIds={deletingImageIds}
+                existingVideoUrl={editExistingVideo}
+                onDeleteExistingVideo={handleDeleteExistingVideo}
+                deletingVideo={deletingVideo}
+                videoProcessingStatus={editTarget?.videoProcessingStatus}
+                onRetryVideoProcessing={
+                  editTarget?.videoProcessingStatus === "failed"
+                    ? () => void handleRetryVideoProcessing(editTarget)
+                    : undefined
+                }
+              retryingVideoProcessing={retryingVideoId === editTarget?.id}
+              hideContact
+              fieldErrors={editFieldErrors}
+            />
+            </div>
+            <div className="px-6 py-4 border-t border-border shrink-0 flex flex-col gap-4">
+              <PropertyUploadProgress
+                active={
+                  propertyMutations.update.isPending &&
+                  editUploadProgress.trackingVideo
+                }
+                progress={editUploadProgress.progress}
+              />
+              <div className="flex gap-2 w-full">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={propertyMutations.update.isPending}
+                  onClick={() => {
+                    setEditTarget(null);
+                    resetEditPropertyForm();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <SubmitProgressButton
+                  type="button"
+                  variant="luxe"
+                  className="flex-1"
+                  submitting={propertyMutations.update.isPending}
+                  idleLabel="Save changes"
+                  messages={
+                    editUploadProgress.trackingVideo
+                      ? ["Uploading video…"]
+                      : undefined
+                  }
+                  onClick={saveEdit}
+                />
+              </div>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        <Dialog
+          open={!!editTarget}
+          onOpenChange={(v) => {
+            if (!v) {
+              setEditTarget(null);
+              resetEditPropertyForm();
+            }
+          }}
+        >
+          <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+            <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+              <DialogTitle className="font-serif text-2xl">
+                Edit property
+              </DialogTitle>
+            </DialogHeader>
+            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-6 min-h-0">
+              <ListingFormFields
+                draft={editDraft}
+                setDraft={setEditDraft}
+                imageFiles={editImageFiles}
+                setImageFiles={setEditImageFiles}
+                videoFile={editVideoFile}
+                setVideoFile={setEditVideoFile}
+                imageInputRef={editImageInputRef}
+                videoInputRef={editVideoInputRef}
+                existingImages={editExistingImages}
+                onDeleteExistingImage={requestDeleteExistingImage}
+                onReplaceExistingImage={handleReplaceExistingImage}
+                deletingImageIds={deletingImageIds}
+                existingVideoUrl={editExistingVideo}
+                onDeleteExistingVideo={handleDeleteExistingVideo}
+                deletingVideo={deletingVideo}
+                videoProcessingStatus={editTarget?.videoProcessingStatus}
+                onRetryVideoProcessing={
+                  editTarget?.videoProcessingStatus === "failed"
+                    ? () => void handleRetryVideoProcessing(editTarget)
+                    : undefined
+                }
+              retryingVideoProcessing={retryingVideoId === editTarget?.id}
+              hideContact
+              fieldErrors={editFieldErrors}
+            />
+            </div>
+            <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-3 flex-col sm:flex-col">
+              <PropertyUploadProgress
+                active={
+                  propertyMutations.update.isPending &&
+                  editUploadProgress.trackingVideo
+                }
+                progress={editUploadProgress.progress}
+              />
+              <div className="flex gap-2 justify-end w-full">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={propertyMutations.update.isPending}
+                  onClick={() => {
+                    setEditTarget(null);
+                    resetEditPropertyForm();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <SubmitProgressButton
+                  type="button"
+                  variant="luxe"
+                  submitting={propertyMutations.update.isPending}
+                  idleLabel="Save changes"
+                  messages={
+                    editUploadProgress.trackingVideo
+                      ? ["Uploading video…"]
+                      : undefined
+                  }
+                  onClick={saveEdit}
+                />
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete image confirmation */}
+      <AlertDialog
+        open={imageDeleteConfirmId != null}
+        onOpenChange={(open) => {
+          if (!open) setImageDeleteConfirmId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-serif text-2xl">
+              Remove this image?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This image will be deleted from the property. You can add another
+              image before saving if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void confirmDeleteExistingImage()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove image
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete confirmation */}
       <AlertDialog

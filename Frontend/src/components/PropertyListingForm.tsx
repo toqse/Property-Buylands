@@ -3,6 +3,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type Dispatch,
   type LegacyRef,
   type RefObject,
@@ -187,6 +188,26 @@ export const emptyDraft: AddPropertyDraft = {
 
 const formCardClass =
   "rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4";
+
+export type ListingFieldErrors = Partial<Record<string, string>>;
+
+export function ListingFieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <p className="text-sm text-destructive mt-1.5" role="alert">
+      {message}
+    </p>
+  );
+}
+
+export function applyListingValidationError(
+  setFieldErrors: (errors: ListingFieldErrors) => void,
+  message: string,
+  field?: string,
+) {
+  setFieldErrors(field ? { [field]: message } : {});
+  scrollToListingField(field);
+}
 
 const MAX_EMAIL_LEN = 254;
 const MAX_CONTACT_NAME_LEN = 120;
@@ -707,8 +728,10 @@ export type ListingFormFieldsProps = {
   videoInputRef: RefObject<HTMLInputElement | null>;
   /** Already-saved images (edit mode). Rendered with a delete control. */
   existingImages?: ExistingImage[];
-  /** Called when the user deletes an already-saved image. */
+  /** Called when the user requests deletion of an already-saved image (confirm in parent). */
   onDeleteExistingImage?: (id: number) => void;
+  /** Called when the user replaces a single existing image (staged until save). */
+  onReplaceExistingImage?: (imageId: number, file: File) => void;
   /** Set of image ids currently being deleted (shows a busy state). */
   deletingImageIds?: number[];
   /** Already-uploaded property video URL (edit mode). */
@@ -726,6 +749,8 @@ export type ListingFormFieldsProps = {
   hideContact?: boolean;
   /** When true, hide Property Ownership (owner always lists their own property). */
   hideOwnership?: boolean;
+  /** Inline validation errors keyed by `data-field` name. */
+  fieldErrors?: ListingFieldErrors;
 };
 
 export function ListingFormFields({
@@ -739,6 +764,7 @@ export function ListingFormFields({
   videoInputRef,
   existingImages = [],
   onDeleteExistingImage,
+  onReplaceExistingImage,
   deletingImageIds = [],
   existingVideoUrl,
   onDeleteExistingVideo,
@@ -748,7 +774,46 @@ export function ListingFormFields({
   retryingVideoProcessing = false,
   hideContact = false,
   hideOwnership = false,
+  fieldErrors = {},
 }: ListingFormFieldsProps) {
+  const replaceImageInputRef = useRef<HTMLInputElement>(null);
+  const [replaceTarget, setReplaceTarget] = useState<
+    { type: "existing"; imageId: number } | { type: "new"; index: number } | null
+  >(null);
+  const [newImagePreviewUrls, setNewImagePreviewUrls] = useState<string[]>([]);
+
+  const totalImageCount = existingImages.length + imageFiles.length;
+
+  useEffect(() => {
+    const urls = imageFiles.map((file) => URL.createObjectURL(file));
+    setNewImagePreviewUrls(urls);
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [imageFiles]);
+
+  const openReplacePicker = (
+    target: { type: "existing"; imageId: number } | { type: "new"; index: number },
+  ) => {
+    setReplaceTarget(target);
+    replaceImageInputRef.current?.click();
+  };
+
+  const handleReplaceImageSelected = (file: File | undefined) => {
+    if (!file || !replaceTarget) return;
+    if (replaceTarget.type === "existing") {
+      onReplaceExistingImage?.(replaceTarget.imageId, file);
+    } else {
+      setImageFiles((prev) =>
+        prev.map((current, index) =>
+          index === replaceTarget.index ? file : current,
+        ),
+      );
+    }
+    setReplaceTarget(null);
+    if (replaceImageInputRef.current) replaceImageInputRef.current.value = "";
+  };
+
   const { data: statesData } = useStates();
   const { data: propertyTypesData } = usePropertyTypes();
   const { data: featuresData } = useFeatures();
@@ -787,6 +852,8 @@ export function ListingFormFields({
         .name as Property["category"],
     }));
   }, [draft.propertyCategory, propertyTypesData?.results, setDraft]);
+
+  const fieldError = (field: string) => fieldErrors[field];
 
   return (
     <>
@@ -829,6 +896,7 @@ export function ListingFormFields({
                   ))}
                 </SelectContent>
               </Select>
+              <ListingFieldError message={fieldError("ownership")} />
             </div>
           ) : null}
         </div>
@@ -872,6 +940,7 @@ export function ListingFormFields({
                   }))
                 }
               />
+              <ListingFieldError message={fieldError("email")} />
             </div>
             <div className="space-y-2 min-w-0" data-field="whatsapp_number">
               <Label>WhatsApp Number</Label>
@@ -894,6 +963,7 @@ export function ListingFormFields({
                   }
                 />
               </div>
+              <ListingFieldError message={fieldError("whatsapp_number")} />
             </div>
             <div className="space-y-2 min-w-0" data-field="phone_number">
               <Label>Phone Number</Label>
@@ -911,6 +981,7 @@ export function ListingFormFields({
                   }))
                 }
               />
+              <ListingFieldError message={fieldError("phone_number")} />
             </div>
           </div>
         </div>
@@ -945,6 +1016,7 @@ export function ListingFormFields({
               searchPlaceholder="Search states…"
               emptyText="No states found."
             />
+            <ListingFieldError message={fieldError("state")} />
           </div>
           <div className="space-y-2" data-field="district">
             <Label>District</Label>
@@ -973,6 +1045,7 @@ export function ListingFormFields({
               emptyText="No districts found."
               className={cn(!draft.stateId && "opacity-60")}
             />
+            <ListingFieldError message={fieldError("district")} />
           </div>
           <div className="space-y-2" data-field="city">
             <Label>Place / City</Label>
@@ -996,6 +1069,7 @@ export function ListingFormFields({
                 }))
               }
             />
+            <ListingFieldError message={fieldError("city")} />
           </div>
         </div>
       </div>
@@ -1013,6 +1087,7 @@ export function ListingFormFields({
                 setDraft((d) => ({ ...d, title: e.target.value }))
               }
             />
+            <ListingFieldError message={fieldError("title")} />
           </div>
           <div className="space-y-2 min-w-0" data-field="price">
             <Label>Price</Label>
@@ -1028,8 +1103,9 @@ export function ListingFormFields({
                 }))
               }
             />
+            <ListingFieldError message={fieldError("price")} />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2" data-field="property_type">
             <Label>Property Type</Label>
             <Select
               value={draft.propertyCategory}
@@ -1058,6 +1134,7 @@ export function ListingFormFields({
                 ))}
               </SelectContent>
             </Select>
+            <ListingFieldError message={fieldError("property_type")} />
           </div>
           {!typeFlags.has_area_both ? (
             <div className="space-y-2 min-w-0">
@@ -1104,6 +1181,7 @@ export function ListingFormFields({
                     }))
                   }
                 />
+                <ListingFieldError message={fieldError("area")} />
               </div>
               <div className="space-y-2 min-w-0" data-field="area_cent">
                 <Label>Area (Cent)</Label>
@@ -1119,6 +1197,7 @@ export function ListingFormFields({
                     }))
                   }
                 />
+                <ListingFieldError message={fieldError("area_cent")} />
               </div>
             </>
           ) : (
@@ -1143,6 +1222,7 @@ export function ListingFormFields({
                   }))
                 }
               />
+              <ListingFieldError message={fieldError("area")} />
             </div>
           )}
         </div>
@@ -1240,6 +1320,7 @@ export function ListingFormFields({
                   ))}
                 </SelectContent>
               </Select>
+              <ListingFieldError message={fieldError("project_status")} />
             </div>
           ) : null}
           {typeFlags.has_floors ? (
@@ -1272,6 +1353,7 @@ export function ListingFormFields({
                   ))}
                 </SelectContent>
               </Select>
+              <ListingFieldError message={fieldError("sighting")} />
             </div>
           ) : null}
           <div
@@ -1290,6 +1372,7 @@ export function ListingFormFields({
                 setDraft((d) => ({ ...d, googleMapUrl: e.target.value }))
               }
             />
+            <ListingFieldError message={fieldError("google_maps_url")} />
           </div>
         </div>
       </div>
@@ -1452,48 +1535,118 @@ export function ListingFormFields({
       </div>
 
       {/* Property Images */}
-      <div className={formCardClass}>
+      <div
+        className={cn(
+          formCardClass,
+          fieldError("uploaded_images") && "border-destructive/60",
+        )}
+        data-field="uploaded_images"
+      >
         <div className="flex items-center justify-between gap-2">
           <h3 className="font-semibold text-foreground">Property Images</h3>
           <span className="text-xs text-muted-foreground">
-            {existingImages.length + imageFiles.length}/{MAX_PROPERTY_IMAGES}{" "}
-            (optional)
+            {totalImageCount}/{MAX_PROPERTY_IMAGES}
           </span>
         </div>
-        {existingImages.length > 0 ? (
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              Current images
-            </p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-              {existingImages.map((img) => {
-                const busy = deletingImageIds.includes(img.id);
-                return (
-                  <div
-                    key={img.id}
-                    className="group relative aspect-square overflow-hidden rounded-xl border border-border bg-muted/20"
-                  >
+        <ListingFieldError message={fieldError("uploaded_images")} />
+        <input
+          ref={replaceImageInputRef as LegacyRef<HTMLInputElement>}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            handleReplaceImageSelected(e.target.files?.[0]);
+          }}
+        />
+        {totalImageCount > 0 ? (
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4">
+            {existingImages.map((img) => {
+              const busy = deletingImageIds.includes(img.id);
+              const showReplace = totalImageCount === 1;
+              return (
+                <div
+                  key={`existing-${img.id}`}
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-muted/20 sm:rounded-xl"
+                >
+                  <img
+                    src={img.url}
+                    alt="Property"
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  {showReplace && onReplaceExistingImage ? (
+                    <button
+                      type="button"
+                      aria-label="Replace image"
+                      disabled={busy}
+                      onClick={() =>
+                        openReplacePicker({ type: "existing", imageId: img.id })
+                      }
+                      className="absolute right-1 top-1 rounded-full border border-border bg-background/95 px-2 py-0.5 text-[10px] font-medium text-foreground shadow-md transition hover:bg-background disabled:opacity-60 sm:right-1.5 sm:top-1.5 sm:px-2.5 sm:py-1 sm:text-[11px]"
+                    >
+                      Replace
+                    </button>
+                  ) : onDeleteExistingImage ? (
+                    <button
+                      type="button"
+                      aria-label="Delete image"
+                      disabled={busy}
+                      onClick={() => onDeleteExistingImage(img.id)}
+                      className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-md transition hover:bg-destructive/90 disabled:opacity-60 sm:right-1.5 sm:top-1.5 sm:h-7 sm:w-7"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+            {imageFiles.map((file, index) => {
+              const previewUrl = newImagePreviewUrls[index];
+              const showReplace = totalImageCount === 1;
+              return (
+                <div
+                  key={`new-${file.name}-${index}`}
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-muted/20 sm:rounded-xl"
+                >
+                  {previewUrl ? (
                     <img
-                      src={img.url}
-                      alt="Property"
+                      src={previewUrl}
+                      alt={file.name}
                       className="h-full w-full object-cover"
-                      loading="lazy"
                     />
-                    {onDeleteExistingImage ? (
-                      <button
-                        type="button"
-                        aria-label="Delete image"
-                        disabled={busy}
-                        onClick={() => onDeleteExistingImage(img.id)}
-                        className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-md transition hover:bg-destructive/90 disabled:opacity-60"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center p-3 text-center text-xs text-muted-foreground">
+                      {file.name}
+                    </div>
+                  )}
+                  {showReplace ? (
+                    <button
+                      type="button"
+                      aria-label="Replace image"
+                      onClick={() =>
+                        openReplacePicker({ type: "new", index })
+                      }
+                      className="absolute right-1 top-1 rounded-full border border-border bg-background/95 px-2 py-0.5 text-[10px] font-medium text-foreground shadow-md transition hover:bg-background sm:right-1.5 sm:top-1.5 sm:px-2.5 sm:py-1 sm:text-[11px]"
+                    >
+                      Replace
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label="Remove image"
+                      onClick={() =>
+                        setImageFiles((prev) =>
+                          prev.filter((_, fileIndex) => fileIndex !== index),
+                        )
+                      }
+                      className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-md transition hover:bg-destructive/90 sm:right-1.5 sm:top-1.5 sm:h-7 sm:w-7"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : null}
         <input
@@ -1515,7 +1668,7 @@ export function ListingFormFields({
             if (imageInputRef.current) imageInputRef.current.value = "";
           }}
         />
-        {existingImages.length + imageFiles.length < MAX_PROPERTY_IMAGES ? (
+        {totalImageCount < MAX_PROPERTY_IMAGES ? (
           <div
             role="button"
             tabIndex={0}
@@ -1545,14 +1698,14 @@ export function ListingFormFields({
               }
             }}
             onClick={() => imageInputRef.current?.click()}
-            className="border-2 border-dashed border-border rounded-xl p-10 text-center hover:border-gold/50 transition-colors cursor-pointer bg-muted/10"
+            className="border-2 border-dashed border-border rounded-xl px-4 py-5 text-center hover:border-gold/50 transition-colors cursor-pointer bg-muted/10 sm:p-10"
           >
-            <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-            <p className="font-medium text-sm text-foreground">
+            <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-1.5 sm:h-8 sm:w-8 sm:mb-2" />
+            <p className="font-medium text-xs text-foreground sm:text-sm">
               Drag & drop files or click to select
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Up to {MAX_PROPERTY_IMAGES} images. You can add{" "}
+            <p className="text-[11px] text-muted-foreground mt-0.5 sm:text-xs sm:mt-1">
+              Add at least one photo or a video. You can add{" "}
               {MAX_PROPERTY_IMAGES - existingImages.length - imageFiles.length}{" "}
               more.
             </p>
@@ -1563,25 +1716,6 @@ export function ListingFormFields({
             add another.
           </p>
         )}
-        {imageFiles.length > 0 ? (
-          <ul className="text-xs text-muted-foreground space-y-1 max-h-24 overflow-y-auto">
-            {imageFiles.map((f, i) => (
-              <li key={`${f.name}-${i}`} className="flex justify-between gap-2">
-                <span className="truncate">{f.name}</span>
-                <button
-                  type="button"
-                  className="text-destructive shrink-0 hover:underline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setImageFiles((prev) => prev.filter((_, j) => j !== i));
-                  }}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
       </div>
     </>
   );
