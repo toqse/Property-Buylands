@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useNavigate } from "@/lib/router";
+import { useNavigate, buildAppPath } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import { useUserLocation } from "@/context/UserLocationContext";
 import { isBrowserReload } from "@/lib/browserReload";
@@ -142,7 +142,7 @@ export function LocationSearch({
       }
 
       const qs = params.toString();
-      navigate(qs ? `${listingBasePath}?${qs}` : listingBasePath);
+      navigate(buildAppPath(listingBasePath, qs), { replace: true });
     },
     [listingBasePath, pathname, coords, navigate, radius],
   );

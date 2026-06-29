@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Link, NavLink, useNavigate } from "@/lib/router";
+import { Link, NavLink, useNavigate, buildAppPath } from "@/lib/router";
 import { User, LogOut, LayoutDashboard, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "./Logo";
@@ -32,9 +32,9 @@ function navHrefFor(
   search: string,
 ): string {
   if (LISTING_PATHS.has(target) && pathname === target && search) {
-    return `${target}?${search}`;
+    return buildAppPath(target, search);
   }
-  return target;
+  return target.endsWith("/") || target === "/" ? target : `${target}/`;
 }
 
 /** Client-only listing query string — avoids useSearchParams (breaks static export). */

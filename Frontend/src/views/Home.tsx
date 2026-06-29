@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "@/lib/router";
+import { Link, useNavigate, buildAppPath } from "@/lib/router";
 import {
   ArrowRight,
   Bath,
@@ -316,7 +316,7 @@ const Home = () => {
     params.set("lat", String(coords.latitude));
     params.set("lng", String(coords.longitude));
     params.set("radius", String(radiusKm));
-    navigate(`/properties?${params.toString()}`);
+    navigate(buildAppPath("/properties", params.toString()));
     consumeFirstVisitAutoFilter();
   }, [firstVisitAutoFilterPending, coords, radiusKm, navigate, consumeFirstVisitAutoFilter]);
 
@@ -464,7 +464,7 @@ const Home = () => {
     });
 
     const qs = params.toString();
-    navigate(qs ? `${base}?${qs}` : base);
+    navigate(buildAppPath(base, qs));
   };
 
   return (

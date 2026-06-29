@@ -19,6 +19,15 @@ export function notifyListingSearchChanged(): void {
   }
 }
 
+/** Build an app path respecting `trailingSlash: true` in next.config. */
+export function buildAppPath(pathname: string, queryString?: string): string {
+  const base = pathname.endsWith("/") ? pathname : `${pathname}/`;
+  const qs = queryString?.replace(/^\?/, "") ?? "";
+  return qs ? `${base}?${qs}` : base;
+}
+
+export type NavigateOptions = { replace?: boolean };
+
 export function Link({
   to,
   children,
@@ -34,13 +43,14 @@ export function Link({
 export function useNavigate() {
   const router = useRouter();
 
-  return (to: string | number) => {
+  return (to: string | number, options?: NavigateOptions) => {
     if (typeof to === "number") {
       if (to < 0) router.back();
       else router.forward();
       return;
     }
-    router.push(to);
+    if (options?.replace) router.replace(to);
+    else router.push(to);
     if (isListingNavigation(to)) {
       notifyListingSearchChanged();
     }

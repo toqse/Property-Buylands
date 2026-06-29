@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSearchParams, useNavigate } from "@/lib/router";
+import { useSearchParams, useNavigate, buildAppPath } from "@/lib/router";
 import { usePathname } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
@@ -399,8 +399,15 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   const effectiveFilterKey =
     filterKeyOverride ?? (searchKey || stableFilterKeyRef.current);
 
+  const prevListingPathRef = useRef(pathname);
   useEffect(() => {
-    window.scrollTo(0, 0);
+    if (prevListingPathRef.current !== pathname) {
+      window.scrollTo(0, 0);
+      prevListingPathRef.current = pathname;
+    }
+  }, [pathname]);
+
+  useEffect(() => {
     if (skipUrlHydrationRef.current) {
       skipUrlHydrationRef.current = false;
       return;
@@ -510,7 +517,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
           setFilterKeyOverride(qs);
           pendingFilterParamsRef.current = qs;
           skipUrlHydrationRef.current = true;
-          navigate(qs ? `${pathname}?${qs}` : pathname);
+          navigate(buildAppPath(pathname, qs), { replace: true });
         }
       } else {
         setLocation("Any");
@@ -560,7 +567,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       pendingFilterParamsRef.current = qs || null;
       stableFilterKeyRef.current = qs;
       setFilterKeyOverride(qs);
-      navigate(qs ? `${pathname}?${qs}` : pathname);
+      navigate(buildAppPath(pathname, qs), { replace: true });
     },
     [searchParams, searchRadius, pathname, navigate],
   );
@@ -889,7 +896,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     ],
   );
 
-  const { data, isLoading, isError, isFetching, isFetched, fetchStatus } = usePropertyList(
+  const { data, isLoading, isError, isFetching } = usePropertyList(
     listFilters,
     {
       keepPreviousPage: false,
@@ -897,8 +904,8 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     },
   );
 
-  const listSettling =
-    isLoading || isFetching || !isFetched || fetchStatus === "fetching";
+  const listSettling = isLoading && !data;
+  const isFilterRefreshing = isFetching && Boolean(data);
 
   useEffect(() => {
     setPage(1);
@@ -919,7 +926,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       stableFilterKeyRef.current = qs;
       setFilterKeyOverride(qs);
       skipUrlHydrationRef.current = true;
-      navigate(qs ? `${pathname}?${qs}` : pathname);
+      navigate(buildAppPath(pathname, qs), { replace: true });
       setPage(1);
     },
     [pathname, navigate],
@@ -1100,7 +1107,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     stableFilterKeyRef.current = "";
     setFilterKeyOverride("");
     skipUrlHydrationRef.current = true;
-    navigate(pathname);
+    navigate(buildAppPath(pathname), { replace: true });
     void queryClient.invalidateQueries({ queryKey: ["properties"] });
   };
 
@@ -1558,10 +1565,10 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
           </Dialog>
           )}
 
-          <div>
+          <div className={cn(isFilterRefreshing && "opacity-60 transition-opacity duration-200")}>
           <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
             <div>
-              <span className="text-lg font-normal">{listSettling ? "…" : propertyCount}</span>
+              <span className={cn("text-lg font-normal", isFilterRefreshing && "animate-pulse")}>{listSettling ? "…" : propertyCount}</span>
               <span className="text-muted-foreground ml-2">properties found</span>
             </div>
           </div>
