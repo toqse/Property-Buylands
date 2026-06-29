@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, useNavigate } from "@/lib/router";
+import { usePathname } from "next/navigation";
+import { Link, NavLink, useNavigate, useSearchParams } from "@/lib/router";
 import { User, LogOut, LayoutDashboard, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "./Logo";
@@ -23,12 +24,28 @@ const links = [
   { to: "/contact", label: "Contact" },
 ];
 
+const LISTING_PATHS = new Set(["/buy", "/rent", "/properties"]);
+
+function navHrefFor(
+  target: string,
+  pathname: string,
+  search: string,
+): string {
+  if (LISTING_PATHS.has(target) && pathname === target && search) {
+    return `${target}?${search}`;
+  }
+  return target;
+}
+
 export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
   const [open, setOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const pathname = usePathname() ?? "/";
+  const [searchParams] = useSearchParams();
+  const listingSearch = searchParams.toString();
 
   useEffect(() => {
     if (variant !== "transparent") return;
@@ -75,7 +92,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
           {links.map((l) => (
             <NavLink
               key={l.to}
-              to={l.to}
+              to={navHrefFor(l.to, pathname, listingSearch)}
               end={l.to === "/"}
               className={({ isActive }) =>
                 cn(
@@ -161,7 +178,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
             {links.map((l) => (
               <NavLink
                 key={l.to}
-                to={l.to}
+                to={navHrefFor(l.to, pathname, listingSearch)}
                 end={l.to === "/"}
                 onClick={() => setOpen(false)}
                 className={({ isActive }) =>

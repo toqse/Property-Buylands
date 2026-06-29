@@ -1,5 +1,5 @@
 import { apiRequest, toQueryString, unwrapPaginated, type PaginatedResponse } from "@/lib/api/client";
-import type { ApiProperty, FeedItem } from "@/lib/api/types";
+import type { ApiProperty, ApiPropertyVideoProcessingStatus, FeedItem } from "@/lib/api/types";
 
 export type PropertyListParams = Record<string, string | number | boolean | undefined>;
 
@@ -170,6 +170,16 @@ export const propertiesApi = {
         method: "POST",
         auth: true,
       },
+    );
+  },
+
+  getVideoProcessingStatuses(ids: (string | number)[]) {
+    if (!ids.length) {
+      return Promise.resolve({ results: [] as ApiPropertyVideoProcessingStatus[] });
+    }
+    return apiRequest<{ results: ApiPropertyVideoProcessingStatus[] }>(
+      `properties/properties/video-processing-status/${toQueryString({ ids: ids.join(",") })}`,
+      { auth: true },
     );
   },
 

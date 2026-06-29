@@ -58,6 +58,8 @@ import {
   PropertyTypeRoomSearchFields,
   PropertyTypeSearchFields,
 } from "@/components/PropertyTypeSearchFields";
+import { ActiveListingFiltersBar } from "@/components/ActiveListingFiltersBar";
+import { buildActiveListingFilterChips } from "@/lib/listingActiveFilters";
 
 const PRICE_RANGES: { value: string; label: string; min: number; max: number }[] = [
   { value: "any", label: "Any price", min: 0, max: 5000000 },
@@ -72,9 +74,41 @@ type FeatureOption = { id: number; name: string };
 
 const PROPERTY_FOR_PILLS: { value: string; label: string }[] = [
   { value: "Any", label: "All" },
-  { value: "Sale", label: "Sale" },
+  { value: "For Sale", label: "Sale" },
   { value: "For Rent", label: "Rent" },
 ];
+
+function urlHasNonLocationFilters(params: URLSearchParams): boolean {
+  return [...params.keys()].some((k) => !["lat", "lng", "radius", "location"].includes(k));
+}
+
+/** Prefer the live browser URL — React `searchParams` can lag behind `navigate()`. */
+function readLiveSearchParams(fallback: URLSearchParams): URLSearchParams {
+  if (typeof window === "undefined") return new URLSearchParams(fallback.toString());
+  const live = window.location.search.slice(1);
+  if (live) return new URLSearchParams(live);
+  return new URLSearchParams(fallback.toString());
+}
+
+/** Merge live URL, React params, and a pending apply-navigate query (router may lag). */
+function mergeNavigationSearchParams(
+  reactParams: URLSearchParams,
+  pendingQuery: string | null,
+): URLSearchParams {
+  const merged = readLiveSearchParams(reactParams);
+  if (pendingQuery) {
+    const pending = new URLSearchParams(pendingQuery);
+    for (const [key, value] of pending.entries()) {
+      if (!merged.has(key)) merged.set(key, value);
+    }
+  }
+  return merged;
+}
+
+function normalizePropertyForType(value: string): string {
+  if (value === "Sale") return "For Sale";
+  return value;
+}
 
 const mobileFilterLabelClass =
   "mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[hsl(30_10%_38%)]";
@@ -189,6 +223,8 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   } = useUserLocation();
   const listingSection = getListingSection(pathname);
   const skipUrlHydrationRef = useRef(isBrowserReload());
+  /** Holds filter URL from Apply until router + window.location catch up. */
+  const pendingFilterParamsRef = useRef<string | null>(null);
 
   const readInitialParam = (key: string, fallback: string) => {
     if (skipUrlHydrationRef.current) return fallback;
@@ -234,6 +270,43 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       : [];
   });
 
+  /** Draft filter state — edited in the modal; committed to applied state on "Apply filters". */
+  const [draftCategory, setDraftCategory] = useState(initialCategory);
+  const [draftType, setDraftType] = useState(initialType);
+  const [draftTypeFilters, setDraftTypeFilters] = useState<PropertyTypeSearchFilterState>(() => ({
+    ...DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS,
+    ...(skipUrlHydrationRef.current
+      ? {}
+      : readTypeSearchFiltersFromUrlParams(searchParams)),
+  }));
+  const [draftPrice, setDraftPrice] = useState<number[]>([initialMin, initialMax]);
+  const [draftPriceRange, setDraftPriceRange] = useState("any");
+  const [draftFeatures, setDraftFeatures] = useState<number[]>(() => {
+    if (skipUrlHydrationRef.current) return [];
+    const f = searchParams.get("features");
+    return f
+      ? f
+          .split(",")
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isFinite(n))
+      : [];
+  });
+  const [draftLocation, setDraftLocation] = useState("Any");
+  const [draftSearchRadius, setDraftSearchRadius] = useState(String(defaultRadiusKm));
+  const [draftSelectedPlaceGeo, setDraftSelectedPlaceGeo] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const draftPlaceGeoRef = useRef<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const draftLocationSearchCandidateRef = useRef<LocationSelection | null>(null);
+
+  /** Drives the property list API — updated on Apply/Reset and when the URL changes. */
+  const stableFilterKeyRef = useRef(searchParams.toString());
+  const [filterKeyOverride, setFilterKeyOverride] = useState<string | null>(null);
+
   const [sort, setSort] = useState("newest");
   const isMobile = useIsMobile();
   const { data: propertyTypesData } = usePropertyTypes();
@@ -256,14 +329,6 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     pageSize: 100,
     propertyFor: propertyForFilter,
   });
-  const categoryOptions = useMemo(() => {
-    const names = propertyTypesData?.results?.map((t) => t.name) ?? [];
-    const options = ["All", ...names];
-    // Keep a URL-provided category selectable even if it isn't (yet) in the
-    // backend list, so the Select shows the active value instead of going blank.
-    if (category !== "All" && !names.includes(category)) options.push(category);
-    return options;
-  }, [propertyTypesData, category]);
   const locationCoordsByLabel = useMemo(
     () => buildLocationCoordsMap(locationData?.results ?? []),
     [locationData?.results],
@@ -288,14 +353,59 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     [listingSection],
   );
 
+  const syncDraftFromApplied = useCallback(() => {
+    setDraftCategory(category);
+    setDraftType(type);
+    setDraftTypeFilters({ ...typeFilters });
+    setDraftPrice([...price]);
+    setDraftPriceRange(priceRange);
+    setDraftFeatures([...features]);
+    setDraftLocation(location);
+    setDraftSearchRadius(searchRadius);
+    draftPlaceGeoRef.current = selectedPlaceGeoRef.current;
+    setDraftSelectedPlaceGeo(selectedPlaceGeo);
+    draftLocationSearchCandidateRef.current = locationSearchCandidateRef.current;
+  }, [
+    category,
+    type,
+    typeFilters,
+    price,
+    priceRange,
+    features,
+    location,
+    searchRadius,
+    selectedPlaceGeo,
+  ]);
+
+  useEffect(() => {
+    syncDraftFromApplied();
+  }, [showFilters, syncDraftFromApplied]);
+
   // Re-sync filters whenever the URL query string changes (e.g. user clicks a
   // category chip after already being on /buy). Depend on the stringified
   // search params so the effect actually re-runs on URL change.
   const searchKey = searchParams.toString();
+
+  useEffect(() => {
+    const key = searchParams.toString();
+    if (key) {
+      stableFilterKeyRef.current = key;
+      if (filterKeyOverride !== null && key === filterKeyOverride) {
+        setFilterKeyOverride(null);
+      }
+    }
+  }, [searchKey, searchParams, filterKeyOverride]);
+
+  const effectiveFilterKey =
+    filterKeyOverride ?? (searchKey || stableFilterKeyRef.current);
+
   useEffect(() => {
     window.scrollTo(0, 0);
     if (skipUrlHydrationRef.current) {
       skipUrlHydrationRef.current = false;
+      return;
+    }
+    if (!searchParams.toString() && stableFilterKeyRef.current) {
       return;
     }
     const qParam = searchParams.get("q") || "";
@@ -360,12 +470,14 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       if (r) setSearchRadius(r);
       setLocation(CURRENT_LOCATION_VALUE);
       setAutoCurrentLocationDismissed(false);
+    } else if (urlHasNonLocationFilters(searchParams)) {
+      setLocation("Any");
+      setSearchRadius(r || String(defaultRadiusKm));
+      setAutoCurrentLocationDismissed(true);
+      selectedPlaceGeoRef.current = null;
+      setSelectedPlaceGeo(null);
     } else {
-      // No URL location → prefer this section's own local override, then the
-      // website-wide (global) location. If neither exists, mirror the navbar's
-      // default by auto-applying the current location once the browser grants
-      // coordinates (autoCurrentLocationDismissed = false enables the effect
-      // below to do so).
+      // Bare page visit — restore this section's saved location preference.
       const resolved =
         readSectionLocationPrefs(listingSection) ?? readGlobalLocationPrefs();
       if (resolved) {
@@ -378,6 +490,28 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
             : null;
         selectedPlaceGeoRef.current = geo;
         setSelectedPlaceGeo(geo);
+        const hasGeoInUrl =
+          searchParams.get("lat") &&
+          searchParams.get("lng") &&
+          searchParams.get("location");
+        if (
+          geo &&
+          resolved.location !== "Any" &&
+          !hasGeoInUrl &&
+          !pendingFilterParamsRef.current
+        ) {
+          const params = mergeNavigationSearchParams(searchParams, null);
+          params.set("lat", String(geo.latitude));
+          params.set("lng", String(geo.longitude));
+          params.set("radius", resolved.searchRadius);
+          params.set("location", resolved.location);
+          const qs = params.toString();
+          stableFilterKeyRef.current = qs;
+          setFilterKeyOverride(qs);
+          pendingFilterParamsRef.current = qs;
+          skipUrlHydrationRef.current = true;
+          navigate(qs ? `${pathname}?${qs}` : pathname);
+        }
       } else {
         setLocation("Any");
         setSearchRadius(String(defaultRadiusKm));
@@ -395,8 +529,12 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       options?: { locationLabel?: string; locationQuery?: string; radius?: string },
       baseParams?: URLSearchParams,
     ) => {
+      if (!baseParams && pendingFilterParamsRef.current) return;
       const params = new URLSearchParams(
-        baseParams?.toString() ?? searchParams.toString(),
+        mergeNavigationSearchParams(
+          baseParams ?? searchParams,
+          pendingFilterParamsRef.current,
+        ).toString(),
       );
       const nextRadius = options?.radius ?? searchRadius;
       if (geo) {
@@ -419,24 +557,31 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         }
       }
       const qs = params.toString();
+      pendingFilterParamsRef.current = qs || null;
+      stableFilterKeyRef.current = qs;
+      setFilterKeyOverride(qs);
       navigate(qs ? `${pathname}?${qs}` : pathname);
     },
     [searchParams, searchRadius, pathname, navigate],
   );
 
   useEffect(() => {
-    if (pendingCurrentLocation && coords) {
-      setLocation(CURRENT_LOCATION_VALUE);
-      setAutoCurrentLocationDismissed(false);
-      persistSectionLocationPrefs({
-        location: CURRENT_LOCATION_VALUE,
-        searchRadius,
-        autoCurrentLocationDismissed: false,
-      });
-      setPendingCurrentLocation(false);
-      if (!searchParams.get("lat") || !searchParams.get("lng")) {
-        syncLocationToUrl({ latitude: coords.latitude, longitude: coords.longitude });
-      }
+    if (!pendingCurrentLocation || !coords || pendingFilterParamsRef.current) return;
+    setLocation(CURRENT_LOCATION_VALUE);
+    setAutoCurrentLocationDismissed(false);
+    persistSectionLocationPrefs({
+      location: CURRENT_LOCATION_VALUE,
+      searchRadius,
+      autoCurrentLocationDismissed: false,
+    });
+    setPendingCurrentLocation(false);
+    const liveParams = mergeNavigationSearchParams(searchParams, pendingFilterParamsRef.current);
+    if (!liveParams.get("lat") || !liveParams.get("lng")) {
+      syncLocationToUrl(
+        { latitude: coords.latitude, longitude: coords.longitude },
+        undefined,
+        liveParams,
+      );
     }
   }, [pendingCurrentLocation, coords, persistSectionLocationPrefs, searchRadius, searchParams, syncLocationToUrl]);
 
@@ -449,7 +594,11 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   }, [location, coords, pendingCurrentLocation, locationStatus, requestLocationForFilter]);
 
   useEffect(() => {
-    if (!firstVisitAutoFilterPending || !coords) return;
+    if (!firstVisitAutoFilterPending || !coords || pendingFilterParamsRef.current) return;
+    if (urlHasNonLocationFilters(mergeNavigationSearchParams(searchParams, pendingFilterParamsRef.current))) {
+      consumeFirstVisitAutoFilter();
+      return;
+    }
     const nextRadius = String(defaultRadiusKm);
     setLocation(CURRENT_LOCATION_VALUE);
     setSearchRadius(nextRadius);
@@ -466,6 +615,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     syncLocationToUrl(
       { latitude: coords.latitude, longitude: coords.longitude },
       { radius: nextRadius },
+      mergeNavigationSearchParams(searchParams, null),
     );
     consumeFirstVisitAutoFilter();
   }, [
@@ -477,49 +627,80 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     consumeFirstVisitAutoFilter,
   ]);
 
-  const clearLocationFilter = useCallback(() => {
-    setSelectedPlaceGeo(null);
-    selectedPlaceGeoRef.current = null;
-    locationSearchCandidateRef.current = null;
-    const nextRadius = String(defaultRadiusKm);
-    setLocation("Any");
-    setSearchRadius(nextRadius);
-    setAutoCurrentLocationDismissed(true);
-    setPage(1);
-    writeSectionLocationPrefs(listingSection, {
-      location: "Any",
-      searchRadius: nextRadius,
-      autoCurrentLocationDismissed: true,
-    });
-    setNavbarToAllLocations(defaultRadiusKm);
-    syncLocationToUrl(null, { radius: nextRadius });
+  const typeFlags = useMemo(
+    () =>
+      category === "All"
+        ? DEFAULT_PROPERTY_TYPE_FLAGS
+        : findPropertyTypeFlags(propertyTypesData?.results, category),
+    [category, propertyTypesData?.results],
+  );
 
-    void queryClient.invalidateQueries({ queryKey: ["properties"] });
-  }, [
-    syncLocationToUrl,
-    queryClient,
-    listingSection,
-    defaultRadiusKm,
-  ]);
+  const draftPropertyForFilter =
+    normalizePropertyForType(draftType) === "For Rent"
+      ? ("rent" as const)
+      : normalizePropertyForType(draftType) === "For Sale"
+        ? ("sell" as const)
+        : defaultType === "For Rent"
+          ? ("rent" as const)
+          : defaultType === "For Sale"
+            ? ("sell" as const)
+            : undefined;
 
-  const handleLocationSelect = useCallback(
+  const draftCategoryOptions = useMemo(() => {
+    const names = propertyTypesData?.results?.map((t) => t.name) ?? [];
+    const options = ["All", ...names];
+    if (draftCategory !== "All" && !names.includes(draftCategory)) options.push(draftCategory);
+    return options;
+  }, [propertyTypesData, draftCategory]);
+
+  const draftTypeFlags = useMemo(
+    () =>
+      draftCategory === "All"
+        ? DEFAULT_PROPERTY_TYPE_FLAGS
+        : findPropertyTypeFlags(propertyTypesData?.results, draftCategory),
+    [draftCategory, propertyTypesData?.results],
+  );
+
+  const handleDraftCategoryChange = useCallback(
+    (value: string) => {
+      setDraftCategory(value);
+      const flags =
+        value === "All"
+          ? DEFAULT_PROPERTY_TYPE_FLAGS
+          : findPropertyTypeFlags(propertyTypesData?.results, value);
+      setDraftTypeFilters((prev) => ({ ...prev, ...clearSearchFiltersForFlags(flags) }));
+    },
+    [propertyTypesData?.results],
+  );
+
+  const patchDraftTypeFilters = useCallback(
+    (patch: Partial<PropertyTypeSearchFilterState>) => {
+      setDraftTypeFilters((prev) => ({ ...prev, ...patch }));
+    },
+    [],
+  );
+
+  const clearDraftLocation = useCallback(() => {
+    draftPlaceGeoRef.current = null;
+    setDraftSelectedPlaceGeo(null);
+    draftLocationSearchCandidateRef.current = null;
+    setDraftLocation("Any");
+    setDraftSearchRadius(String(defaultRadiusKm));
+  }, [defaultRadiusKm]);
+
+  const handleDraftLocationSelect = useCallback(
     (selection: LocationSelection | null) => {
-      locationSearchCandidateRef.current = null;
+      draftLocationSearchCandidateRef.current = null;
       if (!selection || selection.source === "all") {
-        clearLocationFilter();
+        clearDraftLocation();
         return;
       }
       if (selection.source === "current") {
-        setPendingCurrentLocation(true);
-        void requestLocationForFilter().then((result) => {
-          if (!result) {
-            setPendingCurrentLocation(false);
-          }
-        });
+        setDraftLocation(CURRENT_LOCATION_VALUE);
+        void requestLocationForFilter();
         return;
       }
-      setAutoCurrentLocationDismissed(true);
-      setLocation(selection.label);
+      setDraftLocation(selection.label);
       let geo: { latitude: number; longitude: number } | null = null;
       if (
         selection.latitude != null &&
@@ -531,220 +712,270 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       } else {
         geo = locationCoordsByLabel.get(selection.label) ?? null;
       }
-      selectedPlaceGeoRef.current = geo;
-      setSelectedPlaceGeo(geo);
-      persistSectionLocationPrefs({
-        location: selection.label,
-        searchRadius,
-        autoCurrentLocationDismissed: true,
-        latitude: geo?.latitude,
-        longitude: geo?.longitude,
-      });
+      draftPlaceGeoRef.current = geo;
+      setDraftSelectedPlaceGeo(geo);
     },
-    [
-      requestLocationForFilter,
-      clearLocationFilter,
-      persistSectionLocationPrefs,
-      searchRadius,
-      locationCoordsByLabel,
-    ],
+    [clearDraftLocation, requestLocationForFilter, locationCoordsByLabel],
   );
 
-  const handleLocationSearchCandidateChange = useCallback((selection: LocationSelection | null) => {
-    locationSearchCandidateRef.current = selection;
+  const handleDraftLocationSearchCandidateChange = useCallback((selection: LocationSelection | null) => {
+    draftLocationSearchCandidateRef.current = selection;
   }, []);
 
-  const propertyTypeId = useMemo(() => {
-    if (category === "All") return undefined;
-    const match = propertyTypesData?.results?.find(
-      (t) => t.name.toLowerCase() === category.toLowerCase(),
-    );
-    return match?.id;
-  }, [category, propertyTypesData]);
-
-  const typeFlags = useMemo(
+  const draftLocationSelection = useMemo(
     () =>
-      category === "All"
-        ? DEFAULT_PROPERTY_TYPE_FLAGS
-        : findPropertyTypeFlags(propertyTypesData?.results, category),
-    [category, propertyTypesData?.results],
-  );
-
-  const handleCategoryChange = useCallback(
-    (value: string) => {
-      setCategory(value);
-      const flags =
-        value === "All"
-          ? DEFAULT_PROPERTY_TYPE_FLAGS
-          : findPropertyTypeFlags(propertyTypesData?.results, value);
-      setTypeFilters((prev) => ({ ...prev, ...clearSearchFiltersForFlags(flags) }));
-    },
-    [propertyTypesData?.results],
-  );
-
-  const patchTypeFilters = useCallback(
-    (patch: Partial<PropertyTypeSearchFilterState>) => {
-      setTypeFilters((prev) => ({ ...prev, ...patch }));
-    },
-    [],
-  );
-
-  const geoFromUrl = useMemo(() => {
-    const latRaw = searchParams.get("lat");
-    const lngRaw = searchParams.get("lng");
-    const lat = latRaw ? Number(latRaw) : NaN;
-    const lng = lngRaw ? Number(lngRaw) : NaN;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    const radiusRaw = searchParams.get("radius");
-    const radius = radiusRaw ? Number(radiusRaw) : defaultRadiusKm;
-    return { latitude: lat, longitude: lng, radius: Number.isFinite(radius) ? radius : defaultRadiusKm };
-  }, [searchParams, defaultRadiusKm]);
-
-  const activeGeo = useMemo(() => {
-    if (searchParams.get("location") === "Any") return null;
-    if (location === "Any") return null;
-    const radius = Number(searchRadius) || defaultRadiusKm;
-    const radiusKm = Number.isFinite(radius) ? radius : defaultRadiusKm;
-
-    if (location === CURRENT_LOCATION_VALUE) {
-      const source = geoFromUrl ?? (coords ? { latitude: coords.latitude, longitude: coords.longitude } : null);
-      if (!source) return null;
-      return { latitude: source.latitude, longitude: source.longitude, radius: radiusKm };
-    }
-
-    if (searchParams.get("location") === location && geoFromUrl) {
-      return { latitude: geoFromUrl.latitude, longitude: geoFromUrl.longitude, radius: radiusKm };
-    }
-
-    const selectedGeo = selectedPlaceGeoRef.current ?? selectedPlaceGeo;
-    if (selectedGeo) {
-      return {
-        latitude: selectedGeo.latitude,
-        longitude: selectedGeo.longitude,
-        radius: radiusKm,
-      };
-    }
-
-    const place = locationCoordsByLabel.get(location);
-    if (place) {
-      return { latitude: place.latitude, longitude: place.longitude, radius: radiusKm };
-    }
-
-    return null;
-  }, [geoFromUrl, coords, location, searchRadius, defaultRadiusKm, locationCoordsByLabel, searchParams, selectedPlaceGeo]);
-
-  const showRadiusFilter = location !== "Any";
-  const isCurrentLocationFilter = location === CURRENT_LOCATION_VALUE;
-  const hasPlaceCoordinates =
-    location !== "Any" &&
-    !isCurrentLocationFilter &&
-    (locationCoordsByLabel.has(location) || selectedPlaceGeo != null);
-  const textLocationQuery = getLocationSearchValue(location);
-
-  const locationSelection = useMemo(
-    () =>
-      locationStringToSelection(location, {
+      locationStringToSelection(draftLocation, {
         allValue: "Any",
         allLabel: "No location filter",
         currentLocationLabel: "My current location",
-        latitude: selectedPlaceGeo?.latitude ?? geoFromUrl?.latitude,
-        longitude: selectedPlaceGeo?.longitude ?? geoFromUrl?.longitude,
-        source: selectedPlaceGeo || geoFromUrl ? "osm" : undefined,
+        latitude: draftSelectedPlaceGeo?.latitude,
+        longitude: draftSelectedPlaceGeo?.longitude,
+        source: draftSelectedPlaceGeo ? "osm" : undefined,
       }),
-    [location, selectedPlaceGeo, geoFromUrl],
+    [draftLocation, draftSelectedPlaceGeo],
   );
 
-  const typeApiParams = useMemo(
-    () => propertyTypeSearchListParams(typeFlags, typeFilters),
-    [typeFlags, typeFilters],
+  const draftShowRadiusFilter = draftLocation !== "Any";
+  const draftIsCurrentLocationFilter = draftLocation === CURRENT_LOCATION_VALUE;
+  const draftHasPlaceCoordinates =
+    draftLocation !== "Any" &&
+    !draftIsCurrentLocationFilter &&
+    (locationCoordsByLabel.has(draftLocation) || draftSelectedPlaceGeo != null);
+
+  const queryFilterParams = useMemo(
+    () => new URLSearchParams(effectiveFilterKey),
+    [effectiveFilterKey],
   );
+
+  const queryCategory = queryFilterParams.get("category") || "All";
+  const queryType = normalizePropertyForType(
+    queryFilterParams.get("type") || defaultType || "Any",
+  );
+  const queryTypeFlags = useMemo(
+    () =>
+      queryCategory === "All"
+        ? DEFAULT_PROPERTY_TYPE_FLAGS
+        : findPropertyTypeFlags(propertyTypesData?.results, queryCategory),
+    [queryCategory, propertyTypesData?.results],
+  );
+  const queryTypeFilters = useMemo(
+    () => ({
+      ...DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS,
+      ...readTypeSearchFiltersFromUrlParams(queryFilterParams),
+    }),
+    [effectiveFilterKey, queryFilterParams],
+  );
+  const queryTypeApiParams = useMemo(
+    () => propertyTypeSearchListParams(queryTypeFlags, queryTypeFilters),
+    [queryTypeFlags, queryTypeFilters],
+  );
+  const queryPropertyTypeId = useMemo(() => {
+    if (queryCategory === "All") return undefined;
+    const match = propertyTypesData?.results?.find(
+      (t) => t.name.toLowerCase() === queryCategory.toLowerCase(),
+    );
+    return match?.id;
+  }, [queryCategory, propertyTypesData]);
+  const queryPrice = useMemo(() => {
+    const minPriceRaw = queryFilterParams.get("minPrice");
+    const maxPriceRaw = queryFilterParams.get("maxPrice");
+    const min = minPriceRaw !== null ? Math.max(0, Number(minPriceRaw) || 0) : 0;
+    const max =
+      maxPriceRaw !== null ? Math.max(min, Number(maxPriceRaw) || 5000000) : 5000000;
+    return [min, max] as const;
+  }, [effectiveFilterKey, queryFilterParams]);
+  const queryFeatures = useMemo(() => {
+    const featuresRaw = queryFilterParams.get("features");
+    return featuresRaw
+      ? featuresRaw
+          .split(",")
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isFinite(n))
+      : [];
+  }, [effectiveFilterKey, queryFilterParams]);
+  const querySearch = queryFilterParams.get("q")?.trim() || "";
+
+  const queryGeo = useMemo(() => {
+    const loc = queryFilterParams.get("location");
+    if (!loc || loc === "Any") return null;
+    const lat = Number(queryFilterParams.get("lat"));
+    const lng = Number(queryFilterParams.get("lng"));
+    const radius = Number(queryFilterParams.get("radius")) || defaultRadiusKm;
+    const radiusKm = Number.isFinite(radius) ? radius : defaultRadiusKm;
+    if (loc === CURRENT_LOCATION_VALUE) {
+      const source =
+        Number.isFinite(lat) && Number.isFinite(lng)
+          ? { latitude: lat, longitude: lng }
+          : coords
+            ? { latitude: coords.latitude, longitude: coords.longitude }
+            : null;
+      if (!source) return null;
+      return { ...source, radius: radiusKm };
+    }
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { latitude: lat, longitude: lng, radius: radiusKm };
+    }
+    const place = locationCoordsByLabel.get(loc);
+    if (place) {
+      return { latitude: place.latitude, longitude: place.longitude, radius: radiusKm };
+    }
+    return null;
+  }, [effectiveFilterKey, queryFilterParams, coords, defaultRadiusKm, locationCoordsByLabel]);
+
+  const queryTextLocation = queryGeo
+    ? undefined
+    : getLocationSearchValue(queryFilterParams.get("location") || "");
 
   const listFilters = useMemo(
     () => ({
       page,
       pageSize,
-      search: q || undefined,
+      search: querySearch || undefined,
       propertyFor:
-        type === "For Rent" ? ("rent" as const) : type === "For Sale" ? ("sell" as const) : defaultType === "For Rent" ? ("rent" as const) : defaultType === "For Sale" ? ("sell" as const) : undefined,
-      priceMin: price[0] > 0 ? price[0] : undefined,
-      priceMax: price[1] < 5000000 ? price[1] : undefined,
-      propertyType: propertyTypeId,
-      bedroomsMin: typeApiParams.bedrooms_min as number | undefined,
-      bedroomsMax: typeApiParams.bedrooms_max as number | undefined,
-      bathroomsMin: typeApiParams.bathrooms_min as number | undefined,
-      bathroomsMax: typeApiParams.bathrooms_max as number | undefined,
-      areaMin: typeApiParams.area_min as string | number | undefined,
-      areaMax: typeApiParams.area_max as string | number | undefined,
-      areaUnit: typeApiParams.area_unit as string | undefined,
-      areaCentMin: typeApiParams.area_cent_min as string | number | undefined,
-      areaCentMax: typeApiParams.area_cent_max as string | number | undefined,
-      furnishing: typeApiParams.furnishing as string | undefined,
-      parkingSpacesMin: typeApiParams.parking_spaces_min as number | undefined,
-      projectStatus: typeApiParams.project_status as string | undefined,
-      floors: typeApiParams.floors as string | undefined,
-      sighting: typeApiParams.sighting as string | undefined,
-      features: features.length ? features : undefined,
-      location: activeGeo ? undefined : textLocationQuery,
-      latitude: activeGeo?.latitude,
-      longitude: activeGeo?.longitude,
-      radius: activeGeo?.radius,
+        queryType === "For Rent"
+          ? ("rent" as const)
+          : queryType === "For Sale"
+            ? ("sell" as const)
+            : defaultType === "For Rent"
+              ? ("rent" as const)
+              : defaultType === "For Sale"
+                ? ("sell" as const)
+                : undefined,
+      priceMin: queryPrice[0] > 0 ? queryPrice[0] : undefined,
+      priceMax: queryPrice[1] < 5000000 ? queryPrice[1] : undefined,
+      propertyType: queryPropertyTypeId,
+      bedroomsMin: queryTypeApiParams.bedrooms_min as number | undefined,
+      bedroomsMax: queryTypeApiParams.bedrooms_max as number | undefined,
+      bathroomsMin: queryTypeApiParams.bathrooms_min as number | undefined,
+      bathroomsMax: queryTypeApiParams.bathrooms_max as number | undefined,
+      areaMin: queryTypeApiParams.area_min as string | number | undefined,
+      areaMax: queryTypeApiParams.area_max as string | number | undefined,
+      areaUnit: queryTypeApiParams.area_unit as string | undefined,
+      areaCentMin: queryTypeApiParams.area_cent_min as string | number | undefined,
+      areaCentMax: queryTypeApiParams.area_cent_max as string | number | undefined,
+      furnishing: queryTypeApiParams.furnishing as string | undefined,
+      parkingSpacesMin: queryTypeApiParams.parking_spaces_min as number | undefined,
+      projectStatus: queryTypeApiParams.project_status as string | undefined,
+      floors: queryTypeApiParams.floors as string | undefined,
+      sighting: queryTypeApiParams.sighting as string | undefined,
+      features: queryFeatures.length ? queryFeatures : undefined,
+      location: queryGeo ? undefined : queryTextLocation,
+      latitude: queryGeo?.latitude,
+      longitude: queryGeo?.longitude,
+      radius: queryGeo?.radius,
       includeAds: true,
       ordering:
         sort === "low"
           ? "price"
           : sort === "high"
             ? "-price"
-            : activeGeo && sort === "newest"
+            : queryGeo && sort === "newest"
               ? "distance"
               : "-created_at",
     }),
-    [page, pageSize, q, type, defaultType, price, propertyTypeId, typeApiParams, features, textLocationQuery, activeGeo, sort],
+    [
+      page,
+      pageSize,
+      querySearch,
+      queryType,
+      defaultType,
+      queryPrice,
+      queryPropertyTypeId,
+      queryTypeApiParams,
+      queryFeatures,
+      queryTextLocation,
+      queryGeo,
+      sort,
+    ],
   );
 
-  const { data, isLoading, isError } = usePropertyList(listFilters);
+  const { data, isLoading, isError, isFetching, isFetched, fetchStatus } = usePropertyList(
+    listFilters,
+    {
+      keepPreviousPage: false,
+      staleTime: 0,
+    },
+  );
+
+  const listSettling =
+    isLoading || isFetching || !isFetched || fetchStatus === "fetching";
 
   useEffect(() => {
     setPage(1);
-  }, [q, location, category, type, typeFilters, price, features, sort, pageSize, searchRadius]);
+  }, [effectiveFilterKey, sort, pageSize]);
 
-  const toggleFeature = (f: number) => setFeatures((p) => (p.includes(f) ? p.filter((x) => x !== f) : [...p, f]));
-  const handlePriceRange = (value: string) => {
-    setPriceRange(value);
+  const toggleDraftFeature = (f: number) =>
+    setDraftFeatures((p) => (p.includes(f) ? p.filter((x) => x !== f) : [...p, f]));
+  const handleDraftPriceRange = (value: string) => {
+    setDraftPriceRange(value);
     const opt = PRICE_RANGES.find((o) => o.value === value);
-    if (opt) setPrice([opt.min, opt.max]);
+    if (opt) setDraftPrice([opt.min, opt.max]);
   };
   const applyFilters = () => {
     const nextQ = searchInput.trim();
+    const nextCategory = draftCategory;
+    const nextType = normalizePropertyForType(draftType);
+    const nextTypeFilters = { ...draftTypeFilters };
+    const nextPrice = [...draftPrice];
+    const nextFeatures = [...draftFeatures];
+    const nextLocation = draftLocation;
+    const nextSearchRadius = draftSearchRadius;
+    const nextSelectedPlaceGeo = draftSelectedPlaceGeo;
+    const nextTypeFlags =
+      nextCategory === "All"
+        ? DEFAULT_PROPERTY_TYPE_FLAGS
+        : findPropertyTypeFlags(propertyTypesData?.results, nextCategory);
+
+    selectedPlaceGeoRef.current = draftPlaceGeoRef.current;
+    setSelectedPlaceGeo(nextSelectedPlaceGeo);
+    locationSearchCandidateRef.current = draftLocationSearchCandidateRef.current;
+
     setQ(nextQ);
-    const params = new URLSearchParams(searchParams.toString());
+    setCategory(nextCategory);
+    setType(nextType);
+    setTypeFilters(nextTypeFilters);
+    setPrice(nextPrice);
+    setPriceRange(draftPriceRange);
+    setFeatures(nextFeatures);
+    setLocation(nextLocation);
+    setSearchRadius(nextSearchRadius);
+    setPage(1);
 
+    if (nextLocation === CURRENT_LOCATION_VALUE) {
+      if (coords) setPendingCurrentLocation(false);
+      else setPendingCurrentLocation(true);
+    } else {
+      setPendingCurrentLocation(false);
+    }
+
+    const params = new URLSearchParams();
     if (nextQ) params.set("q", nextQ);
-    else params.delete("q");
-    if (category !== "All") params.set("category", category);
-    else params.delete("category");
-    if (type !== "Any") params.set("type", type);
-    else params.delete("type");
-    if (price[0] > 0) params.set("minPrice", String(price[0]));
-    else params.delete("minPrice");
-    if (price[1] < 5000000) params.set("maxPrice", String(price[1]));
-    else params.delete("maxPrice");
-    if (features.length) params.set("features", features.join(","));
-    else params.delete("features");
-    replaceTypeSearchFiltersInUrlParams(params, typeFlags, typeFilters);
+    if (nextCategory !== "All") params.set("category", nextCategory);
+    if (nextType !== "Any") params.set("type", nextType);
+    if (nextPrice[0] > 0) params.set("minPrice", String(nextPrice[0]));
+    if (nextPrice[1] < 5000000) params.set("maxPrice", String(nextPrice[1]));
+    if (nextFeatures.length) params.set("features", nextFeatures.join(","));
+    replaceTypeSearchFiltersInUrlParams(params, nextTypeFlags, nextTypeFilters);
 
-    if (location === CURRENT_LOCATION_VALUE && coords) {
-      syncLocationToUrl(
-        { latitude: coords.latitude, longitude: coords.longitude },
-        undefined,
-        params,
-      );
+    if (nextLocation === CURRENT_LOCATION_VALUE && coords) {
+      params.set("lat", String(coords.latitude));
+      params.set("lng", String(coords.longitude));
+      params.set("radius", nextSearchRadius);
+      params.set("location", CURRENT_LOCATION_VALUE);
+      setAutoCurrentLocationDismissed(false);
       persistSectionLocationPrefs({
         location: CURRENT_LOCATION_VALUE,
-        searchRadius,
+        searchRadius: nextSearchRadius,
         autoCurrentLocationDismissed: false,
       });
-    } else if (location === "Any" && locationSearchCandidateRef.current) {
-      const candidate = locationSearchCandidateRef.current;
+    } else if (nextLocation === CURRENT_LOCATION_VALUE && !coords) {
+      setAutoCurrentLocationDismissed(false);
+      params.delete("lat");
+      params.delete("lng");
+      params.delete("radius");
+      params.delete("location");
+    } else if (nextLocation === "Any" && draftLocationSearchCandidateRef.current) {
+      const candidate = draftLocationSearchCandidateRef.current;
       const latitude = candidate.latitude;
       const longitude = candidate.longitude;
       if (
@@ -753,40 +984,61 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         Number.isFinite(latitude) &&
         Number.isFinite(longitude)
       ) {
-        const place = { latitude, longitude };
-        syncLocationToUrl(place, { locationLabel: candidate.label }, params);
+        params.set("lat", String(latitude));
+        params.set("lng", String(longitude));
+        params.set("radius", nextSearchRadius);
+        params.set("location", candidate.label);
+        setAutoCurrentLocationDismissed(true);
         persistSectionLocationPrefs({
           location: candidate.label,
-          searchRadius,
+          searchRadius: nextSearchRadius,
           autoCurrentLocationDismissed: true,
           latitude,
           longitude,
         });
-      } else {
-        syncLocationToUrl(null, undefined, params);
       }
-    } else if (location !== "Any" && location !== CURRENT_LOCATION_VALUE) {
-      const place = selectedPlaceGeoRef.current ?? selectedPlaceGeo ?? locationCoordsByLabel.get(location);
+    } else if (nextLocation !== "Any" && nextLocation !== CURRENT_LOCATION_VALUE) {
+      const place =
+        draftPlaceGeoRef.current ??
+        nextSelectedPlaceGeo ??
+        locationCoordsByLabel.get(nextLocation);
       if (place) {
-        syncLocationToUrl(place, { locationLabel: location }, params);
+        params.set("lat", String(place.latitude));
+        params.set("lng", String(place.longitude));
+        params.set("radius", nextSearchRadius);
+        params.set("location", nextLocation);
       } else {
-        syncLocationToUrl(null, { locationQuery: textLocationQuery }, params);
+        const locationQuery = getLocationSearchValue(nextLocation);
+        if (locationQuery) params.set("location", locationQuery);
       }
+      setAutoCurrentLocationDismissed(true);
       persistSectionLocationPrefs({
-        location,
-        searchRadius,
+        location: nextLocation,
+        searchRadius: nextSearchRadius,
         autoCurrentLocationDismissed: true,
         latitude: place?.latitude,
         longitude: place?.longitude,
       });
     } else {
-      syncLocationToUrl(null, undefined, params);
+      params.delete("lat");
+      params.delete("lng");
+      params.delete("radius");
+      params.delete("location");
+      setAutoCurrentLocationDismissed(true);
       persistSectionLocationPrefs({
         location: "Any",
-        searchRadius,
+        searchRadius: nextSearchRadius,
         autoCurrentLocationDismissed: true,
       });
     }
+
+    skipUrlHydrationRef.current = true;
+    consumeFirstVisitAutoFilter();
+    const qs = params.toString();
+    pendingFilterParamsRef.current = qs || null;
+    stableFilterKeyRef.current = qs;
+    setFilterKeyOverride(qs);
+    navigate(qs ? `${pathname}?${qs}` : pathname);
     setShowFilters(false);
   };
 
@@ -796,16 +1048,27 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setSelectedPlaceGeo(null);
     selectedPlaceGeoRef.current = null;
     locationSearchCandidateRef.current = null;
+    draftPlaceGeoRef.current = null;
+    setDraftSelectedPlaceGeo(null);
+    draftLocationSearchCandidateRef.current = null;
     const nextRadius = String(defaultRadiusKm);
     setLocation("Any");
     setSearchRadius(nextRadius);
+    setDraftLocation("Any");
+    setDraftSearchRadius(nextRadius);
     setAutoCurrentLocationDismissed(true);
     setCategory("All");
+    setDraftCategory("All");
     setType("Any");
+    setDraftType("Any");
     setTypeFilters(DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS);
+    setDraftTypeFilters(DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS);
     setPrice([0, 5000000]);
+    setDraftPrice([0, 5000000]);
     setPriceRange("any");
+    setDraftPriceRange("any");
     setFeatures([]);
+    setDraftFeatures([]);
     setPage(1);
     writeSectionLocationPrefs(listingSection, {
       location: "Any",
@@ -813,14 +1076,53 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
       autoCurrentLocationDismissed: true,
     });
     setNavbarToAllLocations(defaultRadiusKm);
+    setPendingCurrentLocation(false);
+    pendingFilterParamsRef.current = null;
+    stableFilterKeyRef.current = "";
+    setFilterKeyOverride("");
+    skipUrlHydrationRef.current = true;
     navigate(pathname);
     void queryClient.invalidateQueries({ queryKey: ["properties"] });
   };
 
-  const feedItems = data?.items ?? [];
+  const feedItems = listSettling ? [] : (data?.items ?? []);
   const propertyCount = data?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(propertyCount / pageSize));
   const safePage = Math.min(Math.max(page, 1), totalPages);
+
+  const activeFilterChips = useMemo(
+    () =>
+      buildActiveListingFilterChips({
+        q: querySearch,
+        category: queryCategory,
+        type: queryType,
+        defaultType,
+        location:
+          queryFilterParams.get("location") ||
+          (queryFilterParams.get("lat") ? CURRENT_LOCATION_VALUE : "Any"),
+        searchRadius: queryFilterParams.get("radius") || String(defaultRadiusKm),
+        price: [...queryPrice],
+        priceRange,
+        features: queryFeatures,
+        featureOptions,
+        typeFlags: queryTypeFlags,
+        typeFilters: queryTypeFilters,
+      }),
+    [
+      querySearch,
+      queryCategory,
+      queryType,
+      defaultType,
+      queryFilterParams,
+      defaultRadiusKm,
+      queryPrice,
+      priceRange,
+      queryFeatures,
+      featureOptions,
+      queryTypeFlags,
+      queryTypeFilters,
+    ],
+  );
 
   const gridSlots = feedItems;
   const mobileSlots = feedItems;
@@ -877,6 +1179,11 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
             </div>
           </div>
 
+          <ActiveListingFiltersBar
+            chips={activeFilterChips}
+            onClearAll={resetFilters}
+          />
+
           {isMobile ? (
             <Drawer open={showFilters} onOpenChange={setShowFilters}>
               <DrawerContent className="bottom-[60px] z-50 mt-0 max-h-[calc(100dvh-5rem)] rounded-t-3xl">
@@ -903,10 +1210,10 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     <Label className={mobileFilterLabelClass}>Location</Label>
                     <LocationSearchSelect
                       instanceId="properties-mobile-filter-location"
-                      value={locationSelection}
-                      onChange={handleLocationSelect}
-                      onSearchCandidateChange={handleLocationSearchCandidateChange}
-                      propertyFor={propertyForFilter}
+                      value={draftLocationSelection}
+                      onChange={handleDraftLocationSelect}
+                      onSearchCandidateChange={handleDraftLocationSearchCandidateChange}
+                      propertyFor={draftPropertyForFilter}
                       variant="modal"
                       allValue="Any"
                       allLabel="No location filter"
@@ -918,7 +1225,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   <button
                     type="button"
                     onClick={() =>
-                      handleLocationSelect(
+                      handleDraftLocationSelect(
                         locationStringToSelection(CURRENT_LOCATION_VALUE, {
                           currentLocationLabel: "My current location",
                         }),
@@ -929,10 +1236,10 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     <LocateFixed className="h-4 w-4" /> Use my current location
                   </button>
 
-                  {showRadiusFilter && (
+                  {draftShowRadiusFilter && (
                     <div>
                       <Label className={mobileFilterLabelClass}>Search Radius</Label>
-                      <Select value={searchRadius} onValueChange={setSearchRadius}>
+                      <Select value={draftSearchRadius} onValueChange={setDraftSearchRadius}>
                         <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
                           <SelectValue placeholder="Within 10 km" />
                         </SelectTrigger>
@@ -952,8 +1259,8 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                       {PROPERTY_FOR_PILLS.map((p) => (
                         <FilterChip
                           key={p.value}
-                          active={type === p.value}
-                          onClick={() => setType(p.value)}
+                          active={draftType === p.value}
+                          onClick={() => setDraftType(p.value)}
                           className="flex-1"
                         >
                           {p.label}
@@ -965,12 +1272,12 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   {/* Property Type */}
                   <div>
                     <Label className={mobileFilterLabelClass}>Property Type</Label>
-                    <Select value={category} onValueChange={handleCategoryChange}>
+                    <Select value={draftCategory} onValueChange={handleDraftCategoryChange}>
                       <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
                         <SelectValue placeholder="All types" />
                       </SelectTrigger>
                       <SelectContent>
-                        {categoryOptions.map((c) => (
+                        {draftCategoryOptions.map((c) => (
                           <SelectItem key={c} value={c}>{c === "All" ? "All types" : c}</SelectItem>
                         ))}
                       </SelectContent>
@@ -978,9 +1285,9 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   </div>
 
                   <PropertyTypeRoomSearchFields
-                    typeFlags={typeFlags}
-                    filters={typeFilters}
-                    onChange={patchTypeFilters}
+                    typeFlags={draftTypeFlags}
+                    filters={draftTypeFilters}
+                    onChange={patchDraftTypeFilters}
                     labelClassName={mobileFilterLabelClass}
                     triggerClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
                     sectionLabelClassName={mobileFilterLabelClass}
@@ -988,9 +1295,9 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <PropertyTypeSearchFields
-                      typeFlags={typeFlags}
-                      filters={typeFilters}
-                      onChange={patchTypeFilters}
+                      typeFlags={draftTypeFlags}
+                      filters={draftTypeFilters}
+                      onChange={patchDraftTypeFilters}
                       hideRoomFilters
                       labelClassName={mobileFilterLabelClass}
                       triggerClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
@@ -1001,7 +1308,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   {/* Price Range */}
                   <div>
                     <Label className={mobileFilterLabelClass}>Price Range</Label>
-                    <Select value={priceRange} onValueChange={handlePriceRange}>
+                    <Select value={draftPriceRange} onValueChange={handleDraftPriceRange}>
                       <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]">
                         <SelectValue placeholder="Any price" />
                       </SelectTrigger>
@@ -1016,7 +1323,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   {/* Features */}
                   <div>
                     <Label className={mobileFilterLabelClass}>Features</Label>
-                    <FeaturesField options={featureOptions} selected={features} onToggle={toggleFeature} />
+                    <FeaturesField options={featureOptions} selected={draftFeatures} onToggle={toggleDraftFeature} />
                   </div>
                 </div>
 
@@ -1054,10 +1361,10 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                       <div className="relative min-w-0 flex-1">
                         <LocationSearchSelect
                           instanceId="properties-desktop-filter-location"
-                          value={locationSelection}
-                          onChange={handleLocationSelect}
-                          onSearchCandidateChange={handleLocationSearchCandidateChange}
-                          propertyFor={propertyForFilter}
+                          value={draftLocationSelection}
+                          onChange={handleDraftLocationSelect}
+                          onSearchCandidateChange={handleDraftLocationSearchCandidateChange}
+                          propertyFor={draftPropertyForFilter}
                           variant="modal"
                           allValue="Any"
                           allLabel="No location filter"
@@ -1065,39 +1372,39 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                           placeholder="Select or search a location"
                         />
                       </div>
-                      {location !== "Any" && (
+                      {draftLocation !== "Any" && (
                         <Button
                           type="button"
                           variant="outline"
                           className="h-12 shrink-0 rounded-xl px-3"
                           aria-label="Clear location filter"
-                          onClick={clearLocationFilter}
+                          onClick={clearDraftLocation}
                         >
                           <X className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
-                    {isCurrentLocationFilter && (
+                    {draftIsCurrentLocationFilter && (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Showing properties within {searchRadius} km of your current location
+                        Showing properties within {draftSearchRadius} km of your current location
                         {!coords ? " — allow location access to apply this filter" : ""}
                       </p>
                     )}
-                    {location !== "Any" && !isCurrentLocationFilter && (
+                    {draftLocation !== "Any" && !draftIsCurrentLocationFilter && (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {hasPlaceCoordinates
-                          ? `Showing properties within ${searchRadius} km of ${location}`
-                          : `Matching properties in ${location}`}
+                        {draftHasPlaceCoordinates
+                          ? `Showing properties within ${draftSearchRadius} km of ${draftLocation}`
+                          : `Matching properties in ${draftLocation}`}
                       </p>
                     )}
                   </div>
 
-                  {showRadiusFilter && (
+                  {draftShowRadiusFilter && (
                     <div>
                       <Label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]">
                         Search Radius
                       </Label>
-                      <Select value={searchRadius} onValueChange={setSearchRadius}>
+                      <Select value={draftSearchRadius} onValueChange={setDraftSearchRadius}>
                         <SelectTrigger className="h-12 rounded-xl border-border bg-white text-left text-[hsl(30_14%_20%)]">
                           <SelectValue placeholder="Within 10 km" />
                         </SelectTrigger>
@@ -1116,16 +1423,16 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                       <Label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]">
                         Category
                       </Label>
-                      <Select value={category} onValueChange={handleCategoryChange}>
+                      <Select value={draftCategory} onValueChange={handleDraftCategoryChange}>
                         <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"><SelectValue /></SelectTrigger>
-                        <SelectContent>{categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                        <SelectContent>{draftCategoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div>
                       <Label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]">
                         Type
                       </Label>
-                      <Select value={type} onValueChange={setType}>
+                      <Select value={draftType} onValueChange={setDraftType}>
                         <SelectTrigger className="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Any">Any</SelectItem>
@@ -1137,9 +1444,9 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   </div>
 
                   <PropertyTypeRoomSearchFields
-                    typeFlags={typeFlags}
-                    filters={typeFilters}
-                    onChange={patchTypeFilters}
+                    typeFlags={draftTypeFlags}
+                    filters={draftTypeFilters}
+                    onChange={patchDraftTypeFilters}
                     labelClassName="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]"
                     triggerClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
                     sectionLabelClassName="mb-3 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]"
@@ -1147,9 +1454,9 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
 
                   <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4 md:gap-5">
                     <PropertyTypeSearchFields
-                      typeFlags={typeFlags}
-                      filters={typeFilters}
-                      onChange={patchTypeFilters}
+                      typeFlags={draftTypeFlags}
+                      filters={draftTypeFilters}
+                      onChange={patchDraftTypeFilters}
                       hideRoomFilters
                       labelClassName="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]"
                       triggerClassName="h-12 rounded-xl border-border bg-white text-[hsl(30_14%_20%)]"
@@ -1162,7 +1469,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     <Label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(30_10%_35%)]">
                       Price Range
                     </Label>
-                    <Select value={priceRange} onValueChange={handlePriceRange}>
+                    <Select value={draftPriceRange} onValueChange={handleDraftPriceRange}>
                       <SelectTrigger className="h-12 rounded-xl border-border bg-white text-left text-[hsl(30_14%_20%)]">
                         <SelectValue placeholder="Any price" />
                       </SelectTrigger>
@@ -1181,12 +1488,12 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     </Label>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       {featureOptions.map((opt) => {
-                        const active = features.includes(opt.id);
+                        const active = draftFeatures.includes(opt.id);
                         return (
                           <button
                             key={opt.id}
                             type="button"
-                            onClick={() => toggleFeature(opt.id)}
+                            onClick={() => toggleDraftFeature(opt.id)}
                             aria-pressed={active}
                             className={cn(
                               "flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium transition-all",
@@ -1235,14 +1542,14 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
           <div>
           <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
             <div>
-              <span className="text-lg font-normal">{isLoading ? "…" : propertyCount}</span>
+              <span className="text-lg font-normal">{listSettling ? "…" : propertyCount}</span>
               <span className="text-muted-foreground ml-2">properties found</span>
             </div>
           </div>
 
           {/* Mobile: 2-column grid with vertical scroll */}
           <div className="md:hidden">
-            {isLoading ? (
+            {listSettling ? (
               <div className="grid grid-cols-2 gap-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <MobilePropertyCardSkeleton key={i} />
@@ -1279,7 +1586,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
           {/* Desktop / tablet: grid view */}
           <div className="hidden md:block">
             <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {isLoading
+              {listSettling
                 ? Array.from({ length: pageSize }).map((_, i) => (
                     <PropertyCardSkeleton key={i} />
                   ))
@@ -1290,7 +1597,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   <AdvertisementCard key={`ad-${slot.ad.id}-${i}`} ad={slot.ad} index={i} />
                 ),
               )}
-              {!isLoading && feedItems.length === 0 && (
+              {!listSettling && feedItems.length === 0 && (
                 <div className="col-span-full p-16 text-center bg-card rounded-2xl border border-dashed">
                   <p className="text-muted-foreground">No properties match your filters.</p>
                 </div>

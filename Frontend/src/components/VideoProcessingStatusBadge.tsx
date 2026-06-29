@@ -55,7 +55,7 @@ export function VideoProcessingStatusBadge({
   }
 
   const resolved: VideoProcessingStatus =
-    status ?? (hasUploadedVideo ? "ready" : null);
+    status ?? (hasUploadedVideo ? "processing" : null);
 
   if (!resolved) {
     return (

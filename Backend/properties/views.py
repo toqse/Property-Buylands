@@ -43,6 +43,7 @@ from .serializers import (
     FeatureSerializer,
     PropertyTypeSerializer,
     PropertySerializer,
+    PropertyVideoProcessingStatusSerializer,
     PropertyImageSerializer,
     StateSerializer,
     DistrictSerializer,
@@ -482,6 +483,40 @@ class PropertyViewSet(viewsets.ModelViewSet):
         queue_video_processing("property", prop.pk)
         serializer = self.get_serializer(prop)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="video-processing-status")
+    def video_processing_status(self, request):
+        """Lightweight batch poll for video compression status (owner or staff)."""
+        raw = (request.query_params.get("ids") or "").strip()
+        if not raw:
+            return Response({"results": []})
+
+        ids = []
+        for part in raw.split(","):
+            part = part.strip()
+            if part.isdigit():
+                ids.append(int(part))
+        ids = ids[:50]
+        if not ids:
+            return Response({"results": []})
+
+        user = request.user
+        queryset = Property.objects.filter(pk__in=ids).only(
+            "id",
+            "video_processing_status",
+            "property_video",
+            "video_thumbnail",
+            "created_by_id",
+        )
+        if not user.is_staff:
+            queryset = queryset.filter(created_by=user)
+
+        serializer = PropertyVideoProcessingStatusSerializer(
+            queryset,
+            many=True,
+            context={"request": request},
+        )
+        return Response({"results": serializer.data})
 
     @action(detail=False, methods=['get'], url_path='locations')
     def locations(self, request):

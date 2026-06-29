@@ -105,6 +105,29 @@ def _create_property_images(property_instance, uploaded_images):
             detail = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
             raise DRFValidationError({"uploaded_images": detail}) from exc
 
+
+class PropertyVideoProcessingStatusSerializer(serializers.ModelSerializer):
+    """Minimal serializer for batch video compression status polling."""
+
+    property_video_url = serializers.SerializerMethodField(read_only=True)
+    video_thumbnail_url = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Property
+        fields = [
+            "id",
+            "video_processing_status",
+            "property_video_url",
+            "video_thumbnail_url",
+        ]
+
+    def get_property_video_url(self, obj):
+        return absolute_media_url(self.context.get("request"), obj.property_video)
+
+    def get_video_thumbnail_url(self, obj):
+        return absolute_media_url(self.context.get("request"), obj.video_thumbnail)
+
+
 class PropertySerializer(serializers.ModelSerializer):
     images = PropertyImageSerializer(many=True, read_only=True)
     uploaded_images = serializers.ListField(

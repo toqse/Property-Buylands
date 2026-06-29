@@ -54,6 +54,7 @@ import {
   usePropertyList,
   usePropertyMutations,
 } from "@/hooks/api/useProperties";
+import { usePropertyVideoStatusPolling } from "@/hooks/api/usePropertyVideoStatusPolling";
 import { usePropertyUploadProgress } from "@/hooks/usePropertyUploadProgress";
 import {
   useOwners,
@@ -974,7 +975,7 @@ const PropertiesAdmin = () => {
       includeAds: false,
       pageSize: 100,
     },
-    { auth: true, pollVideoProcessing: true },
+    { auth: true },
   );
   const propertyMutations = usePropertyMutations();
   const addUploadProgress = usePropertyUploadProgress();
@@ -986,6 +987,7 @@ const PropertiesAdmin = () => {
         .map((x) => x.property),
     [listData],
   );
+  usePropertyVideoStatusPolling(list);
   const fallbackImage = list[0]?.image ?? "";
 
   // Add dialog state — uses the shared listing form (same fields as user dashboard)

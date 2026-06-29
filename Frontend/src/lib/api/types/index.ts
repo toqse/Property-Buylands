@@ -31,6 +31,13 @@ export interface ApiPropertyImage {
   image: string;
 }
 
+export interface ApiPropertyVideoProcessingStatus {
+  id: number;
+  video_processing_status?: "processing" | "ready" | "failed" | null;
+  property_video_url?: string | null;
+  video_thumbnail_url?: string | null;
+}
+
 export interface ApiProperty {
   id: number;
   property_for: "rent" | "sell";

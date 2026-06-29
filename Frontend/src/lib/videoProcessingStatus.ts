@@ -1,5 +1,28 @@
 export type VideoProcessingStatus = "processing" | "ready" | "failed" | null | undefined;
 
+export const VIDEO_PROCESSING_POLL_MS = 5000;
+
+export function hasPropertyUploadedVideo(videoUrl?: string | null): boolean {
+  if (!videoUrl) return false;
+  return (
+    !videoUrl.includes("youtube.com") && !videoUrl.includes("youtu.be")
+  );
+}
+
+export function needsVideoProcessingPolling(item: {
+  videoProcessingStatus?: VideoProcessingStatus;
+  videoUrl?: string | null;
+}): boolean {
+  if (item.videoProcessingStatus === "processing") return true;
+  if (
+    (item.videoProcessingStatus == null || item.videoProcessingStatus === undefined) &&
+    hasPropertyUploadedVideo(item.videoUrl)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function videoProcessingStatusLabel(
   status: VideoProcessingStatus,
 ): string | null {
@@ -31,9 +54,9 @@ export function videoProcessingStatusTone(
 }
 
 export function videoProcessingPollInterval(
-  items: { videoProcessingStatus?: VideoProcessingStatus }[],
+  items: { videoProcessingStatus?: VideoProcessingStatus; videoUrl?: string | null }[],
 ): number | false {
-  return items.some((item) => item.videoProcessingStatus === "processing")
-    ? 5000
+  return items.some(needsVideoProcessingPolling)
+    ? VIDEO_PROCESSING_POLL_MS
     : false;
 }

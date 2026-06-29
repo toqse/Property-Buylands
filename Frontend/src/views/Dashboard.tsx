@@ -10,6 +10,7 @@ import {
   useMyProperties,
   usePropertyMutations,
 } from "@/hooks/api/useProperties";
+import { usePropertyVideoStatusPolling } from "@/hooks/api/usePropertyVideoStatusPolling";
 import { usePropertyUploadProgress } from "@/hooks/usePropertyUploadProgress";
 import { usePropertyTypes } from "@/hooks/api/useCatalog";
 import { accountsApi } from "@/lib/api/accounts";
@@ -100,24 +101,26 @@ const Dashboard = () => {
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Unfiltered portfolio — drives the summary cards and the "has any listings" check.
-  const { data: allData, refetch } = useMyProperties(
-    { page_size: 50 },
-    { pollVideoProcessing: true },
-  );
+  const { data: allData, refetch } = useMyProperties({ page_size: 50 });
   // Server-side search — only the visible listing table reacts to the query.
-  const { data: myData, isFetching: isSearching } = useMyProperties(
-    {
-      page_size: 50,
-      ...(debouncedSearch ? { search: debouncedSearch } : {}),
-    },
-    { pollVideoProcessing: true },
-  );
+  const { data: myData, isFetching: isSearching } = useMyProperties({
+    page_size: 50,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+  });
   const propertyMutations = usePropertyMutations();
   const addUploadProgress = usePropertyUploadProgress();
   const editUploadProgress = usePropertyUploadProgress();
   const { data: propertyTypesData } = usePropertyTypes();
   const allProperties = allData?.items ?? [];
   const properties = myData?.items ?? [];
+  const polledProperties = useMemo(() => {
+    const byId = new Map<string, Property>();
+    for (const p of [...allProperties, ...properties]) {
+      byId.set(p.id, p);
+    }
+    return Array.from(byId.values());
+  }, [allProperties, properties]);
+  usePropertyVideoStatusPolling(polledProperties);
   const hasSearch = debouncedSearch.trim().length > 0;
 
   const [addOpen, setAddOpen] = useState(false);

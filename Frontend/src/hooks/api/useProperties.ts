@@ -13,7 +13,6 @@ import type { ApiProperty, FeedItem } from "@/lib/api/types";
 import type { Property } from "@/data/mockData";
 import type { Advertisement } from "@/data/advertisements";
 import { queryKeys } from "./queryKeys";
-import { videoProcessingPollInterval } from "@/lib/videoProcessingStatus";
 import type { UploadProgressCallback } from "@/lib/api/client";
 
 export type PropertyFormMutationInput =
@@ -43,7 +42,11 @@ function normalizeFeedItem(item: FeedItem | ApiProperty): ListingFeedItem | null
 
 export function usePropertyList(
   filters: Parameters<typeof buildPropertyListParams>[0] = {},
-  opts: { auth?: boolean; pollVideoProcessing?: boolean } = {},
+  opts: {
+    auth?: boolean;
+    keepPreviousPage?: boolean;
+    staleTime?: number;
+  } = {},
 ) {
   const params = buildPropertyListParams(filters);
   return useQuery({
@@ -55,15 +58,8 @@ export function usePropertyList(
         .filter((x): x is ListingFeedItem => x !== null);
       return { ...page, items };
     },
-    placeholderData: keepPreviousData,
-    refetchInterval: opts.pollVideoProcessing
-      ? (query) => {
-          const items = (query.state.data?.items ?? [])
-            .filter((x) => x.kind === "property")
-            .map((x) => x.property);
-          return videoProcessingPollInterval(items);
-        }
-      : false,
+    staleTime: opts.staleTime,
+    placeholderData: opts.keepPreviousPage ? keepPreviousData : undefined,
   });
 }
 
@@ -101,10 +97,7 @@ export function useProperty(id: string | undefined) {
   };
 }
 
-export function useMyProperties(
-  params: PropertyListParams = {},
-  opts: { pollVideoProcessing?: boolean } = {},
-) {
+export function useMyProperties(params: PropertyListParams = {}) {
   return useQuery({
     queryKey: queryKeys.myProperties(params),
     queryFn: async () => {
@@ -114,9 +107,6 @@ export function useMyProperties(
         items: page.results.map(mapApiPropertyToUi),
       };
     },
-    refetchInterval: opts.pollVideoProcessing
-      ? (query) => videoProcessingPollInterval(query.state.data?.items ?? [])
-      : false,
   });
 }
 
