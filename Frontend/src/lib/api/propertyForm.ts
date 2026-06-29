@@ -135,30 +135,29 @@ export function propertyTypeSearchListParams(
 
   if (flags.has_area_both) {
     if (filters.areaMin.trim()) p.area_min = filters.areaMin.trim();
-    if (filters.areaMax.trim()) p.area_max = filters.areaMax.trim();
     p.area_unit = "sqft";
     if (filters.areaCentMin.trim()) p.area_cent_min = filters.areaCentMin.trim();
-    if (filters.areaCentMax.trim()) p.area_cent_max = filters.areaCentMax.trim();
   } else {
     const unit = filters.areaUnit === "cents" ? "cent" : filters.areaUnit;
-    if (filters.areaMin.trim() || filters.areaMax.trim()) {
+    if (filters.areaMin.trim()) {
       p.area_unit = unit;
-      if (filters.areaMin.trim()) p.area_min = filters.areaMin.trim();
-      if (filters.areaMax.trim()) p.area_max = filters.areaMax.trim();
+      p.area_min = filters.areaMin.trim();
     }
   }
 
   if (flags.has_bedrooms) {
     const bedroomsMin = parseRoomFilterValue(filters.bedroomsMin);
-    const bedroomsMax = parseRoomFilterValue(filters.bedroomsMax);
-    if (bedroomsMin != null) p.bedrooms_min = bedroomsMin;
-    if (bedroomsMax != null) p.bedrooms_max = bedroomsMax;
+    if (bedroomsMin != null) {
+      p.bedrooms_min = bedroomsMin;
+      p.bedrooms_max = bedroomsMin;
+    }
   }
   if (flags.has_bathrooms) {
     const bathroomsMin = parseRoomFilterValue(filters.bathroomsMin);
-    const bathroomsMax = parseRoomFilterValue(filters.bathroomsMax);
-    if (bathroomsMin != null) p.bathrooms_min = bathroomsMin;
-    if (bathroomsMax != null) p.bathrooms_max = bathroomsMax;
+    if (bathroomsMin != null) {
+      p.bathrooms_min = bathroomsMin;
+      p.bathrooms_max = bathroomsMin;
+    }
   }
 
   if (
@@ -200,20 +199,13 @@ export function appendTypeSearchFiltersToUrlParams(
   const listParams = propertyTypeSearchListParams(flags, filters);
 
   if (listParams.area_min != null) params.set("areaMin", String(listParams.area_min));
-  if (listParams.area_max != null) params.set("areaMax", String(listParams.area_max));
   if (listParams.area_unit != null) params.set("areaUnit", String(listParams.area_unit));
   if (listParams.area_cent_min != null)
     params.set("areaCentMin", String(listParams.area_cent_min));
-  if (listParams.area_cent_max != null)
-    params.set("areaCentMax", String(listParams.area_cent_max));
   if (listParams.bedrooms_min != null)
     params.set("bedroomsMin", String(listParams.bedrooms_min));
-  if (listParams.bedrooms_max != null)
-    params.set("bedroomsMax", String(listParams.bedrooms_max));
   if (listParams.bathrooms_min != null)
     params.set("bathroomsMin", String(listParams.bathrooms_min));
-  if (listParams.bathrooms_max != null)
-    params.set("bathroomsMax", String(listParams.bathrooms_max));
   if (listParams.furnishing != null) params.set("furnishing", String(listParams.furnishing));
   if (listParams.parking_spaces_min != null)
     params.set("parkingSpaces", String(listParams.parking_spaces_min));
@@ -223,30 +215,48 @@ export function appendTypeSearchFiltersToUrlParams(
   if (listParams.sighting != null) params.set("sighting", String(listParams.sighting));
 }
 
+const TYPE_SEARCH_FILTER_URL_KEYS = [
+  "areaMin",
+  "areaMax",
+  "areaUnit",
+  "areaCentMin",
+  "areaCentMax",
+  "bedroomsMin",
+  "bedroomsMax",
+  "bathroomsMin",
+  "bathroomsMax",
+  "furnishing",
+  "parkingSpaces",
+  "projectStatus",
+  "floors",
+  "sighting",
+] as const;
+
+export function replaceTypeSearchFiltersInUrlParams(
+  params: URLSearchParams,
+  flags: PropertyTypeFeatureFlags,
+  filters: PropertyTypeSearchFilterState,
+) {
+  for (const key of TYPE_SEARCH_FILTER_URL_KEYS) params.delete(key);
+  appendTypeSearchFiltersToUrlParams(params, flags, filters);
+}
+
 export function readTypeSearchFiltersFromUrlParams(
   searchParams: URLSearchParams,
 ): Partial<PropertyTypeSearchFilterState> {
   const patch: Partial<PropertyTypeSearchFilterState> = {};
   const areaMin = searchParams.get("areaMin");
   if (areaMin) patch.areaMin = areaMin;
-  const areaMax = searchParams.get("areaMax");
-  if (areaMax) patch.areaMax = areaMax;
   const areaUnit = searchParams.get("areaUnit");
   if (areaUnit === "sqft" || areaUnit === "cents" || areaUnit === "cent") {
     patch.areaUnit = areaUnit === "cent" ? "cents" : areaUnit;
   }
   const areaCentMin = searchParams.get("areaCentMin");
   if (areaCentMin) patch.areaCentMin = areaCentMin;
-  const areaCentMax = searchParams.get("areaCentMax");
-  if (areaCentMax) patch.areaCentMax = areaCentMax;
   const bedroomsMin = searchParams.get("bedroomsMin");
   if (bedroomsMin) patch.bedroomsMin = normalizeRoomFilterFromUrl(bedroomsMin);
-  const bedroomsMax = searchParams.get("bedroomsMax");
-  if (bedroomsMax) patch.bedroomsMax = normalizeRoomFilterFromUrl(bedroomsMax);
   const bathroomsMin = searchParams.get("bathroomsMin");
   if (bathroomsMin) patch.bathroomsMin = normalizeRoomFilterFromUrl(bathroomsMin);
-  const bathroomsMax = searchParams.get("bathroomsMax");
-  if (bathroomsMax) patch.bathroomsMax = normalizeRoomFilterFromUrl(bathroomsMax);
   const furnishing = searchParams.get("furnishing");
   if (furnishing) {
     const normalized =

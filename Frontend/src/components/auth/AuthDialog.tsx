@@ -365,14 +365,14 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
         onInteractOutside={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => e.preventDefault()}
         className={cn(
-          "p-0 overflow-hidden border-gold/20 [&_.dialog-close]:text-background [&_.dialog-close]:opacity-90 [&_.dialog-close]:bg-black/30 [&_.dialog-close]:h-9 [&_.dialog-close]:w-9 [&_.dialog-close]:rounded-full [&_.dialog-close]:grid [&_.dialog-close]:place-items-center [&_.dialog-close]:top-3 [&_.dialog-close]:right-3",
+          "flex max-h-[calc(100dvh-1rem)] flex-col overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] border-gold/20 [&_.dialog-close]:text-background [&_.dialog-close]:opacity-90 [&_.dialog-close]:bg-black/30 [&_.dialog-close]:h-9 [&_.dialog-close]:w-9 [&_.dialog-close]:rounded-full [&_.dialog-close]:grid [&_.dialog-close]:place-items-center [&_.dialog-close]:top-3 [&_.dialog-close]:right-3",
           isCompactMode ? "sm:max-w-md" : "sm:max-w-2xl",
         )}
       >
         {/* Dark header — same for login & register screens */}
         <div
           className={cn(
-            "bg-[hsl(30_14%_10%)] text-background",
+            "shrink-0 bg-[hsl(30_14%_10%)] text-background",
             isCompactMode ? "p-6" : "px-6 py-4 sm:px-8",
           )}
         >
@@ -394,7 +394,12 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
           </DialogHeader>
         </div>
 
-        <div className={isCompactMode ? "p-6" : "px-6 py-5 sm:px-8"}>
+        <div
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+            isCompactMode ? "p-6" : "px-6 py-5 sm:px-8",
+          )}
+        >
           {/* ---------- Login: password ---------- */}
           {mode === "login-password" && (
             <form onSubmit={submitPasswordLogin} className="space-y-4 animate-fade-in">

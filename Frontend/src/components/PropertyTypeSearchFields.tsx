@@ -18,8 +18,8 @@ import type { PropertyTypeSearchFilterState } from "@/lib/api/propertyForm";
 import { cn } from "@/lib/utils";
 
 const AREA_UNIT_OPTIONS = [
-  { value: "sqft" as const, label: "Square feet", inputLabel: "Area (sq.ft)" },
-  { value: "cents" as const, label: "Cent", inputLabel: "Area (Cent)" },
+  { value: "sqft" as const, label: "Square feet", inputLabel: "Area (sqft)" },
+  { value: "cents" as const, label: "Cent", inputLabel: "Area (cent)" },
 ];
 
 const FURNISHING_OPTIONS = [
@@ -43,11 +43,8 @@ const ROOM_COUNT_OPTIONS = [
   "10",
 ] as const;
 
-function roomCountLabel(opt: string, kind: "min" | "max") {
-  if (opt === "Any") return "Any";
-  if (kind === "min" && opt === "10") return "10+";
-  if (kind === "min") return `${opt}+`;
-  return opt;
+function roomCountLabel(opt: string) {
+  return opt === "Any" ? "Any" : opt;
 }
 
 type PropertyTypeSearchFieldsProps = {
@@ -81,87 +78,47 @@ export function PropertyTypeRoomSearchFields({
   return (
     <div className="space-y-3">
       <p className={sectionLabelClassName}>Bedrooms &amp; bathrooms</p>
-      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         {typeFlags.has_bedrooms ? (
-          <>
-            <div>
-              <Label className={labelClassName}>Bedrooms (min)</Label>
-              <Select
-                value={filters.bedroomsMin}
-                onValueChange={(v) => onChange({ bedroomsMin: v })}
-              >
-                <SelectTrigger className={triggerClassName}>
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROOM_COUNT_OPTIONS.map((opt) => (
-                    <SelectItem key={`bed-min-${opt}`} value={opt}>
-                      {roomCountLabel(opt, "min")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className={labelClassName}>Bedrooms (max)</Label>
-              <Select
-                value={filters.bedroomsMax}
-                onValueChange={(v) => onChange({ bedroomsMax: v })}
-              >
-                <SelectTrigger className={triggerClassName}>
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROOM_COUNT_OPTIONS.map((opt) => (
-                    <SelectItem key={`bed-max-${opt}`} value={opt}>
-                      {roomCountLabel(opt, "max")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </>
+          <div>
+            <Label className={labelClassName}>Bedrooms</Label>
+            <Select
+              value={filters.bedroomsMin}
+              onValueChange={(v) => onChange({ bedroomsMin: v })}
+            >
+              <SelectTrigger className={triggerClassName}>
+                <SelectValue placeholder="Any" />
+              </SelectTrigger>
+              <SelectContent>
+                {ROOM_COUNT_OPTIONS.map((opt) => (
+                  <SelectItem key={`bed-${opt}`} value={opt}>
+                    {roomCountLabel(opt)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         ) : null}
 
         {typeFlags.has_bathrooms ? (
-          <>
-            <div>
-              <Label className={labelClassName}>Bathrooms (min)</Label>
-              <Select
-                value={filters.bathroomsMin}
-                onValueChange={(v) => onChange({ bathroomsMin: v })}
-              >
-                <SelectTrigger className={triggerClassName}>
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROOM_COUNT_OPTIONS.map((opt) => (
-                    <SelectItem key={`bath-min-${opt}`} value={opt}>
-                      {roomCountLabel(opt, "min")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className={labelClassName}>Bathrooms (max)</Label>
-              <Select
-                value={filters.bathroomsMax}
-                onValueChange={(v) => onChange({ bathroomsMax: v })}
-              >
-                <SelectTrigger className={triggerClassName}>
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROOM_COUNT_OPTIONS.map((opt) => (
-                    <SelectItem key={`bath-max-${opt}`} value={opt}>
-                      {roomCountLabel(opt, "max")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </>
+          <div>
+            <Label className={labelClassName}>Bathrooms</Label>
+            <Select
+              value={filters.bathroomsMin}
+              onValueChange={(v) => onChange({ bathroomsMin: v })}
+            >
+              <SelectTrigger className={triggerClassName}>
+                <SelectValue placeholder="Any" />
+              </SelectTrigger>
+              <SelectContent>
+                {ROOM_COUNT_OPTIONS.map((opt) => (
+                  <SelectItem key={`bath-${opt}`} value={opt}>
+                    {roomCountLabel(opt)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         ) : null}
       </div>
     </div>
@@ -193,7 +150,7 @@ export function PropertyTypeSearchFields({
       {typeFlags.has_area_both ? (
         <>
           <div>
-            <Label className={labelClassName}>Area (sq.ft) min</Label>
+            <Label className={labelClassName}>Area (sqft)</Label>
             <Input
               className={cn(inputClassName, "font-mono")}
               placeholder="e.g. 1000"
@@ -203,33 +160,13 @@ export function PropertyTypeSearchFields({
             />
           </div>
           <div>
-            <Label className={labelClassName}>Area (sq.ft) max</Label>
-            <Input
-              className={cn(inputClassName, "font-mono")}
-              placeholder="e.g. 5000"
-              inputMode="decimal"
-              value={filters.areaMax}
-              onChange={(e) => onChange({ areaMax: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label className={labelClassName}>Area (Cent) min</Label>
+            <Label className={labelClassName}>Area (cent)</Label>
             <Input
               className={cn(inputClassName, "font-mono")}
               placeholder="e.g. 5"
               inputMode="decimal"
               value={filters.areaCentMin}
               onChange={(e) => onChange({ areaCentMin: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label className={labelClassName}>Area (Cent) max</Label>
-            <Input
-              className={cn(inputClassName, "font-mono")}
-              placeholder="e.g. 20"
-              inputMode="decimal"
-              value={filters.areaCentMax}
-              onChange={(e) => onChange({ areaCentMax: e.target.value })}
             />
           </div>
         </>
@@ -258,29 +195,14 @@ export function PropertyTypeSearchFields({
           <div>
             <Label className={labelClassName}>
               {AREA_UNIT_OPTIONS.find((o) => o.value === filters.areaUnit)
-                ?.inputLabel ?? "Area"}{" "}
-              min
+                ?.inputLabel ?? "Area"}
             </Label>
             <Input
               className={cn(inputClassName, "font-mono")}
-              placeholder="Min"
+              placeholder="e.g. 1000"
               inputMode="decimal"
               value={filters.areaMin}
               onChange={(e) => onChange({ areaMin: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label className={labelClassName}>
-              {AREA_UNIT_OPTIONS.find((o) => o.value === filters.areaUnit)
-                ?.inputLabel ?? "Area"}{" "}
-              max
-            </Label>
-            <Input
-              className={cn(inputClassName, "font-mono")}
-              placeholder="Max"
-              inputMode="decimal"
-              value={filters.areaMax}
-              onChange={(e) => onChange({ areaMax: e.target.value })}
             />
           </div>
         </>

@@ -51,6 +51,7 @@ import {
   findPropertyTypeFlags,
   propertyTypeSearchListParams,
   readTypeSearchFiltersFromUrlParams,
+  replaceTypeSearchFiltersInUrlParams,
   type PropertyTypeSearchFilterState,
 } from "@/lib/api/propertyForm";
 import {
@@ -392,8 +393,11 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     (
       geo: { latitude: number; longitude: number } | null,
       options?: { locationLabel?: string; locationQuery?: string; radius?: string },
+      baseParams?: URLSearchParams,
     ) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(
+        baseParams?.toString() ?? searchParams.toString(),
+      );
       const nextRadius = options?.radius ?? searchRadius;
       if (geo) {
         params.set("lat", String(geo.latitude));
@@ -710,9 +714,30 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     if (opt) setPrice([opt.min, opt.max]);
   };
   const applyFilters = () => {
-    setQ(searchInput);
+    const nextQ = searchInput.trim();
+    setQ(nextQ);
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (nextQ) params.set("q", nextQ);
+    else params.delete("q");
+    if (category !== "All") params.set("category", category);
+    else params.delete("category");
+    if (type !== "Any") params.set("type", type);
+    else params.delete("type");
+    if (price[0] > 0) params.set("minPrice", String(price[0]));
+    else params.delete("minPrice");
+    if (price[1] < 5000000) params.set("maxPrice", String(price[1]));
+    else params.delete("maxPrice");
+    if (features.length) params.set("features", features.join(","));
+    else params.delete("features");
+    replaceTypeSearchFiltersInUrlParams(params, typeFlags, typeFilters);
+
     if (location === CURRENT_LOCATION_VALUE && coords) {
-      syncLocationToUrl({ latitude: coords.latitude, longitude: coords.longitude });
+      syncLocationToUrl(
+        { latitude: coords.latitude, longitude: coords.longitude },
+        undefined,
+        params,
+      );
       persistSectionLocationPrefs({
         location: CURRENT_LOCATION_VALUE,
         searchRadius,
@@ -729,7 +754,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         Number.isFinite(longitude)
       ) {
         const place = { latitude, longitude };
-        syncLocationToUrl(place, { locationLabel: candidate.label });
+        syncLocationToUrl(place, { locationLabel: candidate.label }, params);
         persistSectionLocationPrefs({
           location: candidate.label,
           searchRadius,
@@ -738,14 +763,14 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
           longitude,
         });
       } else {
-        syncLocationToUrl(null);
+        syncLocationToUrl(null, undefined, params);
       }
     } else if (location !== "Any" && location !== CURRENT_LOCATION_VALUE) {
       const place = selectedPlaceGeoRef.current ?? selectedPlaceGeo ?? locationCoordsByLabel.get(location);
       if (place) {
-        syncLocationToUrl(place, { locationLabel: location });
+        syncLocationToUrl(place, { locationLabel: location }, params);
       } else {
-        syncLocationToUrl(null, { locationQuery: textLocationQuery });
+        syncLocationToUrl(null, { locationQuery: textLocationQuery }, params);
       }
       persistSectionLocationPrefs({
         location,
@@ -755,7 +780,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         longitude: place?.longitude,
       });
     } else {
-      syncLocationToUrl(null);
+      syncLocationToUrl(null, undefined, params);
       persistSectionLocationPrefs({
         location: "Any",
         searchRadius,
@@ -768,13 +793,28 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   const resetFilters = () => {
     setQ("");
     setSearchInput("");
-    clearLocationFilter();
+    setSelectedPlaceGeo(null);
+    selectedPlaceGeoRef.current = null;
+    locationSearchCandidateRef.current = null;
+    const nextRadius = String(defaultRadiusKm);
+    setLocation("Any");
+    setSearchRadius(nextRadius);
+    setAutoCurrentLocationDismissed(true);
     setCategory("All");
     setType("Any");
     setTypeFilters(DEFAULT_PROPERTY_TYPE_SEARCH_FILTERS);
     setPrice([0, 5000000]);
     setPriceRange("any");
     setFeatures([]);
+    setPage(1);
+    writeSectionLocationPrefs(listingSection, {
+      location: "Any",
+      searchRadius: nextRadius,
+      autoCurrentLocationDismissed: true,
+    });
+    setNavbarToAllLocations(defaultRadiusKm);
+    navigate(pathname);
+    void queryClient.invalidateQueries({ queryKey: ["properties"] });
   };
 
   const feedItems = data?.items ?? [];
