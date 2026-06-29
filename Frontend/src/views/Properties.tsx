@@ -911,6 +911,29 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     const opt = PRICE_RANGES.find((o) => o.value === value);
     if (opt) setDraftPrice([opt.min, opt.max]);
   };
+
+  const navigateListingFilters = useCallback(
+    (params: URLSearchParams) => {
+      const qs = params.toString();
+      pendingFilterParamsRef.current = qs || null;
+      stableFilterKeyRef.current = qs;
+      setFilterKeyOverride(qs);
+      skipUrlHydrationRef.current = true;
+      navigate(qs ? `${pathname}?${qs}` : pathname);
+      setPage(1);
+    },
+    [pathname, navigate],
+  );
+
+  const commitSearch = useCallback(() => {
+    const nextQ = searchInput.trim();
+    setQ(nextQ);
+    const params = new URLSearchParams(effectiveFilterKey);
+    if (nextQ) params.set("q", nextQ);
+    else params.delete("q");
+    navigateListingFilters(params);
+  }, [searchInput, effectiveFilterKey, navigateListingFilters]);
+
   const applyFilters = () => {
     const nextQ = searchInput.trim();
     const nextCategory = draftCategory;
@@ -1034,11 +1057,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
 
     skipUrlHydrationRef.current = true;
     consumeFirstVisitAutoFilter();
-    const qs = params.toString();
-    pendingFilterParamsRef.current = qs || null;
-    stableFilterKeyRef.current = qs;
-    setFilterKeyOverride(qs);
-    navigate(qs ? `${pathname}?${qs}` : pathname);
+    navigateListingFilters(params);
     setShowFilters(false);
   };
 
@@ -1158,12 +1177,12 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") setQ(searchInput);
+                    if (e.key === "Enter") commitSearch();
                   }}
                   placeholder="Search by location, property name, or keyword"
                 />
               </div>
-              <Button className="h-[38px] w-[38px] shrink-0 rounded-[12px] px-0 md:h-12 md:w-auto md:px-7" variant="luxe" onClick={() => setQ(searchInput)} aria-label="Search">
+              <Button className="h-[38px] w-[38px] shrink-0 rounded-[12px] px-0 md:h-12 md:w-auto md:px-7" variant="luxe" onClick={commitSearch} aria-label="Search">
                 <Search className="h-3.5 w-3.5 md:h-4 md:w-4" />
                 <span className="hidden md:inline">Search</span>
               </Button>

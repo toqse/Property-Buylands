@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Link, NavLink, useNavigate, useSearchParams } from "@/lib/router";
+import { Link, NavLink, useNavigate } from "@/lib/router";
 import { User, LogOut, LayoutDashboard, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "./Logo";
@@ -37,6 +37,24 @@ function navHrefFor(
   return target;
 }
 
+/** Client-only listing query string — avoids useSearchParams (breaks static export). */
+function useClientListingSearch(pathname: string): string {
+  const [listingSearch, setListingSearch] = useState("");
+
+  useEffect(() => {
+    const read = () => setListingSearch(window.location.search.slice(1));
+    read();
+    window.addEventListener("popstate", read);
+    window.addEventListener("buylands:listing-search", read);
+    return () => {
+      window.removeEventListener("popstate", read);
+      window.removeEventListener("buylands:listing-search", read);
+    };
+  }, [pathname]);
+
+  return listingSearch;
+}
+
 export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
   const [open, setOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
@@ -44,8 +62,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const pathname = usePathname() ?? "/";
-  const [searchParams] = useSearchParams();
-  const listingSearch = searchParams.toString();
+  const listingSearch = useClientListingSearch(pathname);
 
   useEffect(() => {
     if (variant !== "transparent") return;

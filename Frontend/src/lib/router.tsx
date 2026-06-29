@@ -6,6 +6,19 @@ import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
 
 type To = string;
 
+const LISTING_PATH_PREFIXES = ["/buy", "/rent", "/properties"];
+
+function isListingNavigation(to: string): boolean {
+  const path = to.split("?")[0] ?? to;
+  return LISTING_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
+export function notifyListingSearchChanged(): void {
+  if (typeof window !== "undefined") {
+    queueMicrotask(() => window.dispatchEvent(new Event("buylands:listing-search")));
+  }
+}
+
 export function Link({
   to,
   children,
@@ -28,6 +41,9 @@ export function useNavigate() {
       return;
     }
     router.push(to);
+    if (isListingNavigation(to)) {
+      notifyListingSearchChanged();
+    }
   };
 }
 

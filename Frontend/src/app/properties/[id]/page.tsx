@@ -2,6 +2,7 @@ import PropertyDetail from "@/views/PropertyDetail";
 import { PROPERTIES } from "@/data/mockData";
 import { propertiesApi } from "@/lib/api/properties";
 import type { ApiProperty, FeedItem } from "@/lib/api/types";
+import { Suspense } from "react";
 
 // Stable client-render shell. public/.htaccess (and public/_redirects) rewrite
 // any /properties/<slug>/ that has no exported HTML to this page, so property
@@ -54,5 +55,9 @@ export async function generateStaticParams() {
 }
 
 export default function Page() {
-  return <PropertyDetail />;
+  return (
+    <Suspense fallback={null}>
+      <PropertyDetail />
+    </Suspense>
+  );
 }
