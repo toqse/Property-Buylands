@@ -2,7 +2,7 @@
 
 import NextLink from "next/link";
 import { useParams as useNextParams, usePathname, useRouter, useSearchParams as useNextSearchParams } from "next/navigation";
-import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
 
 type To = string;
 
@@ -24,9 +24,54 @@ function normalizeAppPath(to: string): string {
   return `${pathOnly}/${suffix}`;
 }
 
+function normalizeListingPath(path: string): string {
+  if (path === "/") return "/";
+  return path.endsWith("/") ? path : `${path}/`;
+}
+
+function splitAppPath(to: string): { pathname: string; search: string; hash: string } {
+  const normalized = normalizeAppPath(to);
+  const hashIndex = normalized.indexOf("#");
+  const withoutHash = hashIndex === -1 ? normalized : normalized.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? "" : normalized.slice(hashIndex);
+  const queryIndex = withoutHash.indexOf("?");
+  if (queryIndex === -1) {
+    return { pathname: withoutHash, search: "", hash };
+  }
+  return {
+    pathname: withoutHash.slice(0, queryIndex),
+    search: withoutHash.slice(queryIndex + 1),
+    hash,
+  };
+}
+
+function isSameListingPath(a: string, b: string): boolean {
+  return normalizeListingPath(a) === normalizeListingPath(b);
+}
+
 function isListingNavigation(to: string): boolean {
   const path = to.split("?")[0] ?? to;
   return LISTING_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
+/**
+ * Update listing query params without Next.js router navigation.
+ * Static export (S3/CloudFront) cannot soft-navigate query changes — router.replace
+ * triggers RSC/chunk fetches that 403 and fall back to a full document reload.
+ */
+export function replaceListingQuery(pathname: string, queryString?: string): void {
+  if (typeof window === "undefined") return;
+  const base = normalizeListingPath(pathname);
+  const qs = queryString?.replace(/^\?/, "") ?? "";
+  const url = qs ? `${base}?${qs}` : base;
+  window.history.replaceState(window.history.state, "", url);
+  notifyListingSearchChanged();
+}
+
+function shouldUseHistoryForListingQuery(currentPath: string, to: string): boolean {
+  if (!isListingNavigation(to)) return false;
+  const { pathname: targetPath } = splitAppPath(to);
+  return isSameListingPath(currentPath, targetPath);
 }
 
 export function notifyListingSearchChanged(): void {
@@ -58,6 +103,7 @@ export function Link({
 
 export function useNavigate() {
   const router = useRouter();
+  const pathname = usePathname() ?? "/";
 
   return (to: string | number, options?: NavigateOptions) => {
     if (typeof to === "number") {
@@ -66,6 +112,18 @@ export function useNavigate() {
       return;
     }
     const nextTo = normalizeAppPath(to);
+
+    if (shouldUseHistoryForListingQuery(pathname, nextTo)) {
+      const { pathname: targetPath, search, hash } = splitAppPath(nextTo);
+      const base = normalizeListingPath(targetPath);
+      const qs = search ? `?${search}` : "";
+      const url = `${base}${qs}${hash}`;
+      if (options?.replace) window.history.replaceState(window.history.state, "", url);
+      else window.history.pushState(window.history.state, "", url);
+      notifyListingSearchChanged();
+      return;
+    }
+
     if (options?.replace) router.replace(nextTo);
     else router.push(nextTo);
     if (isListingNavigation(nextTo)) {
@@ -81,7 +139,29 @@ export function useLocation() {
 
 export function useSearchParams() {
   const params = useNextSearchParams();
-  return [new URLSearchParams(params?.toString() ?? "")] as const;
+  const [liveVersion, setLiveVersion] = useState(0);
+
+  useEffect(() => {
+    const sync = () => setLiveVersion((v) => v + 1);
+    window.addEventListener("popstate", sync);
+    window.addEventListener("buylands:listing-search", sync);
+    return () => {
+      window.removeEventListener("popstate", sync);
+      window.removeEventListener("buylands:listing-search", sync);
+    };
+  }, []);
+
+  const searchParams = useMemo(() => {
+    if (typeof window !== "undefined") {
+      const live = window.location.search.slice(1);
+      if (live) return new URLSearchParams(live);
+    }
+    return new URLSearchParams(params?.toString() ?? "");
+    // liveVersion keeps search params in sync after history.replaceState
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, liveVersion]);
+
+  return [searchParams] as const;
 }
 
 export function useParams<T extends Record<string, string>>() {
