@@ -532,7 +532,7 @@ const Dashboard = () => {
       <section className="relative overflow-hidden bg-black text-white">
         <div className="absolute inset-0 opacity-40 [background:radial-gradient(60%_80%_at_20%_20%,rgba(255,255,255,0.10),transparent_60%),radial-gradient(40%_60%_at_90%_90%,rgba(255,255,255,0.06),transparent_70%)]" />
         <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-        <RevealOnScroll className="mx-auto w-full max-w-[1800px] px-6 lg:px-10 relative py-16">
+        <RevealOnScroll className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-10 relative py-16">
           <div>
             <div className="text-[11px] uppercase tracking-[0.3em] text-white">
               Dashboard
@@ -547,7 +547,7 @@ const Dashboard = () => {
         </RevealOnScroll>
       </section>
 
-      <section className="mx-auto w-full max-w-[1800px] px-6 lg:px-10 py-12 -mt-10 relative z-10">
+      <section className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-10 py-12 -mt-10 relative z-10">
         <RevealOnScroll>
           <div className="grid grid-cols-3 gap-3 sm:gap-5 mb-10">
             {[
@@ -578,17 +578,17 @@ const Dashboard = () => {
             value={activeTab}
             onValueChange={(v) => setActiveTab(v as "properties" | "profile")}
           >
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <TabsList className="bg-muted/60 rounded-full p-1 w-fit">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <TabsList className="bg-muted/60 rounded-full p-1 h-11 w-full sm:w-fit grid grid-cols-2 sm:inline-flex">
                 <TabsTrigger
                   value="properties"
-                  className="rounded-full data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                  className="rounded-full flex-1 sm:flex-none data-[state=active]:bg-background data-[state=active]:shadow-sm"
                 >
                   My Properties
                 </TabsTrigger>
                 <TabsTrigger
                   value="profile"
-                  className="rounded-full data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                  className="rounded-full flex-1 sm:flex-none data-[state=active]:bg-background data-[state=active]:shadow-sm"
                 >
                   Profile
                 </TabsTrigger>
@@ -597,7 +597,7 @@ const Dashboard = () => {
                 variant="luxe"
                 size="lg"
                 onClick={() => setAddOpen(true)}
-                className="rounded-full shadow-luxe shrink-0"
+                className="h-11 w-full rounded-full shadow-luxe sm:w-auto sm:shrink-0"
               >
                 <Plus className="h-4 w-4" /> Add property
               </Button>
@@ -689,13 +689,13 @@ const Dashboard = () => {
                     </div>
 
                     <div className="flex flex-1 flex-col p-4 sm:p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <h3 className="min-w-0 flex-1 font-semibold leading-snug text-foreground line-clamp-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                        <h3 className="min-w-0 font-semibold leading-snug text-foreground line-clamp-2">
                           {p.title}
                         </h3>
                         <span
                           className={cn(
-                            "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                            "inline-flex w-fit shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
                             p.status === "Approved"
                               ? "bg-emerald-50 text-emerald-700"
                               : p.status === "Pending"
@@ -764,8 +764,8 @@ const Dashboard = () => {
                         </div>
                       )}
 
-                      <div className="mt-auto flex flex-wrap items-end justify-between gap-3 pt-4">
-                        <div>
+                      <div className="mt-auto flex flex-col gap-3 border-t border-border/50 pt-4 sm:flex-row sm:items-end sm:justify-between sm:border-0 sm:pt-4">
+                        <div className="w-full sm:w-auto">
                           <div className="font-serif text-xl font-semibold text-foreground">
                             ₹{p.price.toLocaleString("en-US")}
                           </div>
@@ -776,30 +776,30 @@ const Dashboard = () => {
                           ) : null}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="grid w-full grid-cols-[1fr_1fr_auto] gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-8 gap-1.5 rounded-lg border-border text-foreground hover:border-[#1c5fa8]/30 hover:bg-[#eef4fc] hover:text-[#1c5fa8]"
+                            className="h-9 min-w-0 gap-1.5 rounded-lg border-border px-2 text-foreground hover:border-[#1c5fa8]/30 hover:bg-[#eef4fc] hover:text-[#1c5fa8] sm:h-8 sm:px-3"
                             onClick={() =>
                               navigate(`/properties/${p.slug || p.id}`)
                             }
                           >
-                            <Eye className="h-3.5 w-3.5" /> View
+                            <Eye className="h-3.5 w-3.5 shrink-0" /> View
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-8 gap-1.5 rounded-lg border-border hover:border-gold/40 hover:bg-gold/10 hover:text-gold"
+                            className="h-9 min-w-0 gap-1.5 rounded-lg border-border px-2 hover:border-gold/40 hover:bg-gold/10 hover:text-gold sm:h-8 sm:px-3"
                             onClick={() => openEdit(p)}
                             aria-label={`Edit ${p.title}`}
                           >
-                            <Edit className="h-3.5 w-3.5" /> Edit
+                            <Edit className="h-3.5 w-3.5 shrink-0" /> Edit
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-8 gap-1.5 rounded-lg border-border text-destructive hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                            className="h-9 w-9 shrink-0 rounded-lg border-border p-0 text-destructive hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive sm:h-8 sm:w-8"
                             onClick={() => setDeleteTarget(p)}
                             aria-label={`Delete ${p.title}`}
                           >
@@ -814,9 +814,9 @@ const Dashboard = () => {
 
               {/* Pagination */}
               {filteredProperties.length > 0 && (
-                <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+                <div className="mt-6 flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                   {/* Left — results-per-page selector */}
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground sm:justify-start">
                     <span>Results per page:</span>
                     <Select
                       value={String(propertiesPageSize)}
@@ -833,7 +833,7 @@ const Dashboard = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                    <span className="hidden sm:inline ml-3">
+                    <span className="sm:ml-3">
                       Showing{" "}
                       <span className="text-foreground font-medium">
                         {propertiesStartIdx + 1}
@@ -850,7 +850,7 @@ const Dashboard = () => {
                   </div>
 
                   {/* Right — pagination buttons */}
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-center gap-1.5 sm:justify-end">
                     <button
                       type="button"
                       onClick={() =>
@@ -1075,11 +1075,11 @@ const Dashboard = () => {
                             </div>
                           ))}
                         </div>
-                        <div className="mt-5 flex flex-wrap items-center gap-3">
+                        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                           <Button
                             type="button"
                             onClick={() => setAddOpen(true)}
-                            className="rounded-full bg-[#1c5fa8] text-white hover:bg-[#0e305d]"
+                            className="h-11 w-full rounded-full bg-[#1c5fa8] text-white hover:bg-[#0e305d] sm:w-auto"
                           >
                             <Plus className="h-4 w-4" /> Add property
                           </Button>
@@ -1087,7 +1087,7 @@ const Dashboard = () => {
                             type="button"
                             variant="outline"
                             onClick={() => setActiveTab("properties")}
-                            className="rounded-full"
+                            className="h-11 w-full rounded-full sm:w-auto"
                           >
                             View all
                           </Button>
