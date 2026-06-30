@@ -20,7 +20,6 @@ import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { useCompanyContact, useCatalogMutations } from "@/hooks/api/useCatalog";
 import { getErrorMessage } from "@/lib/api/errors";
-import { openCompanyEmail } from "@/lib/mailto";
 
 const WhatsAppGlyph = ({ className }: { className?: string }) => (
   <svg
@@ -165,13 +164,6 @@ const Contact = () => {
       form.reset();
       setInterest("");
       setBudget("");
-      openCompanyEmail(email, subject, {
-        name,
-        email: senderEmail,
-        phone,
-        budget: budgetLabel || "",
-        message,
-      });
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
