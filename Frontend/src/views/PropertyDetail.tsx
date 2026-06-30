@@ -20,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { registerExclusiveVideo } from "@/lib/videoCoordinator";
-import { formatPropertyAreaDisplay } from "@/lib/api/mappers/property";
+import { formatPropertyAreaDisplay, resolveVideoCoverImage } from "@/lib/api/mappers/property";
 import { videoProcessingStatusLabel } from "@/lib/videoProcessingStatus";
 
 const WhatsAppIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
@@ -96,15 +96,19 @@ const PropertyDetail = () => {
   }, [active, videoStarted, hasVideo]);
 
   const startVideo = () => {
-    setVideoStarted(true);
     setVideoMuted(false);
-    requestAnimationFrame(() => {
-      const el = mainVideoRef.current;
-      if (!el) return;
-      el.muted = false;
-      void el.play();
-    });
+    setVideoStarted(true);
   };
+
+  useEffect(() => {
+    if (!videoStarted || !hasVideo) return;
+    const el = mainVideoRef.current;
+    if (!el) return;
+    el.muted = false;
+    void el.play().catch(() => {
+      /* autoplay with sound may be blocked until a later gesture */
+    });
+  }, [videoStarted, active, hasVideo]);
 
   const openImageLightbox = (galleryIndex: number) => {
     setLightboxIndex(Math.max(0, galleryIndex));
@@ -265,15 +269,14 @@ const PropertyDetail = () => {
   };
 
   type MediaItem = { kind: "video"; src: string; poster?: string } | { kind: "image"; src: string };
-  const firstGalleryImage = property.gallery[0];
-  const videoPoster = firstGalleryImage || property.videoThumbnail;
+  const videoCoverImage = resolveVideoCoverImage(property);
   const media: MediaItem[] = [
-    ...(hasVideo ? [{ kind: "video" as const, src: property.videoUrl as string, poster: videoPoster }] : []),
+    ...(hasVideo ? [{ kind: "video" as const, src: property.videoUrl as string, poster: videoCoverImage }] : []),
     ...property.gallery.map((g) => ({ kind: "image" as const, src: g })),
   ];
   const safeActive = Math.min(Math.max(active, 0), Math.max(0, media.length - 1));
   const activeItem = media[safeActive];
-  const showVideoPoster = !videoStarted || !videoReady;
+  const showVideoCover = Boolean(videoCoverImage) && !videoPlaying;
   const hideMediaCards = activeItem?.kind === "video" && videoPlaying;
   const activeGalleryIndex = hasVideo ? safeActive - 1 : safeActive;
 
@@ -307,35 +310,36 @@ const PropertyDetail = () => {
               <div className="relative rounded-2xl overflow-hidden">
                 {activeItem?.kind === "video" ? (
                   <div className="relative h-[220px] sm:h-[300px] md:h-[480px] w-full bg-black">
-                    {videoPoster && showVideoPoster ? (
+                    {showVideoCover ? (
                       <img
-                        src={videoPoster}
+                        src={videoCoverImage}
                         alt={property.title}
                         className="absolute inset-0 z-[1] h-full w-full object-cover"
                       />
                     ) : null}
-                    <video
-                      key={activeItem.src}
-                      ref={mainVideoRef}
-                      src={activeItem.src}
-                      poster={videoPoster}
-                      controls={videoStarted}
-                      playsInline
-                      preload="metadata"
-                      onLoadedData={() => setVideoReady(true)}
-                      onCanPlay={() => setVideoReady(true)}
-                      onPlay={() => setVideoPlaying(true)}
-                      onPause={() => setVideoPlaying(false)}
-                      onEnded={() => setVideoPlaying(false)}
-                      className={`relative z-[2] h-full w-full bg-black ${
-                        videoStarted && videoReady
-                          ? "object-contain"
-                          : videoStarted
-                            ? "object-contain opacity-0"
-                            : "sr-only"
-                      }`}
-                    />
-                    {videoStarted && (
+                    {videoStarted ? (
+                      <video
+                        key={activeItem.src}
+                        ref={mainVideoRef}
+                        src={activeItem.src}
+                        controls={videoPlaying}
+                        playsInline
+                        preload="auto"
+                        onLoadedData={() => setVideoReady(true)}
+                        onCanPlay={() => setVideoReady(true)}
+                        onPlay={() => setVideoPlaying(true)}
+                        onPause={() => setVideoPlaying(false)}
+                        onEnded={() => setVideoPlaying(false)}
+                        className={`absolute inset-0 z-[2] h-full w-full bg-black ${
+                          videoPlaying && videoReady
+                            ? "object-contain"
+                            : videoPlaying
+                              ? "object-contain opacity-0"
+                              : "hidden"
+                        }`}
+                      />
+                    ) : null}
+                    {videoPlaying && (
                       <button
                         type="button"
                         onClick={() => setVideoMuted((m) => !m)}
@@ -349,7 +353,7 @@ const PropertyDetail = () => {
                         )}
                       </button>
                     )}
-                    {!videoStarted && (
+                    {!videoPlaying && (
                       <button
                         type="button"
                         onClick={startVideo}

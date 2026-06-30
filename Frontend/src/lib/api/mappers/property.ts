@@ -61,6 +61,19 @@ export function formatPropertyAreaDisplay(p: Property): string {
   return `${fmt.format(p.area)} sq.ft`;
 }
 
+/** Gallery photo for the video cover; generated video thumbnail is the fallback. */
+export function resolveVideoCoverImage(
+  property: Pick<Property, "gallery" | "image" | "videoThumbnail" | "images">,
+): string {
+  const fromGallery = property.gallery.map((url) => url?.trim()).find(Boolean);
+  if (fromGallery) return fromGallery;
+  const fromRecords = property.images?.map((i) => i.url?.trim()).find(Boolean);
+  if (fromRecords) return fromRecords;
+  const mainImage = property.image?.trim();
+  if (mainImage && mainImage !== BRAND_LOGO_URL) return mainImage;
+  return property.videoThumbnail?.trim() || "";
+}
+
 export function mapApiPropertyToUi(p: ApiProperty): Property {
   const locationParts = [p.city_name, p.district_name, p.state_name].filter(Boolean);
   const location = locationParts.join(", ") || "India";
