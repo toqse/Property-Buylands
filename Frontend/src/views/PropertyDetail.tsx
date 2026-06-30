@@ -11,7 +11,7 @@ import { getErrorMessage } from "@/lib/api/errors";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Phone, Mail, Play, Check, ArrowLeft, ChevronLeft, ChevronRight, Images, Share2, X } from "lucide-react";
+import { MapPin, Phone, Mail, Play, Check, ArrowLeft, ChevronLeft, ChevronRight, Share2, Volume2, VolumeX, X } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,30 +49,67 @@ const PropertyDetail = () => {
   const [active, setActive] = useState(0); // index into combined media (video first, then photos)
   const [enquiry, setEnquiry] = useState(false);
   const [lightbox, setLightbox] = useState(false);
-  const [lightboxIndex, setLightboxIndex] = useState(0); // index into gallery photos only
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const mainVideoRef = useRef<HTMLVideoElement | null>(null);
-  // Inline property video does not autoplay: show the thumbnail with a centered
-  // play button until the viewer chooses to start it.
   const [videoStarted, setVideoStarted] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [videoMuted, setVideoMuted] = useState(false);
   const fmt = new Intl.NumberFormat("en-US");
   const furnishing = property?.furnishing || "N/A";
   const parking = property?.parkingSpaces || "N/A";
   const totalPhotos = property?.gallery.length ?? 0;
   const hasVideo = Boolean(property?.videoUrl);
   const totalMedia = totalPhotos + (hasVideo ? 1 : 0);
-  const thumbVisibleCount = 4;
-  const extraMedia = Math.max(0, totalMedia - thumbVisibleCount);
 
   // Reset to the thumbnail/play-button state whenever the active media changes.
   useEffect(() => {
     setVideoStarted(false);
+    setVideoReady(false);
+    setVideoPlaying(false);
+    setVideoMuted(false);
   }, [active]);
+
+  useEffect(() => {
+    const el = mainVideoRef.current;
+    if (!el) return;
+    el.muted = videoMuted;
+  }, [videoMuted, videoStarted]);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [lightbox]);
 
   useEffect(() => {
     const el = mainVideoRef.current;
     if (!el) return;
     return registerExclusiveVideo(el);
   }, [active, videoStarted, hasVideo]);
+
+  const startVideo = () => {
+    setVideoStarted(true);
+    setVideoMuted(false);
+    requestAnimationFrame(() => {
+      const el = mainVideoRef.current;
+      if (!el) return;
+      el.muted = false;
+      void el.play();
+    });
+  };
+
+  const openImageLightbox = (galleryIndex: number) => {
+    setLightboxIndex(Math.max(0, galleryIndex));
+    setLightbox(true);
+  };
 
   const prevMedia = () => {
     if (totalMedia === 0) return;
@@ -83,29 +120,6 @@ const PropertyDetail = () => {
     if (totalMedia === 0) return;
     setActive((prev) => (prev + 1) % totalMedia);
   };
-
-  const prevPhoto = () => {
-    if (totalPhotos === 0) return;
-    setLightboxIndex((prev) => (prev - 1 + totalPhotos) % totalPhotos);
-  };
-
-  const nextPhoto = () => {
-    if (totalPhotos === 0) return;
-    setLightboxIndex((prev) => (prev + 1) % totalPhotos);
-  };
-
-  // Keyboard navigation while the lightbox is open
-  useEffect(() => {
-    if (!lightbox || totalPhotos === 0) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") prevPhoto();
-      else if (e.key === "ArrowRight") nextPhoto();
-      else if (e.key === "Escape") setLightbox(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lightbox, totalPhotos]);
 
   if (isLoading || !isFetched) {
     return (
@@ -251,17 +265,17 @@ const PropertyDetail = () => {
   };
 
   type MediaItem = { kind: "video"; src: string; poster?: string } | { kind: "image"; src: string };
+  const firstGalleryImage = property.gallery[0];
+  const videoPoster = firstGalleryImage || property.videoThumbnail;
   const media: MediaItem[] = [
-    ...(hasVideo ? [{ kind: "video" as const, src: property.videoUrl as string, poster: property.videoThumbnail }] : []),
+    ...(hasVideo ? [{ kind: "video" as const, src: property.videoUrl as string, poster: videoPoster }] : []),
     ...property.gallery.map((g) => ({ kind: "image" as const, src: g })),
   ];
   const safeActive = Math.min(Math.max(active, 0), Math.max(0, media.length - 1));
   const activeItem = media[safeActive];
-  const toGalleryIndex = (mediaIndex: number) => (hasVideo ? mediaIndex - 1 : mediaIndex);
-  const openPhotoLightbox = (mediaIndex: number) => {
-    setLightboxIndex(Math.max(0, toGalleryIndex(mediaIndex)));
-    setLightbox(true);
-  };
+  const showVideoPoster = !videoStarted || !videoReady;
+  const hideMediaCards = activeItem?.kind === "video" && videoPlaying;
+  const activeGalleryIndex = hasVideo ? safeActive - 1 : safeActive;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -293,25 +307,52 @@ const PropertyDetail = () => {
               <div className="relative rounded-2xl overflow-hidden">
                 {activeItem?.kind === "video" ? (
                   <div className="relative h-[220px] sm:h-[300px] md:h-[480px] w-full bg-black">
+                    {videoPoster && showVideoPoster ? (
+                      <img
+                        src={videoPoster}
+                        alt={property.title}
+                        className="absolute inset-0 z-[1] h-full w-full object-cover"
+                      />
+                    ) : null}
                     <video
                       key={activeItem.src}
                       ref={mainVideoRef}
                       src={activeItem.src}
-                      poster={activeItem.poster}
+                      poster={videoPoster}
                       controls={videoStarted}
                       playsInline
                       preload="metadata"
-                      className="h-full w-full bg-black object-contain"
+                      onLoadedData={() => setVideoReady(true)}
+                      onCanPlay={() => setVideoReady(true)}
+                      onPlay={() => setVideoPlaying(true)}
+                      onPause={() => setVideoPlaying(false)}
+                      onEnded={() => setVideoPlaying(false)}
+                      className={`relative z-[2] h-full w-full bg-black ${
+                        videoStarted && videoReady
+                          ? "object-contain"
+                          : videoStarted
+                            ? "object-contain opacity-0"
+                            : "sr-only"
+                      }`}
                     />
+                    {videoStarted && (
+                      <button
+                        type="button"
+                        onClick={() => setVideoMuted((m) => !m)}
+                        className="absolute top-3 right-3 z-30 grid h-9 w-9 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/30 transition hover:bg-black/70 md:top-4 md:right-4 md:h-10 md:w-10"
+                        aria-label={videoMuted ? "Unmute video" : "Mute video"}
+                      >
+                        {videoMuted ? (
+                          <VolumeX className="h-4 w-4 md:h-5 md:w-5" />
+                        ) : (
+                          <Volume2 className="h-4 w-4 md:h-5 md:w-5" />
+                        )}
+                      </button>
+                    )}
                     {!videoStarted && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setVideoStarted(true);
-                          requestAnimationFrame(() => {
-                            void mainVideoRef.current?.play();
-                          });
-                        }}
+                        onClick={startVideo}
                         className="absolute inset-0 z-10 grid place-items-center bg-black/15 transition-colors hover:bg-black/25"
                         aria-label="Play video"
                       >
@@ -324,23 +365,51 @@ const PropertyDetail = () => {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => openPhotoLightbox(safeActive)}
+                    onClick={() => openImageLightbox(activeGalleryIndex)}
                     className="block w-full cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-gold"
                     aria-label="View image full screen"
                   >
-                    <img src={activeItem?.src} alt={property.title} className="h-[220px] sm:h-[300px] md:h-[480px] w-full object-cover transition-all duration-700" />
+                    <img
+                      src={activeItem?.src}
+                      alt={property.title}
+                      className="h-[220px] sm:h-[300px] md:h-[480px] w-full object-cover transition-all duration-700"
+                    />
                   </button>
                 )}
-                {totalPhotos > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => openPhotoLightbox(hasVideo ? 1 : 0)}
-                    className="absolute top-3 left-3 z-10 rounded-full bg-black/45 text-white px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1.5 backdrop-blur-sm md:top-4 md:left-4 md:px-4 md:py-2 md:text-sm md:gap-2 hover:bg-black/65 transition-colors"
-                    aria-label={`View all ${totalPhotos} photos`}
-                  >
-                    <Images className="h-4 w-4" />
-                    {totalPhotos} Photos
-                  </button>
+                {totalMedia > 1 && !hideMediaCards && (
+                  <div className="absolute bottom-3 right-3 z-20 flex max-w-[calc(100%-1.5rem)] items-center justify-end gap-1.5 overflow-x-auto sm:bottom-4 sm:right-4 sm:gap-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {media.map((m, i) => {
+                      const isActive = safeActive === i;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActive(i);
+                          }}
+                          className={`relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border-2 bg-white shadow-md transition-all sm:h-12 sm:w-12 md:h-14 md:w-14 ${
+                            isActive
+                              ? "border-[#0e305d] scale-105"
+                              : "border-white/95 opacity-90 hover:opacity-100 hover:border-white"
+                          }`}
+                          aria-label={m.kind === "video" ? "Play video" : `View image ${hasVideo ? i : i + 1}`}
+                          aria-current={isActive}
+                        >
+                          <img
+                            src={m.kind === "video" ? m.poster || "" : m.src}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                          {m.kind === "video" && (
+                            <span className="absolute inset-0 grid place-items-center bg-black/25">
+                              <Play className="h-3.5 w-3.5 fill-white text-white sm:h-4 sm:w-4" />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
                 {totalMedia > 1 && (
                   <>
@@ -359,47 +428,6 @@ const PropertyDetail = () => {
                       <ChevronRight className="h-4 w-4 md:h-5 md:w-5" />
                     </button>
                   </>
-                )}
-                {activeItem?.kind !== "video" && (
-                  <div className="absolute inset-x-0 bottom-0 p-2.5 sm:p-4 bg-gradient-to-t from-black/65 via-black/25 to-transparent">
-                    <div className="flex justify-center gap-2 sm:gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      {media.slice(0, thumbVisibleCount).map((m, i) => (
-                        <button
-                          key={i}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (i === thumbVisibleCount - 1 && extraMedia > 0) {
-                              openPhotoLightbox(hasVideo ? 1 : 0);
-                            } else {
-                              setActive(i);
-                            }
-                          }}
-                          className={`relative shrink-0 rounded-lg sm:rounded-xl overflow-hidden border-2 transition-all ${
-                            safeActive === i ? "border-gold scale-[1.02]" : "border-white/40 hover:border-white/80"
-                          }`}
-                          aria-label={
-                            i === thumbVisibleCount - 1 && extraMedia > 0
-                              ? `View all ${totalPhotos} photos`
-                              : m.kind === "video"
-                                ? "Play video"
-                                : `View image ${i + 1}`
-                          }
-                        >
-                          <img src={m.kind === "video" ? m.poster || "" : m.src} alt="" className="h-9 w-14 sm:h-14 sm:w-24 md:h-16 md:w-28 object-cover" />
-                          {m.kind === "video" && (
-                            <span className="absolute inset-0 grid place-items-center bg-black/35 text-white">
-                              <Play className="h-4 w-4 fill-current" />
-                            </span>
-                          )}
-                          {i === thumbVisibleCount - 1 && extraMedia > 0 && (
-                            <div className="absolute inset-0 bg-black/45 grid place-items-center text-white font-semibold text-xl">
-                              +{extraMedia}
-                            </div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 )}
               </div>
             </div>
@@ -597,99 +625,56 @@ const PropertyDetail = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Image lightbox */}
-      <Dialog open={lightbox} onOpenChange={setLightbox}>
-        <DialogContent
-          className="!z-[70] !max-w-none w-screen h-screen sm:w-screen sm:h-screen p-0 m-0 gap-0 border-0 rounded-none bg-black/95 [&>button]:hidden"
-          style={{
-            paddingTop: "env(safe-area-inset-top)",
-            paddingBottom: "env(safe-area-inset-bottom)",
-          }}
-          onInteractOutside={(e) => e.preventDefault()}
+      {lightbox && totalPhotos > 0 && (
+        <div
+          className="fixed inset-0 z-[200] flex flex-col bg-black"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Property image gallery"
         >
-          <DialogHeader className="sr-only">
-            <DialogTitle>{property.title} · Image {lightboxIndex + 1} of {totalPhotos}</DialogTitle>
-          </DialogHeader>
+          <button
+            type="button"
+            onClick={() => setLightbox(false)}
+            className="absolute right-4 top-[max(4rem,calc(env(safe-area-inset-top)+3.25rem))] z-10 grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20 md:top-[max(1rem,env(safe-area-inset-top))]"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
 
-          <div className="relative flex h-full w-full flex-col">
-            {/* Top bar */}
-            <div className="flex items-center justify-between gap-3 px-4 pt-24 pb-3 md:px-6 md:pt-6 md:py-4 text-white">
-              <div className="min-w-0">
-                <div className="text-[11px] uppercase tracking-[0.25em] text-white/60">Gallery</div>
-                <div className="truncate text-sm md:text-base font-medium">{property.title}</div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="rounded-full bg-white/10 px-3 py-1 text-xs md:text-sm tabular-nums">
-                  {lightboxIndex + 1} / {totalPhotos}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setLightbox(false)}
-                  aria-label="Close"
-                  className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Image stage */}
-            <div className="relative flex-1 min-h-0">
-              <div className="absolute inset-0 grid place-items-center px-3 py-3 md:px-6 md:py-4">
-                <img
-                  src={property.gallery[lightboxIndex]}
-                  alt={`${property.title} – ${lightboxIndex + 1}`}
-                  className="max-h-full max-w-full object-contain select-none rounded-md shadow-2xl"
-                  draggable={false}
-                />
-              </div>
-
-              {totalPhotos > 1 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={prevPhoto}
-                    aria-label="Previous image"
-                    className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 grid h-11 w-11 md:h-12 md:w-12 place-items-center rounded-full bg-white/10 text-white hover:bg-white/25 transition-colors backdrop-blur-sm"
-                  >
-                    <ChevronLeft className="h-5 w-5 md:h-6 md:w-6" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={nextPhoto}
-                    aria-label="Next image"
-                    className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 grid h-11 w-11 md:h-12 md:w-12 place-items-center rounded-full bg-white/10 text-white hover:bg-white/25 transition-colors backdrop-blur-sm"
-                  >
-                    <ChevronRight className="h-5 w-5 md:h-6 md:w-6" />
-                  </button>
-                </>
-              )}
-            </div>
-
-            {/* Thumbnail strip — leave room for the mobile bottom nav on small screens */}
-            {totalPhotos > 1 && (
-              <div className="border-t border-white/10 px-3 py-3 pb-[calc(72px+env(safe-area-inset-bottom))] md:px-6 md:py-4 md:pb-4">
-                <div className="flex gap-2 overflow-x-auto md:gap-3 [scrollbar-width:thin]">
-                  {property.gallery.map((g, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setLightboxIndex(i)}
-                      aria-label={`View image ${i + 1}`}
-                      aria-current={lightboxIndex === i}
-                      className={`relative shrink-0 overflow-hidden rounded-md border-2 transition-all ${
-                        lightboxIndex === i ? "border-gold opacity-100" : "border-white/20 opacity-70 hover:opacity-100 hover:border-white/50"
-                      }`}
-                    >
-                      <img src={g} alt="" className="h-14 w-20 md:h-16 md:w-24 object-cover" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+          <div className="flex min-h-0 flex-1 items-center justify-center px-4 pb-4 pt-14">
+            <img
+              src={property.gallery[lightboxIndex]}
+              alt={`${property.title} – ${lightboxIndex + 1}`}
+              className="max-h-full max-w-full select-none object-contain"
+              draggable={false}
+            />
           </div>
-        </DialogContent>
-      </Dialog>
+
+          {totalPhotos > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() =>
+                  setLightboxIndex((prev) => (prev - 1 + totalPhotos) % totalPhotos)
+                }
+                className="absolute left-3 top-1/2 z-10 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/25 md:left-4 md:h-12 md:w-12"
+                aria-label="Previous image"
+              >
+                <ChevronLeft className="h-5 w-5 md:h-6 md:w-6" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setLightboxIndex((prev) => (prev + 1) % totalPhotos)}
+                className="absolute right-3 top-1/2 z-10 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/25 md:right-4 md:h-12 md:w-12"
+                aria-label="Next image"
+              >
+                <ChevronRight className="h-5 w-5 md:h-6 md:w-6" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
     </div>
   );
 };
