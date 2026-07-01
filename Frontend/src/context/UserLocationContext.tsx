@@ -20,6 +20,7 @@ import {
   type GeolocationErrorCode,
 } from "@/lib/geolocationRequest";
 import { DEFAULT_PROPERTY_FILTER_RADIUS_KM } from "@/lib/locationFilter";
+import { setNavbarToCurrentLocation } from "@/lib/navbarLocation";
 import { useSiteSettings } from "@/hooks/api/useCatalog";
 
 const PROMPT_SEEN_KEY = "buylands_location_prompt_seen";
