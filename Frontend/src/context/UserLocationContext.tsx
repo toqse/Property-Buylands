@@ -19,7 +19,7 @@ import {
   requestGeolocationForPrompt,
   type GeolocationErrorCode,
 } from "@/lib/geolocationRequest";
-import { setNavbarToCurrentLocation } from "@/lib/navbarLocation";
+import { DEFAULT_PROPERTY_FILTER_RADIUS_KM } from "@/lib/locationFilter";
 import { useSiteSettings } from "@/hooks/api/useCatalog";
 
 const PROMPT_SEEN_KEY = "buylands_location_prompt_seen";
@@ -75,7 +75,7 @@ export function UserLocationProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "";
   const isAdminRoute = pathname.startsWith("/admin");
   const { data: siteSettings } = useSiteSettings(isAdminRoute);
-  const defaultRadius = siteSettings?.filter_radius ?? 25;
+  const defaultRadius = siteSettings?.filter_radius ?? DEFAULT_PROPERTY_FILTER_RADIUS_KM;
 
   const [coords, setCoords] = useState<UserCoords | null>(null);
   const [status, setStatus] = useState<LocationStatus>("idle");

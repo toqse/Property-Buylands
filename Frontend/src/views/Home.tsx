@@ -40,6 +40,7 @@ import { isBrowserReload } from "@/lib/browserReload";
 import { imageSrc } from "@/lib/image";
 import {
   CURRENT_LOCATION_VALUE,
+  DEFAULT_PROPERTY_FILTER_RADIUS_KM,
   RADIUS_OPTIONS,
   buildLocationCoordsMap,
   getLocationSearchValue,
@@ -98,7 +99,7 @@ const Home = () => {
     longitude: number;
   } | null>(null);
   const locationSearchCandidateRef = useRef<LocationSelection | null>(null);
-  const [searchRadius, setSearchRadius] = useState("10");
+  const [searchRadius, setSearchRadius] = useState(String(DEFAULT_PROPERTY_FILTER_RADIUS_KM));
   const [autoCurrentLocationDismissed, setAutoCurrentLocationDismissed] = useState(true);
   const [pendingCurrentLocation, setPendingCurrentLocation] = useState(false);
   const [cat, setCat] = useState("any");

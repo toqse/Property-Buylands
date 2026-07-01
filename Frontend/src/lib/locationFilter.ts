@@ -1,6 +1,9 @@
 /** Select value for browser / saved user coordinates */
 export const CURRENT_LOCATION_VALUE = "__current_location__";
 
+/** Default nearby search radius (km) when site settings are not loaded yet. */
+export const DEFAULT_PROPERTY_FILTER_RADIUS_KM = 10;
+
 export const RADIUS_OPTIONS: { value: string; label: string }[] = [
   { value: "1", label: "Within 1 km" },
   { value: "2", label: "Within 2 km" },
