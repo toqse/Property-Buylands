@@ -749,7 +749,13 @@ const Dashboard = () => {
                 {allProperties.length === 0 && !hasSearch && (
                   <div className="col-span-full rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground shadow-card">
                     You don&apos;t have any properties yet. Click{" "}
-                    <span className="font-medium text-gold">Add property</span>{" "}
+                    <button
+                      type="button"
+                      onClick={() => setAddOpen(true)}
+                      className="font-medium text-gold underline-offset-2 hover:underline"
+                    >
+                      Add property
+                    </button>{" "}
                     to list your first one.
                   </div>
                 )}
