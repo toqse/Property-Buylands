@@ -583,7 +583,7 @@ const Home = () => {
                     >
                       <Search className="h-3.5 w-3.5 shrink-0 text-[#0e305d]" aria-hidden />
                       <Input
-                        placeholder="Search by location, name, keyword..."
+                        placeholder="Search by Property Name or keyword ..."
                         value={q}
                         onChange={(e) => setQ(e.target.value)}
                         className="h-8 md:h-9 flex-1 border-0 bg-transparent px-0 text-[12px] md:text-[13px] text-[hsl(30_14%_20%)] placeholder:text-[hsl(30_8%_50%)] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"

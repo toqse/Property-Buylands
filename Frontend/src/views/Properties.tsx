@@ -1186,7 +1186,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   onKeyDown={(e) => {
                     if (e.key === "Enter") commitSearch();
                   }}
-                  placeholder="Search by location, property name, or keyword"
+                  placeholder="Search by Property name or keyword..."
                 />
               </div>
               <Button className="h-[38px] w-[38px] shrink-0 rounded-[12px] px-0 md:h-12 md:w-auto md:px-7" variant="luxe" onClick={commitSearch} aria-label="Search">
