@@ -450,7 +450,7 @@ const PropertyDetail = () => {
               </div>
 
               <aside className="rounded-2xl border border-border bg-background p-4 md:p-5 lg:-mt-3">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Monthly Rent</div>
+                {/* <div className="text-xs uppercase tracking-wider text-muted-foreground">Monthly Rent</div> */}
                 <div className="text-2xl text-foreground mt-1 md:text-3xl">
                   ₹{fmt.format(property.price)}
                   {property.priceUnit && <span className="text-sm text-muted-foreground"> {property.priceUnit}</span>}
@@ -502,7 +502,7 @@ const PropertyDetail = () => {
                     <div>
                       <div className="flex items-center justify-between py-3 border-b border-border/70">
                         <span className="text-muted-foreground">Property Type</span>
-                        <span className="font-medium text-right break-words min-w-0 pl-3">{property.type === "For Sale" ? "House for sale" : "House for rent"}</span>
+                        <span className="font-medium text-right break-words min-w-0 pl-3">{property.category}</span>
                       </div>
                       <div className="flex items-center justify-between py-3 border-b border-border/70">
                         <span className="text-muted-foreground">Furnishing</span>
