@@ -283,7 +283,7 @@ function sanitizeAreaValue(raw: string, maxLen = 80): string {
     if (firstDot !== -1) {
       seg = seg.slice(0, firstDot + 1) + seg.slice(firstDot + 1).replace(/\./g, "");
     }
-    if (seg) segments.push(seg);
+    segments.push(seg);
   }
   return segments.join(", ").slice(0, maxLen);
 }
@@ -1194,7 +1194,7 @@ export function ListingFormFields({
                 <Input
                   className="w-full min-w-0 max-w-full font-mono"
                   placeholder="e.g. 3200.50, 1500, 800"
-                  inputMode="decimal"
+                  inputMode="text"
                   value={draft.area}
                   onChange={(e) =>
                     setDraft((d) => ({
@@ -1210,7 +1210,7 @@ export function ListingFormFields({
                 <Input
                   className="w-full min-w-0 max-w-full font-mono"
                   placeholder="e.g. 5.75, 2.1"
-                  inputMode="decimal"
+                  inputMode="text"
                   value={draft.areaCent}
                   onChange={(e) =>
                     setDraft((d) => ({
@@ -1235,7 +1235,7 @@ export function ListingFormFields({
                   AREA_UNIT_OPTIONS.find((o) => o.value === draft.areaUnit)
                     ?.placeholder ?? "e.g. 3200.50, 1500, 800"
                 }
-                inputMode="decimal"
+                inputMode="text"
                 value={draft.area}
                 onChange={(e) =>
                   setDraft((d) => ({
