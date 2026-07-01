@@ -20,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { registerExclusiveVideo } from "@/lib/videoCoordinator";
-import { formatPropertyAreaDisplay, resolveVideoCoverImage } from "@/lib/api/mappers/property";
+import { getPropertyAreaDetailRows, resolveVideoCoverImage } from "@/lib/api/mappers/property";
 import { videoProcessingStatusLabel } from "@/lib/videoProcessingStatus";
 
 const WhatsAppIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
@@ -532,12 +532,21 @@ const PropertyDetail = () => {
                           <span className="font-medium text-right break-words min-w-0 pl-3">{property.sighting}</span>
                         </div>
                       ) : null}
-                      <div className="flex items-center justify-between pt-3">
-                        <span className="text-muted-foreground">Area</span>
-                        <span className="font-medium text-right break-words min-w-0 pl-3">
-                          {formatPropertyAreaDisplay(property)}
-                        </span>
-                      </div>
+                      {getPropertyAreaDetailRows(property).map((row, index, rows) => (
+                        <div
+                          key={row.label}
+                          className={`flex items-center justify-between ${
+                            index < rows.length - 1
+                              ? "py-3 border-b border-border/70"
+                              : "pt-3"
+                          }`}
+                        >
+                          <span className="text-muted-foreground">{row.label}</span>
+                          <span className="font-medium text-right break-words min-w-0 pl-3">
+                            {row.value}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                   <div className="rounded-2xl border border-border bg-card p-4 md:p-5">

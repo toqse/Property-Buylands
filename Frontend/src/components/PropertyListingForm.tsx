@@ -274,25 +274,70 @@ function sanitizeMoneyOrArea(raw: string, maxLen = 14): string {
   return only.slice(0, maxLen);
 }
 
-/** Area value sanitizer. Allows comma-separated decimals plus digits. */
+function sanitizeAreaSegment(part: string): string {
+  let seg = part.trim().replace(/[^\d.]/g, "");
+  const firstDot = seg.indexOf(".");
+  if (firstDot !== -1) {
+    seg = seg.slice(0, firstDot + 1) + seg.slice(firstDot + 1).replace(/\./g, "");
+  }
+  return seg;
+}
+
+/** Area value sanitizer. Allows comma-separated decimals; no leading or double commas. */
 function sanitizeAreaValue(raw: string, maxLen = 80): string {
+  const parts = raw.replace(/[^\d.,\s]/g, "").split(",");
   const segments: string[] = [];
-  for (const part of raw.replace(/[^\d.,\s]/g, "").split(",")) {
-    let seg = part.trim().replace(/[^\d.]/g, "");
-    const firstDot = seg.indexOf(".");
-    if (firstDot !== -1) {
-      seg = seg.slice(0, firstDot + 1) + seg.slice(firstDot + 1).replace(/\./g, "");
+
+  for (let i = 0; i < parts.length; i++) {
+    const seg = sanitizeAreaSegment(parts[i]);
+
+    if (i === 0) {
+      if (!seg && parts.length > 1) continue;
+      segments.push(seg);
+      continue;
     }
+
+    const hasPriorValue = segments.some((s) => s.length > 0);
+    if (!hasPriorValue) {
+      if (seg) segments.push(seg);
+      continue;
+    }
+
+    if (!seg && i < parts.length - 1) continue;
+
     segments.push(seg);
   }
+
   return segments.join(", ").slice(0, maxLen);
 }
 
-function parseAreaList(raw: string): number[] | null {
+function hasInvalidAreaListFormat(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  if (/^\s*,/.test(raw)) return true;
+  if (/,\s*,/.test(raw)) return true;
+  if (/,\s*$/.test(trimmed)) return true;
+  return false;
+}
+
+function areaListFormatError(raw: string, label: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
+  if (/^\s*,/.test(raw)) return `${label} cannot start with a comma`;
+  if (/,\s*,/.test(raw)) return `Enter a value between commas in ${label}`;
+  if (/,\s*$/.test(trimmed)) return `Complete the value after the comma in ${label}`;
+  return null;
+}
+
+function parseAreaList(raw: string): number[] | null {
+  if (hasInvalidAreaListFormat(raw)) return null;
+
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
   const parts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
   if (!parts.length) return null;
+
   const values: number[] = [];
   for (const part of parts) {
     const n = Number(part.replace(/,/g, ""));
@@ -581,21 +626,29 @@ export function validateAndParseDraft(
       field: "area",
     };
   }
+  const areaFormatError = areaListFormatError(draft.area, "Area");
+  if (areaFormatError) {
+    return { ok: false, message: areaFormatError, field: "area" };
+  }
   const parsedArea = parseAreaList(draft.area);
   if (parsedArea === null || !parsedArea.length) {
     return {
       ok: false,
-      message: "Area must be zero or greater",
+      message: "Each area value must be zero or greater",
       field: "area",
     };
   }
   areaValues = parsedArea;
   if (draft.areaCent.trim()) {
+    const centFormatError = areaListFormatError(draft.areaCent, "Area (cent)");
+    if (centFormatError) {
+      return { ok: false, message: centFormatError, field: "area_cent" };
+    }
     const parsedCent = parseAreaList(draft.areaCent);
     if (parsedCent === null || !parsedCent.length) {
       return {
         ok: false,
-        message: "Area (cent) must be zero or greater",
+        message: "Each cent value must be zero or greater",
         field: "area_cent",
       };
     }

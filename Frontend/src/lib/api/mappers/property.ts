@@ -77,6 +77,36 @@ function areaCentToDraftString(v?: number | number[] | null): string | undefined
   return list.length ? list.join(", ") : undefined;
 }
 
+export function formatAreaValuesOnly(values: number[]): string {
+  const fmt = new Intl.NumberFormat("en-IN");
+  if (!values.length) return "—";
+  return values.map((v) => fmt.format(v)).join(", ");
+}
+
+/** Separate rows for property detail (sq.ft and cent on their own lines). */
+export function getPropertyAreaDetailRows(
+  p: Property,
+): { label: string; value: string }[] {
+  const areaValues = normalizeAreaList(p.area);
+
+  if (p.areaCent?.trim()) {
+    const centValues = p.areaCent
+      .split(",")
+      .map((part) => Number(part.replace(/,/g, "").trim()))
+      .filter((n) => Number.isFinite(n));
+    return [
+      { label: "Area (sq.ft)", value: formatAreaValuesOnly(areaValues) },
+      { label: "Area (cent)", value: formatAreaValuesOnly(centValues) },
+    ];
+  }
+
+  if (p.areaUnit === "cents") {
+    return [{ label: "Area (cent)", value: formatAreaValuesOnly(areaValues) }];
+  }
+
+  return [{ label: "Area (sq.ft)", value: formatAreaValuesOnly(areaValues) }];
+}
+
 export function formatPropertyAreaDisplay(p: Property): string {
   const fmt = new Intl.NumberFormat("en-IN");
   const areaValues = normalizeAreaList(p.area);
