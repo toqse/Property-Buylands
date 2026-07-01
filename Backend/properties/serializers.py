@@ -20,6 +20,12 @@ from .models import (
 from .slug_utils import generate_unique_property_slug, normalize_property_slug_input
 from .utils import absolute_media_url, filter_public_video_ready, normalize_nearby_places_output
 from .enquiry_email import send_enquiry_notification
+from .area_utils import (
+    AreaParseError,
+    decimal_list_to_storage,
+    normalize_stored_area_list,
+    parse_decimal_list_input,
+)
 
 class StateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -106,6 +112,40 @@ def _create_property_images(property_instance, uploaded_images):
             raise DRFValidationError({"uploaded_images": detail}) from exc
 
 
+class DecimalListField(serializers.Field):
+    """Accept scalar, comma-separated string, or JSON array; always return a number array."""
+
+    def __init__(self, *, required=True, allow_null=False, **kwargs):
+        super().__init__(required=required, allow_null=allow_null, **kwargs)
+
+    def to_representation(self, value):
+        if value is None:
+            return None if self.allow_null else []
+        values = normalize_stored_area_list(value)
+        return [float(v) for v in values]
+
+    def to_internal_value(self, data):
+        if data is None or (isinstance(data, str) and not str(data).strip()):
+            if self.allow_null:
+                return None
+            if self.required:
+                raise serializers.ValidationError("This field is required.")
+            return []
+
+        field_name = getattr(self, "field_name", "area")
+        try:
+            parsed = parse_decimal_list_input(data, field_name)
+        except AreaParseError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+        if not parsed:
+            if self.allow_null:
+                return None
+            raise serializers.ValidationError("At least one area value is required.")
+
+        return decimal_list_to_storage(parsed)
+
+
 class PropertyVideoProcessingStatusSerializer(serializers.ModelSerializer):
     """Minimal serializer for batch video compression status polling."""
 
@@ -169,10 +209,8 @@ class PropertySerializer(serializers.ModelSerializer):
     built_year = serializers.CharField(
         required=False, allow_blank=True, max_length=20, default=""
     )
-    area = serializers.DecimalField(max_digits=18, decimal_places=8)
-    area_cent = serializers.DecimalField(
-        max_digits=18, decimal_places=8, required=False, allow_null=True
-    )
+    area = DecimalListField(required=True)
+    area_cent = DecimalListField(required=False, allow_null=True)
 
     class Meta:
         model = Property
@@ -425,17 +463,13 @@ class PropertySerializer(serializers.ModelSerializer):
 
     def _normalize_area_fields(self, attrs):
         if "area" in attrs:
-            attrs["area"] = self._normalize_non_negative_decimal(attrs["area"], "area")
+            if not attrs["area"]:
+                raise serializers.ValidationError({"area": "At least one area value is required."})
         elif self.instance is None:
             raise serializers.ValidationError({"area": "This field is required."})
 
-        if "area_cent" in attrs:
-            if self._is_blank_value(attrs["area_cent"]):
-                attrs["area_cent"] = None
-            else:
-                attrs["area_cent"] = self._normalize_non_negative_decimal(
-                    attrs["area_cent"], "area_cent"
-                )
+        if "area_cent" in attrs and attrs["area_cent"] is None:
+            attrs["area_cent"] = None
 
     def _apply_cent_built_fields(self, attrs):
         switching_to_cent = self._switching_to_cent(attrs)

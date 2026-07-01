@@ -63,6 +63,7 @@ import {
   findPropertyTypeFlags,
   type PropertyTypeSearchFilterState,
 } from "@/lib/api/propertyForm";
+import { formatAreaList, normalizeAreaList } from "@/lib/api/mappers/property";
 import {
   PropertyTypeRoomSearchFields,
   PropertyTypeSearchFields,
@@ -986,7 +987,11 @@ const Home = () => {
                         </span>
                         <span className="text-foreground/20">|</span>
                         <span className="inline-flex items-center gap-1">
-                          <Maximize className="h-3.5 w-3.5 text-gold" /> {fmt.format(p.area)} {p.areaUnit === "cents" ? "cents" : "ft²"}
+                          <Maximize className="h-3.5 w-3.5 text-gold" />{" "}
+                          {formatAreaList(
+                            normalizeAreaList(p.area),
+                            p.areaUnit === "cents" ? "cents" : "ft²",
+                          )}
                         </span>
                       </div>
 

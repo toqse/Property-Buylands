@@ -264,10 +264,10 @@ class PropertyAreaUnitValidationTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(str(response.data["area"]), "1250.50000000")
+        self.assertEqual(response.data["area"], [1250.5])
 
         prop = Property.objects.get(pk=response.data["id"])
-        self.assertEqual(prop.area, Decimal("1250.50"))
+        self.assertEqual(prop.area, ["1250.5"])
 
     def test_create_with_decimal_area_cent_unit(self):
         response = self.client.post(
@@ -276,7 +276,7 @@ class PropertyAreaUnitValidationTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(str(response.data["area"]), "5.75000000")
+        self.assertEqual(response.data["area"], [5.75])
         self.assertEqual(response.data["area_unit"], "cent")
 
     def test_create_with_decimal_area_and_area_cent(self):
@@ -296,8 +296,8 @@ class PropertyAreaUnitValidationTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(str(response.data["area"]), "3200.25000000")
-        self.assertEqual(str(response.data["area_cent"]), "5.75000000")
+        self.assertEqual(response.data["area"], [3200.25])
+        self.assertEqual(response.data["area_cent"], [5.75])
 
     def test_create_with_zero_area(self):
         response = self.client.post(
@@ -306,10 +306,10 @@ class PropertyAreaUnitValidationTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(str(response.data["area"]), "0.00000000")
+        self.assertEqual(response.data["area"], [0.0])
 
         prop = Property.objects.get(pk=response.data["id"])
-        self.assertEqual(prop.area, Decimal("0"))
+        self.assertEqual(prop.area, ["0"])
 
     def test_create_with_zero_area_cent(self):
         both_type = PropertyType.objects.create(
@@ -328,10 +328,10 @@ class PropertyAreaUnitValidationTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(str(response.data["area_cent"]), "0.00000000")
+        self.assertEqual(response.data["area_cent"], [0.0])
 
         prop = Property.objects.get(pk=response.data["id"])
-        self.assertEqual(prop.area_cent, Decimal("0"))
+        self.assertEqual(prop.area_cent, ["0"])
 
     def test_patch_area_cent_to_zero(self):
         both_type = PropertyType.objects.create(
@@ -358,10 +358,10 @@ class PropertyAreaUnitValidationTests(APITestCase):
             format="json",
         )
         self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(str(patch_resp.data["area_cent"]), "0.00000000")
+        self.assertEqual(patch_resp.data["area_cent"], [0.0])
 
         prop = Property.objects.get(pk=prop_id)
-        self.assertEqual(prop.area_cent, Decimal("0"))
+        self.assertEqual(prop.area_cent, ["0"])
 
     def test_patch_decimal_area(self):
         create_resp = self.client.post(
@@ -378,4 +378,65 @@ class PropertyAreaUnitValidationTests(APITestCase):
             format="json",
         )
         self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(str(patch_resp.data["area"]), "1250.50000000")
+        self.assertEqual(patch_resp.data["area"], [1250.5])
+
+    def test_create_with_comma_separated_area_values(self):
+        response = self.client.post(
+            self.url,
+            self._base_payload(area="23.56, 56.677, 4.56", title="Multi Area Sqft"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["area"], [23.56, 56.677, 4.56])
+
+        prop = Property.objects.get(pk=response.data["id"])
+        self.assertEqual(prop.area, ["23.56", "56.677", "4.56"])
+        self.assertEqual(prop.area_range_min, Decimal("4.56"))
+        self.assertEqual(prop.area_range_max, Decimal("56.677"))
+
+    def test_create_with_comma_separated_area_cent_values(self):
+        both_type = PropertyType.objects.create(
+            name="Plot Multi Cent",
+            has_area_both=True,
+        )
+        response = self.client.post(
+            self.url,
+            self._base_payload(
+                area="3200.25",
+                area_cent="5.75, 2.1",
+                area_unit="sqft",
+                property_type=both_type.pk,
+                title="Multi Cent Both",
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["area_cent"], [5.75, 2.1])
+
+    def test_filter_area_min_matches_any_value(self):
+        self.client.post(
+            self.url,
+            self._base_payload(
+                area="10, 60",
+                title="Filter Match Multi",
+            ),
+            format="json",
+        )
+        response = self.client.get(self.url, {"area_min": "50", "area_unit": "sqft"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [item["title"] for item in response.data.get("results", response.data)]
+        self.assertIn("Filter Match Multi", titles)
+
+    def test_filter_area_min_excludes_when_no_value_qualifies(self):
+        self.client.post(
+            self.url,
+            self._base_payload(
+                area="10, 30",
+                title="Filter Exclude Multi",
+            ),
+            format="json",
+        )
+        response = self.client.get(self.url, {"area_min": "50", "area_unit": "sqft"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [item["title"] for item in response.data.get("results", response.data)]
+        self.assertNotIn("Filter Exclude Multi", titles)

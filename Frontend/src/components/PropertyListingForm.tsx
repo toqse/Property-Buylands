@@ -10,6 +10,7 @@ import {
   type SetStateAction,
 } from "react";
 import type { Property, PropertyStatus } from "@/data/mockData";
+import { areaListToDraftString } from "@/lib/api/mappers/property";
 import {
   videoProcessingStatusLabel,
   videoProcessingStatusTone,
@@ -139,13 +140,13 @@ const AREA_UNIT_OPTIONS: {
   {
     value: "sqft",
     label: "Square feet",
-    placeholder: "e.g. 3200.50",
+    placeholder: "e.g. 3200.50, 1500, 800",
     inputLabel: "Area (sq.ft)",
   },
   {
     value: "cents",
     label: "Cent",
-    placeholder: "e.g. 5.75",
+    placeholder: "e.g. 5.75, 2.1",
     inputLabel: "Area (Cents)",
   },
 ];
@@ -273,14 +274,32 @@ function sanitizeMoneyOrArea(raw: string, maxLen = 14): string {
   return only.slice(0, maxLen);
 }
 
-/** Area value sanitizer. Allows one decimal point (for acres/cents) plus digits and commas. */
-function sanitizeAreaValue(raw: string, maxLen = 20): string {
-  let s = raw.replace(/[^\d.,]/g, "");
-  const firstDot = s.indexOf(".");
-  if (firstDot !== -1) {
-    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+/** Area value sanitizer. Allows comma-separated decimals plus digits. */
+function sanitizeAreaValue(raw: string, maxLen = 80): string {
+  const segments: string[] = [];
+  for (const part of raw.replace(/[^\d.,\s]/g, "").split(",")) {
+    let seg = part.trim().replace(/[^\d.]/g, "");
+    const firstDot = seg.indexOf(".");
+    if (firstDot !== -1) {
+      seg = seg.slice(0, firstDot + 1) + seg.slice(firstDot + 1).replace(/\./g, "");
+    }
+    if (seg) segments.push(seg);
   }
-  return s.slice(0, maxLen);
+  return segments.join(", ").slice(0, maxLen);
+}
+
+function parseAreaList(raw: string): number[] | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  const values: number[] = [];
+  for (const part of parts) {
+    const n = Number(part.replace(/,/g, ""));
+    if (!Number.isFinite(n) || n < 0) return null;
+    values.push(n);
+  }
+  return values;
 }
 
 function parseMoneyValue(raw: string): number | null {
@@ -452,7 +471,7 @@ export function propertyToDraft(p: Property): AddPropertyDraft {
     title: p.title,
     price: p.price ? String(p.price) : "",
     propertyCategory: p.category,
-    area: p.area ? String(p.area) : "",
+    area: areaListToDraftString(p.area),
     areaUnit: p.areaUnit ?? "sqft",
     bedrooms: p.bedrooms ? String(p.bedrooms) : "",
     bathrooms: p.bathrooms ? String(p.bathrooms) : "",
@@ -476,7 +495,7 @@ export function propertyToDraft(p: Property): AddPropertyDraft {
 
 export type DraftParseOk = {
   priceNum: number;
-  areaSq: number;
+  areaValues: number[];
   latNum: number;
   lngNum: number;
   feats: string[];
@@ -554,7 +573,7 @@ export function validateAndParseDraft(
       message: "Price must be a positive number (digits only)",
       field: "price",
     };
-  let areaSq = 0;
+  let areaValues: number[] = [];
   if (!draft.area.trim()) {
     return {
       ok: false,
@@ -562,18 +581,18 @@ export function validateAndParseDraft(
       field: "area",
     };
   }
-  const parsedArea = parseMoneyValue(draft.area);
-  if (parsedArea === null || parsedArea < 0) {
+  const parsedArea = parseAreaList(draft.area);
+  if (parsedArea === null || !parsedArea.length) {
     return {
       ok: false,
       message: "Area must be zero or greater",
       field: "area",
     };
   }
-  areaSq = parsedArea;
+  areaValues = parsedArea;
   if (draft.areaCent.trim()) {
-    const parsedCent = parseMoneyValue(draft.areaCent);
-    if (parsedCent === null || parsedCent < 0) {
+    const parsedCent = parseAreaList(draft.areaCent);
+    if (parsedCent === null || !parsedCent.length) {
       return {
         ok: false,
         message: "Area (cent) must be zero or greater",
@@ -614,7 +633,7 @@ export function validateAndParseDraft(
     ok: true,
     data: {
       priceNum,
-      areaSq,
+      areaValues,
       latNum,
       lngNum,
       feats,
@@ -673,7 +692,7 @@ export function buildPropertyFromValidatedDraft(
     city: draft.city.trim() || draft.district || draft.state || "—",
     bedrooms: Number(draft.bedrooms) || 0,
     bathrooms: Number(draft.bathrooms) || 0,
-    area: parsed.areaSq,
+    area: parsed.areaValues,
     areaUnit: draft.areaUnit,
     features: parsed.feats,
     description: draft.description.trim(),
@@ -1174,7 +1193,7 @@ export function ListingFormFields({
                 </Label>
                 <Input
                   className="w-full min-w-0 max-w-full font-mono"
-                  placeholder="e.g. 3200.50"
+                  placeholder="e.g. 3200.50, 1500, 800"
                   inputMode="decimal"
                   value={draft.area}
                   onChange={(e) =>
@@ -1190,7 +1209,7 @@ export function ListingFormFields({
                 <Label>Area (Cent)</Label>
                 <Input
                   className="w-full min-w-0 max-w-full font-mono"
-                  placeholder="e.g. 5.75"
+                  placeholder="e.g. 5.75, 2.1"
                   inputMode="decimal"
                   value={draft.areaCent}
                   onChange={(e) =>
@@ -1214,7 +1233,7 @@ export function ListingFormFields({
                 className="w-full min-w-0 max-w-full font-mono"
                 placeholder={
                   AREA_UNIT_OPTIONS.find((o) => o.value === draft.areaUnit)
-                    ?.placeholder ?? "e.g. 3200.50"
+                    ?.placeholder ?? "e.g. 3200.50, 1500, 800"
                 }
                 inputMode="decimal"
                 value={draft.area}

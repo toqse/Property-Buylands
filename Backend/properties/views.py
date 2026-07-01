@@ -797,42 +797,36 @@ class PropertyViewSet(viewsets.ModelViewSet):
         if parking_spaces_min_value is not None:
             queryset = queryset.filter(parking_spaces__gte=parking_spaces_min_value)
 
-        # Area filtering - filter by matching area_unit and area value (no conversion)
-        # Get valid area unit choices as a set for efficient lookup
+        # Area filtering - uses denormalized min/max ranges (any-value overlap semantics)
         valid_area_units = {choice[0] for choice in Property.AREA_UNIT_CHOICES}
-        
-        # Filter by area_unit if provided and valid
+
         if area_unit and area_unit in valid_area_units:
             queryset = queryset.filter(area_unit=area_unit)
-            
-            # Apply area_min and area_max filters only when area_unit is specified
-            # This ensures we're comparing within the same unit
+
             area_min_value = convert_decimal(area_min)
             if area_min_value is not None:
-                queryset = queryset.filter(area__gte=area_min_value)
+                queryset = queryset.filter(area_range_max__gte=area_min_value)
 
             area_max_value = convert_decimal(area_max)
             if area_max_value is not None:
-                queryset = queryset.filter(area__lte=area_max_value)
+                queryset = queryset.filter(area_range_min__lte=area_max_value)
         elif area_min or area_max:
-            # If area_min/area_max are provided but area_unit is not, 
-            # default to 'sqft' for backward compatibility
-            queryset = queryset.filter(area_unit='sqft')
+            queryset = queryset.filter(area_unit="sqft")
             area_min_value = convert_decimal(area_min)
             if area_min_value is not None:
-                queryset = queryset.filter(area__gte=area_min_value)
+                queryset = queryset.filter(area_range_max__gte=area_min_value)
 
             area_max_value = convert_decimal(area_max)
             if area_max_value is not None:
-                queryset = queryset.filter(area__lte=area_max_value)
+                queryset = queryset.filter(area_range_min__lte=area_max_value)
 
         area_cent_min_value = convert_decimal(area_cent_min)
         if area_cent_min_value is not None:
-            queryset = queryset.filter(area_cent__gte=area_cent_min_value)
+            queryset = queryset.filter(area_cent_range_max__gte=area_cent_min_value)
 
         area_cent_max_value = convert_decimal(area_cent_max)
         if area_cent_max_value is not None:
-            queryset = queryset.filter(area_cent__lte=area_cent_max_value)
+            queryset = queryset.filter(area_cent_range_min__lte=area_cent_max_value)
 
         if date_from:
             parsed_date = parse_date(date_from)

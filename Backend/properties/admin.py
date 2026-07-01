@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django import forms
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from .models import (
@@ -12,6 +13,12 @@ from .models import (
     City,
     SiteSettings,
     Testimonial,
+)
+from .area_utils import (
+    AreaParseError,
+    decimal_list_to_storage,
+    join_decimal_list_for_display,
+    parse_decimal_list_input,
 )
 
 @admin.register(State)
@@ -74,8 +81,54 @@ class PropertyImageInline(admin.TabularInline):
     model = PropertyImage
     extra = 1
 
+
+class PropertyAdminForm(forms.ModelForm):
+    area = forms.CharField(
+        required=True,
+        help_text="Multiple values: 23.56, 56.677, 4.56",
+    )
+    area_cent = forms.CharField(
+        required=False,
+        help_text="Multiple cent values: 5.75, 2.1 (optional)",
+    )
+
+    class Meta:
+        model = Property
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial["area"] = join_decimal_list_for_display(self.instance.area)
+            if self.instance.area_cent:
+                self.initial["area_cent"] = join_decimal_list_for_display(self.instance.area_cent)
+
+    def clean_area(self):
+        raw = self.cleaned_data.get("area")
+        try:
+            values = parse_decimal_list_input(raw, "area")
+        except AreaParseError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        if not values:
+            raise forms.ValidationError("At least one area value is required.")
+        return decimal_list_to_storage(values)
+
+    def clean_area_cent(self):
+        raw = self.cleaned_data.get("area_cent")
+        if raw is None or not str(raw).strip():
+            return None
+        try:
+            values = parse_decimal_list_input(raw, "area_cent")
+        except AreaParseError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        if not values:
+            return None
+        return decimal_list_to_storage(values)
+
+
 @admin.register(Property)
 class PropertyAdmin(admin.ModelAdmin):
+    form = PropertyAdminForm
     list_display = ('title', 'property_for', 'is_featured', 'state', 'district', 'city', 'property_type', 'price', 'created_at')
     list_filter = ('property_for', 'is_featured', 'state', 'district', 'city', 'property_type', 'bedrooms', 'bathrooms', 'furnishing', 'project_status')
     search_fields = ('title', 'description', 'property_ownership', 'project_status', 'floors', 'sighting')

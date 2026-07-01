@@ -1,6 +1,7 @@
 import { Link } from "@/lib/router";
 import { Bed, Bath, Maximize, MapPin } from "lucide-react";
 import { Property } from "@/data/mockData";
+import { formatAreaList, normalizeAreaList } from "@/lib/api/mappers/property";
 import { PropertyMediaThumb } from "@/components/PropertyMediaThumb";
 
 export const PropertyCard = ({
@@ -86,7 +87,10 @@ export const PropertyCard = ({
           )}
           <div className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-foreground/[0.04] px-2 py-2 text-[12px] font-medium text-foreground/80 ring-1 ring-black/[0.04]">
             <Maximize className="h-3.5 w-3.5 text-gold" />
-            {fmt.format(property.area)} {property.areaUnit === "cents" ? "cents" : "ft²"}
+            {formatAreaList(
+              normalizeAreaList(property.area),
+              property.areaUnit === "cents" ? "cents" : "ft²",
+            )}
           </div>
         </div>
       </div>

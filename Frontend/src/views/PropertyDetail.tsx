@@ -55,7 +55,7 @@ const PropertyDetail = () => {
   const [videoReady, setVideoReady] = useState(false);
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [videoMuted, setVideoMuted] = useState(false);
-  const fmt = new Intl.NumberFormat("en-US");
+  const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
   const furnishing = property?.furnishing || "N/A";
   const parking = property?.parkingSpaces || "N/A";
   const totalPhotos = property?.gallery.length ?? 0;

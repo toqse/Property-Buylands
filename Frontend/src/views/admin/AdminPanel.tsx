@@ -117,6 +117,7 @@ import { contentApi } from "@/lib/api/content";
 import { catalogApi } from "@/lib/api/catalog";
 import { mapApiAdToUi } from "@/lib/api/mappers/advertisement";
 import { mapApiOwnerToAppUser } from "@/lib/api/mappers/owner";
+import { formatPropertyAreaDisplay } from "@/lib/api/mappers/property";
 import type { ApiAdvertisement } from "@/lib/api/types";
 import {
   LayoutDashboard,
@@ -695,9 +696,7 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
     },
     {
       label: "Area",
-      value: property.areaCent?.trim()
-        ? `${fmt(property.area)} sq.ft / ${fmt(Number(property.areaCent) || 0)} cent`
-        : `${fmt(property.area)} ${property.areaUnit === "cents" ? "cent" : "sq.ft"}`,
+      value: formatPropertyAreaDisplay(property),
     },
     ...(property.bedrooms
       ? [{ label: "Bedrooms", value: String(property.bedrooms) }]

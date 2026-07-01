@@ -61,7 +61,7 @@ export interface ApiProperty {
   longitude?: string | number;
   bedrooms?: number;
   bathrooms?: number;
-  area?: number;
+  area?: number | number[];
   area_unit?: string;
   description?: string;
   features?: number[];
@@ -79,7 +79,7 @@ export interface ApiProperty {
   project_status?: string;
   floors?: string;
   sighting?: string;
-  area_cent?: number;
+  area_cent?: number | number[] | null;
   parking_spaces?: number;
   is_featured?: boolean;
   moderation_status?: "pending" | "approved" | "rejected";

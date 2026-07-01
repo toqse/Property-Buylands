@@ -145,11 +145,23 @@ class Property(models.Model):
         ('sqft', 'Square Feet'),
         ('cent', 'Cent'),
     ]
-    area = models.DecimalField(
+    area = models.JSONField(
+        default=list,
+        help_text="Area values (sq.ft or cent per area_unit); e.g. [\"23.56\", \"56.677\"]",
+    )
+    area_range_min = models.DecimalField(
         max_digits=18,
         decimal_places=8,
-        help_text="Area value",
-        validators=[MinValueValidator(0)],
+        default=0,
+        db_index=True,
+        help_text="Minimum value in area list (for filtering)",
+    )
+    area_range_max = models.DecimalField(
+        max_digits=18,
+        decimal_places=8,
+        default=0,
+        db_index=True,
+        help_text="Maximum value in area list (for filtering)",
     )
     area_unit = models.CharField(max_length=10, choices=AREA_UNIT_CHOICES, default='sqft', help_text="Unit of measurement for area")
     description = models.TextField(blank=True, default="")
@@ -183,13 +195,26 @@ class Property(models.Model):
     project_status = models.CharField(max_length=100, blank=True, null=True)
     floors = models.CharField(max_length=50, blank=True, null=True)
     sighting = models.CharField(max_length=100, blank=True, null=True)
-    area_cent = models.DecimalField(
+    area_cent = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Cent values when property type supports both units; e.g. [\"5.75\", \"2.1\"]",
+    )
+    area_cent_range_min = models.DecimalField(
         max_digits=18,
         decimal_places=8,
         null=True,
         blank=True,
-        help_text="Cent value when property type supports both units",
-        validators=[MinValueValidator(0)],
+        db_index=True,
+        help_text="Minimum value in area_cent list (for filtering)",
+    )
+    area_cent_range_max = models.DecimalField(
+        max_digits=18,
+        decimal_places=8,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Maximum value in area_cent list (for filtering)",
     )
     parking_spaces = models.PositiveIntegerField(default=0)
     is_featured = models.BooleanField(
@@ -226,7 +251,27 @@ class Property(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def _update_area_ranges(self):
+        from .area_utils import normalize_stored_area_list, values_min_max
+
+        area_values = normalize_stored_area_list(self.area)
+        if area_values:
+            self.area_range_min, self.area_range_max = values_min_max(area_values)
+
+        if self.area_cent:
+            cent_values = normalize_stored_area_list(self.area_cent)
+            if cent_values:
+                self.area_cent_range_min, self.area_cent_range_max = values_min_max(cent_values)
+            else:
+                self.area_cent = None
+                self.area_cent_range_min = None
+                self.area_cent_range_max = None
+        else:
+            self.area_cent_range_min = None
+            self.area_cent_range_max = None
+
     def save(self, *args, **kwargs):
+        self._update_area_ranges()
         new_video = bool(self.property_video) and is_new_image_upload(self.property_video)
         clear_video = not self.property_video
         queue_after_save = False

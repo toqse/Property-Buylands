@@ -51,14 +51,46 @@ function mapAreaUnit(unit?: string): Property["areaUnit"] {
   return (unit as Property["areaUnit"]) || "sqft";
 }
 
+export function normalizeAreaList(
+  v?: number | number[] | string | null,
+): number[] {
+  if (v == null) return [];
+  if (Array.isArray(v)) {
+    return v.map((item) => Number(item)).filter((n) => Number.isFinite(n));
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? [n] : [];
+}
+
+export function formatAreaList(values: number[], unitLabel: string): string {
+  const fmt = new Intl.NumberFormat("en-IN");
+  if (!values.length) return `0 ${unitLabel}`;
+  return `${values.map((v) => fmt.format(v)).join(", ")} ${unitLabel}`;
+}
+
+export function areaListToDraftString(v?: number | number[] | null): string {
+  return normalizeAreaList(v).join(", ");
+}
+
+function areaCentToDraftString(v?: number | number[] | null): string | undefined {
+  const list = normalizeAreaList(v);
+  return list.length ? list.join(", ") : undefined;
+}
+
 export function formatPropertyAreaDisplay(p: Property): string {
   const fmt = new Intl.NumberFormat("en-IN");
+  const areaValues = normalizeAreaList(p.area);
+  const areaText = areaValues.map((v) => fmt.format(v)).join(", ");
+
   if (p.areaCent?.trim()) {
-    const centVal = Number(p.areaCent.replace(/,/g, "")) || 0;
-    return `${fmt.format(p.area)} sq.ft / ${fmt.format(centVal)} cent`;
+    const centText = p.areaCent
+      .split(",")
+      .map((part) => fmt.format(Number(part.replace(/,/g, "")) || 0))
+      .join(", ");
+    return `${areaText} sq.ft / ${centText} cent`;
   }
-  if (p.areaUnit === "cents") return `${fmt.format(p.area)} cent`;
-  return `${fmt.format(p.area)} sq.ft`;
+  if (p.areaUnit === "cents") return `${areaText} cent`;
+  return `${areaText} sq.ft`;
 }
 
 /** Gallery photo for the video cover; generated video thumbnail is the fallback. */
@@ -90,7 +122,7 @@ export function mapApiPropertyToUi(p: ApiProperty): Property {
     city,
     bedrooms: p.bedrooms ?? 0,
     bathrooms: p.bathrooms ?? 0,
-    area: p.area ?? 0,
+    area: normalizeAreaList(p.area),
     areaUnit: mapAreaUnit(p.area_unit),
     features: pickFeatureNames(p),
     description: p.description || "",
@@ -121,7 +153,7 @@ export function mapApiPropertyToUi(p: ApiProperty): Property {
     projectStatus: p.project_status || undefined,
     floors: p.floors || undefined,
     sighting: p.sighting || undefined,
-    areaCent: p.area_cent != null ? String(p.area_cent) : undefined,
+    areaCent: areaCentToDraftString(p.area_cent),
     parkingSpaces: p.parking_spaces != null ? String(p.parking_spaces) : undefined,
     nearbyPlaces: (p.nearby_places_data ?? []).map((np) => ({
       name: np.name,

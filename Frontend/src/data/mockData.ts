@@ -21,7 +21,7 @@ export interface Property {
   city: string;
   bedrooms: number;
   bathrooms: number;
-  area: number; // value in `areaUnit` (defaults to sqft)
+  area: number | number[]; // value(s) in `areaUnit` (defaults to sqft)
   areaUnit?: "sqft" | "sqm" | "acres" | "cents";
   features: string[];
   description: string;
