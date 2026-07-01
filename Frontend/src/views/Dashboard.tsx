@@ -102,6 +102,16 @@ import {
   type ListingFieldErrors,
 } from "@/components/PropertyListingForm";
 
+/** Mobile drawer sits above bottom nav (~60px) and keeps action buttons visible. */
+const MOBILE_PROPERTY_DRAWER_CONTENT_CLASS =
+  "bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-[70] mt-0 max-h-[calc(100dvh-3.75rem-env(safe-area-inset-bottom,0px))] rounded-t-3xl flex flex-col gap-0 overflow-hidden p-0";
+
+const MOBILE_PROPERTY_DRAWER_BODY_CLASS =
+  "overflow-y-auto overflow-x-hidden overscroll-contain px-6 pb-6 flex-1 space-y-6 min-h-0 min-w-0";
+
+const MOBILE_PROPERTY_DRAWER_FOOTER_CLASS =
+  "px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] border-t border-border shrink-0 flex flex-col gap-3 bg-background shadow-[0_-6px_16px_-10px_rgba(15,23,42,0.18)]";
+
 const Dashboard = () => {
   const { user, hydrated, login, loginWithToken, getToken } = useAuth();
   const navigate = useNavigate();
@@ -1390,12 +1400,13 @@ const Dashboard = () => {
       {isMobile ? (
         <Drawer
           open={addOpen}
+          repositionInputs
           onOpenChange={(v) => {
             setAddOpen(v);
             if (!v) resetAddPropertyForm();
           }}
         >
-          <DrawerContent className="bottom-[60px] z-50 mt-0 max-h-[calc(100dvh-5rem)] rounded-t-3xl flex flex-col gap-0 p-0">
+          <DrawerContent className={MOBILE_PROPERTY_DRAWER_CONTENT_CLASS}>
             <div className="px-6 pt-2 pb-2 shrink-0">
               <DrawerTitle className="font-serif text-2xl">
                 Add property
@@ -1404,7 +1415,7 @@ const Dashboard = () => {
                 Add a new property listing
               </DrawerDescription>
             </div>
-            <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
+            <div className={MOBILE_PROPERTY_DRAWER_BODY_CLASS}>
               <ListingFormFields
                 draft={draft}
                 setDraft={setDraft}
@@ -1419,7 +1430,7 @@ const Dashboard = () => {
                 lockVideoChanges={propertyMutations.create.isPending}
               />
             </div>
-            <div className="px-6 py-4 border-t border-border shrink-0 gap-3 flex flex-col">
+            <div className={MOBILE_PROPERTY_DRAWER_FOOTER_CLASS}>
               <PropertyUploadProgress
                 active={
                   propertyMutations.create.isPending &&
@@ -1528,6 +1539,7 @@ const Dashboard = () => {
       {isMobile ? (
         <Drawer
           open={!!editTarget}
+          repositionInputs
           onOpenChange={(v) => {
             if (!v) {
               setEditTarget(null);
@@ -1535,7 +1547,7 @@ const Dashboard = () => {
             }
           }}
         >
-          <DrawerContent className="bottom-[60px] z-50 mt-0 max-h-[calc(100dvh-5rem)] rounded-t-3xl flex flex-col gap-0 p-0">
+          <DrawerContent className={MOBILE_PROPERTY_DRAWER_CONTENT_CLASS}>
             <div className="px-6 pt-2 pb-2 shrink-0">
               <DrawerTitle className="font-serif text-2xl">
                 Edit property
@@ -1544,7 +1556,7 @@ const Dashboard = () => {
                 Edit your property listing
               </DrawerDescription>
             </div>
-            <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
+            <div className={MOBILE_PROPERTY_DRAWER_BODY_CLASS}>
               <ListingFormFields
                 draft={editDraft}
                 setDraft={setEditDraft}
@@ -1573,7 +1585,7 @@ const Dashboard = () => {
               lockVideoChanges={propertyMutations.update.isPending}
             />
             </div>
-            <div className="px-6 py-4 border-t border-border shrink-0 flex flex-col gap-4">
+            <div className={MOBILE_PROPERTY_DRAWER_FOOTER_CLASS}>
               <PropertyUploadProgress
                 active={
                   propertyMutations.update.isPending &&
