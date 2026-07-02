@@ -1,7 +1,7 @@
 """Shared constants for property and advertisement video processing."""
 
 VIDEO_MAX_BYTES = 80 * 1024 * 1024
-VIDEO_MAX_DURATION_SECONDS = 60
+VIDEO_MAX_DURATION_SECONDS = 100
 
 VIDEO_ALLOWED_EXTENSIONS = (
     "mp4",
