@@ -31,7 +31,7 @@ PROPERTY_VIDEO_VALIDATORS = (
 )
 
 class State(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=250)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -40,7 +40,7 @@ class State(models.Model):
 
 class District(models.Model):
     state = models.ForeignKey(State, on_delete=models.CASCADE, related_name='districts')
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=250)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -49,7 +49,7 @@ class District(models.Model):
 
 class City(models.Model):
     district = models.ForeignKey(District, on_delete=models.CASCADE, related_name='cities')
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=250)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

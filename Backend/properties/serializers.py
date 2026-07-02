@@ -247,11 +247,26 @@ class PropertySerializer(serializers.ModelSerializer):
             'city': {'write_only': True}
         }
 
+    LOCATION_NAME_MAX_LENGTH = 250
+
     @staticmethod
     def _normalize_location_value(value):
         if value is None:
             return ""
         return str(value).strip()
+
+    @classmethod
+    def _validate_location_name_length(cls, raw, field):
+        """Raise a clean validation error instead of hitting a DB length limit."""
+        if len(raw) > cls.LOCATION_NAME_MAX_LENGTH:
+            raise serializers.ValidationError(
+                {
+                    field: (
+                        f"This name is too long "
+                        f"(max {cls.LOCATION_NAME_MAX_LENGTH} characters)."
+                    )
+                }
+            )
 
     @staticmethod
     def _looks_like_pk(value):
@@ -271,6 +286,7 @@ class PropertySerializer(serializers.ModelSerializer):
         state = State.objects.filter(name__iexact=raw).first()
         if state:
             return state
+        cls._validate_location_name_length(raw, "state")
         return State.objects.create(name=raw)
 
     @classmethod
@@ -286,6 +302,7 @@ class PropertySerializer(serializers.ModelSerializer):
         district = District.objects.filter(name__iexact=raw, state=state).first()
         if district:
             return district
+        cls._validate_location_name_length(raw, "district")
         return District.objects.create(name=raw, state=state)
 
     @classmethod
@@ -301,6 +318,7 @@ class PropertySerializer(serializers.ModelSerializer):
         city = City.objects.filter(name__iexact=raw, district=district).first()
         if city:
             return city
+        cls._validate_location_name_length(raw, "city")
         return City.objects.create(name=raw, district=district)
 
     def _location_dict(self, obj):
