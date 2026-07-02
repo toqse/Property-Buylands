@@ -15,9 +15,11 @@ export function isPortaledOverlayTarget(target: EventTarget | null): boolean {
         "[data-radix-popover-content]",
         "[data-radix-dropdown-menu-content]",
         "[data-radix-context-menu-content]",
+        "[data-radix-alert-dialog-content]",
         "[data-radix-popper-content-wrapper]",
         "[cmdk-root]",
         '[role="listbox"]',
+        '[role="alertdialog"]',
       ].join(", "),
     ),
   );

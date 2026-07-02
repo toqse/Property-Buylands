@@ -1672,7 +1672,11 @@ export function ListingFormFields({
                       type="button"
                       aria-label="Delete image"
                       disabled={busy}
-                      onClick={() => onDeleteExistingImage(img.id)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onDeleteExistingImage(img.id);
+                      }}
                       className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-md transition hover:bg-destructive/90 disabled:opacity-60 sm:right-1.5 sm:top-1.5 sm:h-7 sm:w-7"
                     >
                       <X className="h-4 w-4" />
