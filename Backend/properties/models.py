@@ -113,7 +113,7 @@ class Property(models.Model):
     property_ownership = models.CharField(max_length=50)
     
     # Contact Information
-    contact_name = models.CharField(max_length=100)
+    contact_name = models.CharField(max_length=100, blank=True, default="")
     whatsapp_number = models.CharField(max_length=20)
     phone_number = models.CharField(max_length=20)
     email = models.EmailField()

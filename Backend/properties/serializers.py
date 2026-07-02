@@ -680,14 +680,16 @@ class PropertySerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(errors)
             return validated_data
 
+        # Contact name is optional for staff-managed listings; the remaining
+        # contact fields still have to be supplied explicitly.
         errors = {}
         for field in self.CONTACT_FIELDS:
-            current = validated_data.get(field)
-            if self._is_blank_contact_value(current):
-                if self._is_blank_contact_value(validated_data.get(field)):
-                    errors[field] = (
-                        "This field is required. Provide a value or complete your profile contact details."
-                    )
+            if field == "contact_name":
+                continue
+            if self._is_blank_contact_value(validated_data.get(field)):
+                errors[field] = (
+                    "This field is required. Provide a value or complete your profile contact details."
+                )
 
         if errors:
             raise serializers.ValidationError(errors)
