@@ -448,7 +448,7 @@ const PropertyDetail = () => {
                 <h1 className="font-sans text-2xl md:text-3xl font-semibold tracking-tight text-foreground break-words">{property.title}</h1>
                 <div className="mt-2 text-sm text-muted-foreground flex items-start gap-1.5">
                   <MapPin className="h-4 w-4 text-gold shrink-0 mt-0.5" />
-                  <span className="min-w-0 break-words">{property.location}, {property.city}</span>
+                  <span className="min-w-0 break-words">{property.location}</span>
                 </div>
               </div>
 
@@ -631,7 +631,7 @@ const PropertyDetail = () => {
                     <div className="absolute inset-0 grid place-items-center text-muted-foreground">
                       <div className="text-center px-4">
                         <MapPin className="h-10 w-10 mx-auto text-gold mb-2 animate-float" />
-                        <div className="font-medium break-words">{property.location}, {property.city}</div>
+                        <div className="font-medium break-words">{property.location}</div>
                         <div className="text-xs mt-1">Map unavailable — no coordinates on file</div>
                       </div>
                     </div>
@@ -639,7 +639,7 @@ const PropertyDetail = () => {
                 </div>
                 <div className="mt-3 text-sm text-muted-foreground flex items-start gap-1.5">
                   <MapPin className="h-4 w-4 text-gold shrink-0 mt-0.5" />
-                  <span className="min-w-0 break-words">{property.location}, {property.city}</span>
+                  <span className="min-w-0 break-words">{property.location}</span>
                 </div>
               </TabsContent>
 
