@@ -11,7 +11,7 @@ import { getErrorMessage } from "@/lib/api/errors";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Phone, Mail, Play, Check, ArrowLeft, ChevronLeft, ChevronRight, Share2, Volume2, VolumeX, X } from "lucide-react";
+import { MapPin, Phone, Mail, Play, Check, ArrowLeft, ChevronLeft, ChevronRight, Share2, Volume2, VolumeX, X, User } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -157,6 +157,9 @@ const PropertyDetail = () => {
   const contactWhatsapp = (
     property.contactWhatsApp || property.ownerPhone || company?.whatsapp || company?.admin_whatsapp || contactPhone
   ).trim();
+  const contactName = (property.ownerName || "").trim();
+  const contactEmail = (property.ownerEmail || company?.email || company?.company_email || "").trim();
+  const hasContactDetails = Boolean(contactName || contactPhone || contactEmail);
   const wa = contactWhatsapp
     ? `https://wa.me/${contactWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in "${property.title}" listed on Buylands India.`)}`
     : "";
@@ -482,6 +485,33 @@ const PropertyDetail = () => {
                     <Share2 className="h-4 w-4 shrink-0" />
                   </Button>
                 </div>
+                ) : null}
+                {!hideOwnerContactActions && hasContactDetails ? (
+                  <div className="mt-4 rounded-xl border border-border bg-card p-4">
+                    <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Contact Details
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+                      {contactName ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <User className="h-4 w-4 shrink-0 text-gold" />
+                          <span className="break-words font-medium text-foreground">{contactName}</span>
+                        </span>
+                      ) : null}
+                      {contactPhone ? (
+                        <a href={`tel:${contactPhone}`} className="inline-flex items-center gap-1.5 text-foreground hover:text-gold">
+                          <Phone className="h-4 w-4 shrink-0 text-gold" />
+                          <span className="break-words">{contactPhone}</span>
+                        </a>
+                      ) : null}
+                      {contactEmail ? (
+                        <a href={`mailto:${contactEmail}`} className="inline-flex items-center gap-1.5 text-foreground hover:text-gold">
+                          <Mail className="h-4 w-4 shrink-0 text-gold" />
+                          <span className="break-words">{contactEmail}</span>
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
                 ) : null}
               </aside>
             </div>

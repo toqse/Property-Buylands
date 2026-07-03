@@ -24,9 +24,15 @@ function normalizeAppPath(to: string): string {
   return `${pathOnly}/${suffix}`;
 }
 
-function normalizeListingPath(path: string): string {
+export function normalizeListingPath(path: string): string {
   if (path === "/") return "/";
   return path.endsWith("/") ? path : `${path}/`;
+}
+
+const LISTING_PAGE_PATHS = new Set(["/buy/", "/rent/", "/properties/"]);
+
+export function isListingPagePath(pathname: string): boolean {
+  return LISTING_PAGE_PATHS.has(normalizeListingPath(pathname));
 }
 
 function splitAppPath(to: string): { pathname: string; search: string; hash: string } {

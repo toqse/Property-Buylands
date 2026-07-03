@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useNavigate, buildAppPath } from "@/lib/router";
+import { useNavigate, buildAppPath, isListingPagePath, normalizeListingPath } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import { useUserLocation } from "@/context/UserLocationContext";
 import { isBrowserReload } from "@/lib/browserReload";
@@ -57,10 +57,10 @@ export function LocationSearch({
 }: LocationSearchProps) {
   const navigate = useNavigate();
   const pathname = usePathname() ?? "/properties";
-  const listingBasePath =
-    pathname === "/buy" || pathname === "/rent" || pathname === "/properties"
-      ? pathname
-      : basePath;
+  const onListingPage = isListingPagePath(pathname);
+  const listingBasePath = onListingPage
+    ? normalizeListingPath(pathname)
+    : normalizeListingPath(basePath);
   const { coords, radiusKm, requestLocationForFilter } = useUserLocation();
   const value = useNavbarLocationSelection();
   const [pendingCurrentLocation, setPendingCurrentLocation] = useState(false);
@@ -100,7 +100,7 @@ export function LocationSearch({
   const goToResults = useCallback(
     (selection: LocationSelection | null, geo?: { latitude: number; longitude: number } | null) => {
       const params = new URLSearchParams(
-        typeof window !== "undefined" && pathname === listingBasePath
+        typeof window !== "undefined" && onListingPage
           ? window.location.search.slice(1)
           : "",
       );
@@ -144,7 +144,7 @@ export function LocationSearch({
       const qs = params.toString();
       navigate(buildAppPath(listingBasePath, qs), { replace: true });
     },
-    [listingBasePath, pathname, coords, navigate, radius],
+    [listingBasePath, onListingPage, coords, navigate, radius],
   );
 
   useEffect(() => {

@@ -306,6 +306,8 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   /** Drives the property list API — updated on Apply/Reset and when the URL changes. */
   const stableFilterKeyRef = useRef(searchParams.toString());
   const [filterKeyOverride, setFilterKeyOverride] = useState<string | null>(null);
+  const filterKeyOverrideRef = useRef<string | null>(null);
+  filterKeyOverrideRef.current = filterKeyOverride;
 
   const [sort, setSort] = useState("newest");
   const isMobile = useIsMobile();
@@ -396,8 +398,28 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     }
   }, [searchKey, searchParams, filterKeyOverride]);
 
+  /** Drop stale apply-filter override when navbar (or other external nav) changes the URL. */
+  useEffect(() => {
+    const onListingSearch = () => {
+      const live = window.location.search.slice(1);
+      const pending = pendingFilterParamsRef.current;
+      if (pending && live === pending) return;
+      const override = filterKeyOverrideRef.current;
+      if (override != null && override !== "" && live && live !== override) {
+        setFilterKeyOverride(null);
+        pendingFilterParamsRef.current = null;
+      }
+    };
+    window.addEventListener("buylands:listing-search", onListingSearch);
+    return () => window.removeEventListener("buylands:listing-search", onListingSearch);
+  }, []);
+
   const effectiveFilterKey =
-    filterKeyOverride ?? (searchKey || stableFilterKeyRef.current);
+    filterKeyOverride != null &&
+    filterKeyOverride !== "" &&
+    (!searchKey || searchKey === filterKeyOverride)
+      ? filterKeyOverride
+      : searchKey || stableFilterKeyRef.current;
 
   const prevListingPathRef = useRef(pathname);
   useEffect(() => {
@@ -826,6 +848,19 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     if (place) {
       return { latitude: place.latitude, longitude: place.longitude, radius: radiusKm };
     }
+    const globalPref = readGlobalLocationPrefs();
+    if (
+      globalPref &&
+      globalPref.location === loc &&
+      globalPref.latitude != null &&
+      globalPref.longitude != null
+    ) {
+      return {
+        latitude: globalPref.latitude,
+        longitude: globalPref.longitude,
+        radius: radiusKm,
+      };
+    }
     return null;
   }, [effectiveFilterKey, queryFilterParams, coords, defaultRadiusKm, locationCoordsByLabel]);
 
@@ -1105,7 +1140,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setPendingCurrentLocation(false);
     pendingFilterParamsRef.current = null;
     stableFilterKeyRef.current = "";
-    setFilterKeyOverride("");
+    setFilterKeyOverride(null);
     skipUrlHydrationRef.current = true;
     navigate(buildAppPath(pathname), { replace: true });
     void queryClient.invalidateQueries({ queryKey: ["properties"] });
