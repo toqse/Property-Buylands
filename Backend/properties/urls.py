@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     AdminPanelImageViewSet,
+    DashboardView,
     FeatureViewSet, PropertyTypeViewSet, PropertyViewSet,
     StateViewSet, DistrictViewSet, CityViewSet,
     HeroBannerViewSet, OfferBannerViewSet, ContactViewSet,
@@ -25,6 +26,7 @@ router.register(r'testimonials', TestimonialViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('dashboard/', DashboardView.as_view(), name='dashboard'),
     # Property locations list (GET) at /api/properties/locations/
     path('locations/', PropertyViewSet.as_view(actions={'get': 'locations'}), name='property-locations'),
     # Custom URL for singleton site-settings endpoint

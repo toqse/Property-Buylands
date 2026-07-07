@@ -13,6 +13,7 @@ from django.utils.dateparse import parse_date
 from rest_framework import serializers, viewsets, permissions, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from property_listing.video_constants import VIDEO_FAILED, VIDEO_PROCESSING, VIDEO_READY
 
@@ -58,9 +59,57 @@ from .serializers import (
     PropertyLocationSerializer,
     TestimonialSerializer,
     TestimonialSectionSerializer,
+    DashboardSerializer,
 )
 from .utils import annotate_queryset_distance_km, cluster_property_locations, filter_public_video_ready
 from advertisements.injector import inject_ads_into_results
+
+
+def _public_property_queryset():
+    return filter_public_video_ready(
+        Property.objects.filter(moderation_status=Property.MODERATION_APPROVED)
+    )
+
+
+def _hydrate_properties_by_pks(pks):
+    if not pks:
+        return []
+    order = Case(*[When(pk=pk, then=i) for i, pk in enumerate(pks)])
+    return list(
+        Property.objects.filter(pk__in=pks)
+        .select_related("state", "district", "city", "property_type", "moderated_by")
+        .prefetch_related("images", "features")
+        .order_by(order)
+    )
+
+
+class DashboardView(APIView):
+    """
+    Public home dashboard: property types, featured listings, new listings, hero banner.
+    GET only; no authentication required.
+    Featured and new lists are ordered by created_at descending (max 5 each).
+    Only approved, video-ready properties are included.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        property_types = PropertyType.objects.all().order_by("name")
+        base_qs = _public_property_queryset()
+        featured_pks = list(
+            base_qs.filter(is_featured=True).order_by("-created_at").values_list("pk", flat=True)[:5]
+        )
+        new_pks = list(base_qs.order_by("-created_at").values_list("pk", flat=True)[:5])
+        banner = HeroBanner.objects.order_by("-created_at").first()
+        payload = {
+            "property_types": property_types,
+            "featured_properties": _hydrate_properties_by_pks(featured_pks),
+            "new_properties": _hydrate_properties_by_pks(new_pks),
+            "banner": banner,
+        }
+        serializer = DashboardSerializer(payload, context={"request": request})
+        return Response(serializer.data)
+
 
 class StateViewSet(viewsets.ModelViewSet):
     """

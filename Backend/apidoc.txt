@@ -1741,6 +1741,53 @@ Send `[]` to clear all nearby places.
     }
     ```
 
+## Public Dashboard API
+
+Aggregated home-page data in a single tokenless GET.
+
+#### Get Dashboard
+- **URL**: `/api/properties/dashboard/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**:
+  - **Code**: 200 OK
+  - **Content**:
+    ```json
+    {
+      "property_types": [
+        {
+          "id": 1,
+          "name": "Villa",
+          "image": "/media/property_types/icons/villa.png",
+          "has_bedrooms": true,
+          "has_bathrooms": true,
+          "has_built_year": true,
+          "has_parking_spaces": true,
+          "has_project_status": false,
+          "has_floors": false,
+          "has_sighting": false,
+          "has_area_both": false,
+          "has_furnishing": true,
+          "created_at": "2024-03-20T10:30:00Z",
+          "updated_at": "2024-03-20T10:30:00Z"
+        }
+      ],
+      "featured_properties": [],
+      "new_properties": [],
+      "banner": {
+        "id": 1,
+        "image": "/media/banners/hero/banner1.jpg",
+        "created_at": "2024-03-20T10:30:00Z"
+      }
+    }
+    ```
+- **Notes**:
+  - `property_types`: all property types with full type metadata (same shape as `/api/properties/property-types/`).
+  - `featured_properties`: up to 5 approved, video-ready listings with `is_featured=true`, newest first (`created_at` descending).
+  - `new_properties`: up to 5 approved, video-ready listings, newest first (`created_at` descending).
+  - `banner`: latest hero banner, or `null` if none exists.
+  - Property objects use the same full serializer shape as `/api/properties/properties/`.
+
 ## Banner Management APIs
 
 ### Hero Banners

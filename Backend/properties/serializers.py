@@ -825,6 +825,13 @@ class OfferBannerSerializer(serializers.ModelSerializer):
         fields = ['id', 'image', 'created_at']
 
 
+class DashboardSerializer(serializers.Serializer):
+    property_types = PropertyTypeSerializer(many=True)
+    featured_properties = PropertySerializer(many=True)
+    new_properties = PropertySerializer(many=True)
+    banner = HeroBannerSerializer(allow_null=True)
+
+
 class AdminPanelImageSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField(read_only=True)
 
