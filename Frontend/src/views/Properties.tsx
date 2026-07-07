@@ -346,7 +346,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   const locationSearchCandidateRef = useRef<LocationSelection | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(12);
 
   const persistSectionLocationPrefs = useCallback(
     (prefs: SectionLocationPrefs) => {
@@ -1621,7 +1621,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                 <p className="text-muted-foreground">No properties match your filters.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-flow-dense grid-cols-2 gap-3">
                 {mobileSlots.map((slot, i) => {
                   if (slot.kind === "ad") {
                     return (
@@ -1646,7 +1646,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
 
           {/* Desktop / tablet: grid view */}
           <div className="hidden md:block">
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-flow-dense md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {listSettling
                 ? Array.from({ length: pageSize }).map((_, i) => (
                     <PropertyCardSkeleton key={i} />
@@ -1676,7 +1676,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[5, 10, 15, 20].map((n) => (
+                    {[8, 12, 16, 20].map((n) => (
                       <SelectItem key={n} value={String(n)}>
                         {n}
                       </SelectItem>
