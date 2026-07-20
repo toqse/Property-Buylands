@@ -97,6 +97,16 @@ const PropertyDetail = () => {
 
   const startVideo = () => {
     setVideoMuted(false);
+    // Resume path: video already mounted after a pause — setVideoStarted(true)
+    // alone is a no-op, so call play() directly.
+    const el = mainVideoRef.current;
+    if (videoStarted && el) {
+      el.muted = false;
+      void el.play().catch(() => {
+        /* play may still be blocked until a later gesture */
+      });
+      return;
+    }
     setVideoStarted(true);
   };
 
