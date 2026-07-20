@@ -32,15 +32,23 @@ import {
   getLocationSearchValue,
 } from "@/lib/locationFilter";
 import {
+  ALL_LOCATIONS_VALUE,
   LocationSearchSelect,
   locationStringToSelection,
   type LocationSelection,
 } from "@/components/LocationSearchSelect";
-import { setNavbarToAllLocations, setNavbarToCurrentLocation } from "@/lib/navbarLocation";
 import {
+  NAVBAR_CURRENT_LOCATION_LABEL,
+  setNavbarLocationSelection,
+  setNavbarToAllLocations,
+  setNavbarToCurrentLocation,
+} from "@/lib/navbarLocation";
+import {
+  clearAllSectionLocationPrefs,
   getListingSection,
   readGlobalLocationPrefs,
   readSectionLocationPrefs,
+  writeGlobalLocationPrefs,
   writeSectionLocationPrefs,
   type SectionLocationPrefs,
 } from "@/lib/listingFilterStorage";
@@ -85,9 +93,7 @@ function urlHasNonLocationFilters(params: URLSearchParams): boolean {
 /** Prefer the live browser URL — React `searchParams` can lag behind `navigate()`. */
 function readLiveSearchParams(fallback: URLSearchParams): URLSearchParams {
   if (typeof window === "undefined") return new URLSearchParams(fallback.toString());
-  const live = window.location.search.slice(1);
-  if (live) return new URLSearchParams(live);
-  return new URLSearchParams(fallback.toString());
+  return new URLSearchParams(window.location.search.slice(1));
 }
 
 /** Merge live URL, React params, and a pending apply-navigate query (router may lag). */
@@ -390,12 +396,10 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
 
   useEffect(() => {
     const key = searchParams.toString();
-    if (key) {
-      stableFilterKeyRef.current = key;
-      if (filterKeyOverride !== null && key === filterKeyOverride) {
-        setFilterKeyOverride(null);
-      }
+    if (filterKeyOverride !== null && key === filterKeyOverride) {
+      setFilterKeyOverride(null);
     }
+    stableFilterKeyRef.current = key;
   }, [searchKey, searchParams, filterKeyOverride]);
 
   /** Drop stale apply-filter override when navbar (or other external nav) changes the URL. */
@@ -415,11 +419,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
   }, []);
 
   const effectiveFilterKey =
-    filterKeyOverride != null &&
-    filterKeyOverride !== "" &&
-    (!searchKey || searchKey === filterKeyOverride)
-      ? filterKeyOverride
-      : searchKey || stableFilterKeyRef.current;
+    filterKeyOverride != null ? filterKeyOverride : searchKey || stableFilterKeyRef.current;
 
   const prevListingPathRef = useRef(pathname);
   useEffect(() => {
@@ -1006,6 +1006,32 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setSearchRadius(nextSearchRadius);
     setPage(1);
 
+    const syncGlobalLocation = (
+      nextGlobalLocation: string,
+      geo?: { latitude: number; longitude: number } | null,
+      autoDismissed = true,
+    ) => {
+      writeGlobalLocationPrefs({
+        location: nextGlobalLocation,
+        searchRadius: nextSearchRadius,
+        autoCurrentLocationDismissed: autoDismissed,
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
+      });
+      const selection = locationStringToSelection(nextGlobalLocation, {
+        allValue: ALL_LOCATIONS_VALUE,
+        allLabel: "All Locations",
+        currentLocationLabel: NAVBAR_CURRENT_LOCATION_LABEL,
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
+      });
+      if (selection) {
+        setNavbarLocationSelection(selection);
+      } else {
+        setNavbarToAllLocations(Number(nextSearchRadius) || defaultRadiusKm);
+      }
+    };
+
     if (nextLocation === CURRENT_LOCATION_VALUE) {
       if (coords) setPendingCurrentLocation(false);
       else setPendingCurrentLocation(true);
@@ -1033,12 +1059,18 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         searchRadius: nextSearchRadius,
         autoCurrentLocationDismissed: false,
       });
+      syncGlobalLocation(
+        CURRENT_LOCATION_VALUE,
+        { latitude: coords.latitude, longitude: coords.longitude },
+        false,
+      );
     } else if (nextLocation === CURRENT_LOCATION_VALUE && !coords) {
       setAutoCurrentLocationDismissed(false);
       params.delete("lat");
       params.delete("lng");
       params.delete("radius");
       params.delete("location");
+      syncGlobalLocation(CURRENT_LOCATION_VALUE, null, false);
     } else if (nextLocation === "Any" && draftLocationSearchCandidateRef.current) {
       const candidate = draftLocationSearchCandidateRef.current;
       const latitude = candidate.latitude;
@@ -1061,6 +1093,11 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
           latitude,
           longitude,
         });
+        syncGlobalLocation(
+          candidate.label,
+          { latitude, longitude },
+          true,
+        );
       }
     } else if (nextLocation !== "Any" && nextLocation !== CURRENT_LOCATION_VALUE) {
       const place =
@@ -1084,6 +1121,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         latitude: place?.latitude,
         longitude: place?.longitude,
       });
+      syncGlobalLocation(nextLocation, place ?? null, true);
     } else {
       params.delete("lat");
       params.delete("lng");
@@ -1095,6 +1133,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         searchRadius: nextSearchRadius,
         autoCurrentLocationDismissed: true,
       });
+      setNavbarToAllLocations(Number(nextSearchRadius) || defaultRadiusKm);
     }
 
     skipUrlHydrationRef.current = true;
@@ -1131,6 +1170,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setFeatures([]);
     setDraftFeatures([]);
     setPage(1);
+    clearAllSectionLocationPrefs();
     writeSectionLocationPrefs(listingSection, {
       location: "Any",
       searchRadius: nextRadius,
@@ -1140,9 +1180,9 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     setPendingCurrentLocation(false);
     pendingFilterParamsRef.current = null;
     stableFilterKeyRef.current = "";
-    setFilterKeyOverride(null);
+    setFilterKeyOverride("");
     skipUrlHydrationRef.current = true;
-    navigate(buildAppPath(pathname), { replace: true });
+    navigateListingFilters(new URLSearchParams());
     void queryClient.invalidateQueries({ queryKey: ["properties"] });
   };
 

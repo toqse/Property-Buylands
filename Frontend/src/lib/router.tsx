@@ -159,8 +159,10 @@ export function useSearchParams() {
 
   const searchParams = useMemo(() => {
     if (typeof window !== "undefined") {
-      const live = window.location.search.slice(1);
-      if (live) return new URLSearchParams(live);
+      // Always trust the live URL on the client. Listing pages update query params via
+      // history.replaceState; when cleared, window.location.search is empty but Next's
+      // useSearchParams can still hold stale values.
+      return new URLSearchParams(window.location.search.slice(1));
     }
     return new URLSearchParams(params?.toString() ?? "");
     // liveVersion keeps search params in sync after history.replaceState
