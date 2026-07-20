@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/context/AuthContext";
 import { UserLocationProvider } from "@/context/UserLocationContext";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { FloatingWhatsApp } from "@/components/FloatingWhatsApp";
 import { FilterResetOnReload } from "@/components/FilterResetOnReload";
 import "@/lib/listingFilterBootstrap";
 
@@ -37,6 +38,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
               <FilterResetOnReload />
             </Suspense>
             {children}
+            <FloatingWhatsApp />
             <MobileBottomNav />
           </AuthProvider>
         </UserLocationProvider>

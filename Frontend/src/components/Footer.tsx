@@ -1,10 +1,16 @@
+"use client";
+
 import { Link } from "@/lib/router";
 import { Logo } from "./Logo";
-import { ArrowUp, Facebook, Instagram, Linkedin, Mail, MapPin, Phone } from "lucide-react";
+import { ArrowUp, Facebook, Instagram, Linkedin, Mail, MapPin, Phone, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { revealFadeUpClass } from "@/lib/revealFade";
 import { useInViewOnce } from "@/hooks/useInViewOnce";
 import { useCompanyContact, usePropertyTypes } from "@/hooks/api/useCatalog";
+import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { toast } from "sonner";
+
+const SHARE_URL = `${SITE_URL}/`;
 
 export function Footer() {
   const { ref, active } = useInViewOnce<HTMLElement>();
@@ -22,6 +28,28 @@ export function Footer() {
     if (typeof window === "undefined") return;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
+  };
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(SHARE_URL);
+    } catch {
+      // Clipboard may be unavailable; still try native share below.
+    }
+
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: SITE_NAME,
+          url: SHARE_URL,
+        });
+        return;
+      } catch {
+        // User cancelled the share sheet — keep the copy toast as feedback.
+      }
+    }
+
+    toast.success("Link copied to clipboard");
   };
 
   return (
@@ -56,6 +84,14 @@ export function Footer() {
                 <I className="h-4 w-4" />
               </a>
             ))}
+            <button
+              type="button"
+              onClick={handleShare}
+              aria-label="Share website link"
+              className="h-9 w-9 grid place-items-center rounded-full border border-background/20 hover:bg-gold hover:border-gold hover:text-foreground transition-all"
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
           </div>
         </div>
 

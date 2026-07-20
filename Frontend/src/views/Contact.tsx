@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { LucideIcon } from "lucide-react";
-import { Mail, Phone, MapPin, Clock, Send } from "lucide-react";
+import { Mail, MapPin, Clock, Send } from "lucide-react";
 import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { useCompanyContact, useCatalogMutations } from "@/hooks/api/useCatalog";
@@ -66,10 +66,8 @@ const Contact = () => {
   const [budget, setBudget] = useState("");
 
   const address = (company?.address || company?.company_address || "").trim();
-  const phone = (company?.phone || company?.admin_phone || "").trim();
   const email = (company?.email || company?.company_email || "").trim();
   const whatsapp = (company?.whatsapp || company?.admin_whatsapp || "").trim();
-  const phoneHref = phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : "";
   const whatsappHref = whatsapp
     ? `https://wa.me/${whatsapp.replace(/\D/g, "")}`
     : "";
@@ -82,18 +80,6 @@ const Contact = () => {
       label: "Visit us",
       detail: (
         <span className="leading-relaxed whitespace-pre-line">{address}</span>
-      ),
-    });
-  }
-  if (phone) {
-    contactCards.push({
-      key: "call",
-      Icon: Phone,
-      label: "Call",
-      detail: (
-        <a href={phoneHref} className="hover:text-gold transition-colors">
-          {phone}
-        </a>
       ),
     });
   }
