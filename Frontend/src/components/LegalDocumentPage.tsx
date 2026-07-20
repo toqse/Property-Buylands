@@ -69,7 +69,7 @@ export function LegalDocumentPage({ document }: { document: LegalDocument }) {
   return (
     <div className="min-h-screen flex flex-col">
       <main className="flex-1 py-10 md:py-14">
-        <div className="mx-auto w-[70vw] max-w-full px-4 sm:px-6">
+        <div className="mx-auto w-[90vw] md:w-[70vw] max-w-full px-4 sm:px-6">
           <header className="text-center mb-10 md:mb-12">
             <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">{document.heroEyebrow}</p>
             <h1 className="font-serif text-3xl md:text-5xl mt-3 text-foreground">{document.heading}</h1>
