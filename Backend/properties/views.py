@@ -71,6 +71,51 @@ def _public_property_queryset():
     )
 
 
+def _apply_lat_lng_radius_filter(queryset, params):
+    """
+    Optionally narrow a property queryset to a lat/lng radius bounding box.
+    Uses query params latitude, longitude, and optional radius (km).
+    When radius is omitted, SiteSettings.filter_radius is used.
+    Returns queryset unchanged if latitude or longitude is missing/invalid.
+    """
+    def convert_decimal(value):
+        try:
+            return Decimal(value)
+        except (InvalidOperation, TypeError):
+            return None
+
+    lat_value = convert_decimal(params.get("latitude"))
+    lng_value = convert_decimal(params.get("longitude"))
+    if lat_value is None or lng_value is None:
+        return queryset
+
+    radius_value = convert_decimal(params.get("radius"))
+    if radius_value is not None:
+        radius_to_use = radius_value
+    else:
+        site_settings = SiteSettings.get_settings()
+        radius_to_use = Decimal(str(site_settings.filter_radius))
+
+    # 1 degree latitude ≈ 111 km
+    # 1 degree longitude ≈ 111 km * cos(latitude); avoid division by zero near poles
+    lat_degree = radius_to_use / Decimal("111.0")
+    cos_lat = abs(math.cos(math.radians(float(lat_value))))
+    lng_degree = (
+        radius_to_use / (Decimal("111.0") * Decimal(str(cos_lat)))
+        if cos_lat >= 1e-9
+        else Decimal("0")
+    )
+
+    return queryset.filter(
+        latitude__isnull=False,
+        longitude__isnull=False,
+        latitude__gte=lat_value - lat_degree,
+        latitude__lte=lat_value + lat_degree,
+        longitude__gte=lng_value - lng_degree,
+        longitude__lte=lng_value + lng_degree,
+    )
+
+
 def _hydrate_properties_by_pks(pks):
     if not pks:
         return []
@@ -89,6 +134,7 @@ class DashboardView(APIView):
     GET only; no authentication required.
     Featured and new lists are ordered by created_at descending (max 5 each).
     Only approved, video-ready properties are included.
+    Optional latitude/longitude (and radius) filter new_properties only.
     """
 
     permission_classes = [permissions.AllowAny]
@@ -99,7 +145,8 @@ class DashboardView(APIView):
         featured_pks = list(
             base_qs.filter(is_featured=True).order_by("-created_at").values_list("pk", flat=True)[:5]
         )
-        new_pks = list(base_qs.order_by("-created_at").values_list("pk", flat=True)[:5])
+        new_qs = _apply_lat_lng_radius_filter(base_qs, request.query_params)
+        new_pks = list(new_qs.order_by("-created_at").values_list("pk", flat=True)[:5])
         banner = HeroBanner.objects.order_by("-created_at").first()
         payload = {
             "property_types": property_types,

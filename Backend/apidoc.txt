@@ -1749,6 +1749,9 @@ Aggregated home-page data in a single tokenless GET.
 - **URL**: `/api/properties/dashboard/`
 - **Method**: GET
 - **Auth Required**: No
+- **Query Parameters** (optional):
+  - `latitude`, `longitude` &mdash; When both are provided, **only** `new_properties` is filtered to listings within `radius` km (defaults to admin `filter_radius` from site settings when `radius` omitted). `featured_properties`, `property_types`, and `banner` are never geo-filtered.
+  - `radius` &mdash; Optional override for the nearby filter radius in kilometers (used with `latitude` + `longitude` on `new_properties` only).
 - **Success Response**:
   - **Code**: 200 OK
   - **Content**:
@@ -1783,10 +1786,11 @@ Aggregated home-page data in a single tokenless GET.
     ```
 - **Notes**:
   - `property_types`: all property types with full type metadata (same shape as `/api/properties/property-types/`).
-  - `featured_properties`: up to 5 approved, video-ready listings with `is_featured=true`, newest first (`created_at` descending).
-  - `new_properties`: up to 5 approved, video-ready listings, newest first (`created_at` descending).
+  - `featured_properties`: up to 5 approved, video-ready listings with `is_featured=true`, newest first (`created_at` descending). Not affected by location params.
+  - `new_properties`: up to 5 approved, video-ready listings, newest first (`created_at` descending). When `latitude`+`longitude` are passed, only nearby listings are included.
   - `banner`: latest hero banner, or `null` if none exists.
   - Property objects use the same full serializer shape as `/api/properties/properties/`.
+  - Response keys and structure are unchanged whether or not location params are sent.
 
 ## Banner Management APIs
 

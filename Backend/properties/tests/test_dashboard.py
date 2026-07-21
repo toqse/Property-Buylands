@@ -5,7 +5,7 @@ from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from properties.models import City, District, HeroBanner, Property, PropertyType, State
+from properties.models import City, District, HeroBanner, Property, PropertyType, SiteSettings, State
 from property_listing.video_constants import VIDEO_PROCESSING
 
 TEST_STORAGES = {
@@ -164,3 +164,59 @@ class DashboardAPITests(APITestCase):
         self.assertEqual(response.data["banner"]["id"], banner.id)
         self.assertIn("image", response.data["banner"])
         self.assertIn("created_at", response.data["banner"])
+
+    def test_lat_lng_filters_only_new_properties(self):
+        SiteSettings.get_settings()
+        SiteSettings.objects.update(filter_radius=50)
+
+        nearby = self._property(
+            "nearby-new",
+            latitude="9.931233",
+            longitude="76.267303",
+        )
+        far = self._property(
+            "far-new",
+            latitude="28.613939",
+            longitude="77.209021",
+        )
+        far_featured = self._property(
+            "far-featured",
+            is_featured=True,
+            latitude="28.613939",
+            longitude="77.209021",
+        )
+
+        response = self.client.get(
+            self.url,
+            {"latitude": "9.931233", "longitude": "76.267303"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            set(response.data.keys()),
+            {"property_types", "featured_properties", "new_properties", "banner"},
+        )
+
+        new_ids = {item["id"] for item in response.data["new_properties"]}
+        featured_ids = {item["id"] for item in response.data["featured_properties"]}
+
+        self.assertIn(nearby.id, new_ids)
+        self.assertNotIn(far.id, new_ids)
+        self.assertIn(far_featured.id, featured_ids)
+
+    def test_without_lat_lng_new_properties_unfiltered(self):
+        nearby = self._property(
+            "nearby-unfiltered",
+            latitude="9.931233",
+            longitude="76.267303",
+        )
+        far = self._property(
+            "far-unfiltered",
+            latitude="28.613939",
+            longitude="77.209021",
+        )
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        new_ids = {item["id"] for item in response.data["new_properties"]}
+        self.assertIn(nearby.id, new_ids)
+        self.assertIn(far.id, new_ids)
