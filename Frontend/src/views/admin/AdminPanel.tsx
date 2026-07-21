@@ -61,6 +61,7 @@ import {
   type AdRedirectType,
 } from "@/data/advertisements";
 import {
+  useProperty,
   usePropertyList,
   usePropertyMutations,
 } from "@/hooks/api/useProperties";
@@ -117,7 +118,7 @@ import { contentApi } from "@/lib/api/content";
 import { catalogApi } from "@/lib/api/catalog";
 import { mapApiAdToUi } from "@/lib/api/mappers/advertisement";
 import { mapApiOwnerToAppUser } from "@/lib/api/mappers/owner";
-import { formatPropertyAreaDisplay } from "@/lib/api/mappers/property";
+import { formatPropertyAreaDisplay, resolveVideoCoverImage } from "@/lib/api/mappers/property";
 import type { ApiAdvertisement } from "@/lib/api/types";
 import {
   LayoutDashboard,
@@ -152,6 +153,7 @@ import {
   Menu,
   Megaphone,
   ExternalLink,
+  Play,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -667,16 +669,54 @@ const Overview = () => {
 type PropertyDetailViewProps = {
   property: Property;
   onBack: () => void;
+  backLabel?: string;
 };
 
-const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
+const PropertyDetailView = ({
+  property,
+  onBack,
+  backLabel = "Back to properties",
+}: PropertyDetailViewProps) => {
   const fmt = (n: number) => n.toLocaleString("en-IN");
-  const galleryImages =
-    property.gallery && property.gallery.length
-      ? property.gallery
-      : property.image
-        ? [property.image]
-        : [];
+  type MediaItem =
+    | { kind: "image"; src: string }
+    | { kind: "video"; src: string; poster?: string };
+  const videoCover = resolveVideoCoverImage(property);
+  const mediaItems: MediaItem[] = useMemo(() => {
+    const galleryImages =
+      property.gallery && property.gallery.length
+        ? property.gallery
+        : property.image
+          ? [property.image]
+          : [];
+    const items: MediaItem[] = galleryImages.map((src) => ({
+      kind: "image",
+      src,
+    }));
+    if (property.videoUrl) {
+      items.push({
+        kind: "video",
+        src: property.videoUrl,
+        poster: videoCover || property.image,
+      });
+    }
+    return items;
+  }, [
+    property.gallery,
+    property.image,
+    property.videoUrl,
+    videoCover,
+  ]);
+  const [activeMedia, setActiveMedia] = useState(0);
+  useEffect(() => {
+    setActiveMedia(0);
+  }, [property.id]);
+  const safeActive = Math.min(
+    Math.max(activeMedia, 0),
+    Math.max(0, mediaItems.length - 1),
+  );
+  const activeItem = mediaItems[safeActive];
+
   const addressParts = [
     property.location,
     property.city,
@@ -727,14 +767,14 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
   ];
 
   return (
-    <div className="animate-fade-in max-w-3xl">
+    <div className="animate-fade-in mx-auto w-full max-w-2xl">
       <Button
         variant="outline"
         size="sm"
         onClick={onBack}
         className="rounded-full bg-card shadow-sm hover:bg-muted/60"
       >
-        Back to properties
+        {backLabel}
       </Button>
 
       <div className="mt-6 flex flex-wrap items-start justify-between gap-3">
@@ -761,42 +801,83 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
 
       {address ? (
         <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-          <MapPin className="h-4 w-4 text-gold" />
+          <MapPin className="h-4 w-4 shrink-0 text-gold" />
           {address}
         </p>
       ) : null}
 
-      <div className="mt-4 rounded-2xl overflow-hidden bg-muted border border-border">
-        <img
-          src={property.image}
-          alt={property.title}
-          className="w-full h-64 md:h-80 object-cover"
-        />
-      </div>
-
-      {galleryImages.length > 1 ? (
-        <div className="mt-3 grid grid-cols-4 sm:grid-cols-6 gap-2">
-          {galleryImages.map((src, i) => (
-            <img
-              key={`${src}-${i}`}
-              src={src}
-              alt={`${property.title} ${i + 1}`}
-              className="h-16 w-full rounded-lg object-cover border border-border"
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {property.videoUrl ? (
+      {mediaItems.length > 0 ? (
         <div className="mt-4">
-          <div className="text-sm font-semibold text-foreground mb-2">
-            Property video
+          <div className="overflow-hidden rounded-2xl border border-border bg-muted">
+            {activeItem?.kind === "video" ? (
+              <div className="flex h-[320px] sm:h-[420px] md:h-[520px] items-center justify-center bg-black">
+                <video
+                  key={activeItem.src}
+                  src={activeItem.src}
+                  poster={activeItem.poster}
+                  controls
+                  playsInline
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="flex h-[320px] sm:h-[420px] md:h-[520px] items-center justify-center bg-muted">
+                <img
+                  src={activeItem?.src}
+                  alt={property.title}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            )}
           </div>
-          {property.videoProcessingStatus &&
+
+          {mediaItems.length > 1 ? (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+              {mediaItems.map((item, i) => {
+                const isActive = safeActive === i;
+                return (
+                  <button
+                    key={`${item.kind}-${item.src}-${i}`}
+                    type="button"
+                    onClick={() => setActiveMedia(i)}
+                    className={cn(
+                      "relative h-16 w-20 shrink-0 overflow-hidden rounded-lg border-2 transition",
+                      isActive
+                        ? "border-primary ring-2 ring-primary/20"
+                        : "border-border opacity-80 hover:opacity-100",
+                    )}
+                    title={item.kind === "video" ? "Video" : `Image ${i + 1}`}
+                  >
+                    {item.kind === "video" ? (
+                      <>
+                        <img
+                          src={item.poster || property.image}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                        <span className="absolute inset-0 grid place-items-center bg-black/35">
+                          <Play className="h-4 w-4 fill-white text-white" />
+                        </span>
+                      </>
+                    ) : (
+                      <img
+                        src={item.src}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {property.videoUrl &&
+          property.videoProcessingStatus &&
           videoProcessingStatusLabel(property.videoProcessingStatus) ? (
             <p
               className={cn(
-                "mb-2 text-sm",
+                "mt-2 text-sm",
                 videoProcessingStatusTone(property.videoProcessingStatus) ===
                   "warning" && "text-amber-600",
                 videoProcessingStatusTone(property.videoProcessingStatus) ===
@@ -808,13 +889,6 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
               {videoProcessingStatusLabel(property.videoProcessingStatus)}
             </p>
           ) : null}
-          <video
-            src={property.videoUrl}
-            poster={property.videoThumbnail || property.image}
-            controls
-            playsInline
-            className="w-full rounded-xl border border-border bg-black"
-          />
         </div>
       ) : null}
 
@@ -982,15 +1056,85 @@ const PROPERTIES_PAGE_SIZE = 10;
 
 const PropertiesAdmin = () => {
   const [page, setPage] = useState(1);
-  const { data: listData, refetch } = usePropertyList(
-    {
-      moderationStatus: "all",
-      includeAds: false,
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "pending" | "approved" | "rejected"
+  >("all");
+  const [featuredFilter, setFeaturedFilter] = useState<"all" | "true" | "false">(
+    "all",
+  );
+  const [propertyForFilter, setPropertyForFilter] = useState<
+    "all" | "sell" | "rent"
+  >("all");
+  const [propertyTypeFilter, setPropertyTypeFilter] = useState("all");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    debouncedSearch,
+    statusFilter,
+    featuredFilter,
+    propertyForFilter,
+    propertyTypeFilter,
+  ]);
+
+  const filtersActive =
+    !!debouncedSearch.trim() ||
+    statusFilter !== "all" ||
+    featuredFilter !== "all" ||
+    propertyForFilter !== "all" ||
+    propertyTypeFilter !== "all";
+
+  const clearFilters = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setStatusFilter("all");
+    setFeaturedFilter("all");
+    setPropertyForFilter("all");
+    setPropertyTypeFilter("all");
+    setPage(1);
+  };
+
+  const listFilters = useMemo(() => {
+    const typeId =
+      propertyTypeFilter !== "all" ? Number(propertyTypeFilter) : undefined;
+    return {
+      includeAds: false as const,
       page,
       pageSize: PROPERTIES_PAGE_SIZE,
-    },
-    { auth: true, keepPreviousPage: true },
-  );
+      ...(debouncedSearch.trim()
+        ? { search: debouncedSearch.trim() }
+        : {}),
+      moderationStatus: statusFilter,
+      ...(propertyForFilter !== "all"
+        ? { propertyFor: propertyForFilter }
+        : {}),
+      ...(featuredFilter !== "all"
+        ? { featured: featuredFilter === "true" }
+        : {}),
+      ...(typeId != null && !Number.isNaN(typeId)
+        ? { propertyType: typeId }
+        : {}),
+    };
+  }, [
+    page,
+    debouncedSearch,
+    statusFilter,
+    featuredFilter,
+    propertyForFilter,
+    propertyTypeFilter,
+  ]);
+
+  const { data: listData, refetch } = usePropertyList(listFilters, {
+    auth: true,
+    keepPreviousPage: true,
+  });
   const propertyMutations = usePropertyMutations();
   const addUploadProgress = usePropertyUploadProgress();
   const editUploadProgress = usePropertyUploadProgress();
@@ -1004,6 +1148,9 @@ const PropertiesAdmin = () => {
   const totalCount = listData?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PROPERTIES_PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
+  const emptyMessage = filtersActive
+    ? "No properties match your filters."
+    : "No properties yet.";
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -1051,6 +1198,7 @@ const PropertiesAdmin = () => {
   const [viewTarget, setViewTarget] = useState<Property | null>(null);
 
   const { data: propertyTypesData } = usePropertyTypes();
+  const propertyTypes = propertyTypesData?.results ?? [];
 
   const [featuredPendingId, setFeaturedPendingId] = useState<string | null>(
     null,
@@ -1385,12 +1533,100 @@ const PropertiesAdmin = () => {
           <Plus className="h-4 w-4" /> Add property
         </Button>
       </div>
+
+      <div className="mb-4 flex flex-col gap-3">
+        <div className="relative w-full">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search title, owner, location…"
+            className="pl-9 rounded-lg"
+          />
+        </div>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center">
+          <Select
+            value={statusFilter}
+            onValueChange={(v) =>
+              setStatusFilter(v as typeof statusFilter)
+            }
+          >
+            <SelectTrigger className="w-full sm:w-[150px] rounded-lg">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={featuredFilter}
+            onValueChange={(v) =>
+              setFeaturedFilter(v as typeof featuredFilter)
+            }
+          >
+            <SelectTrigger className="w-full sm:w-[150px] rounded-lg">
+              <SelectValue placeholder="Featured" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All featured</SelectItem>
+              <SelectItem value="true">Featured</SelectItem>
+              <SelectItem value="false">Not featured</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={propertyForFilter}
+            onValueChange={(v) =>
+              setPropertyForFilter(v as typeof propertyForFilter)
+            }
+          >
+            <SelectTrigger className="w-full sm:w-[150px] rounded-lg">
+              <SelectValue placeholder="Listing type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All listing types</SelectItem>
+              <SelectItem value="sell">For Sale</SelectItem>
+              <SelectItem value="rent">For Rent</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={propertyTypeFilter}
+            onValueChange={setPropertyTypeFilter}
+          >
+            <SelectTrigger className="w-full sm:w-[180px] rounded-lg">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              {propertyTypes.map((t) => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {filtersActive ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-lg sm:ml-auto"
+              onClick={clearFilters}
+            >
+              Clear filters
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
       <div className="bg-card border border-border rounded-2xl overflow-hidden min-w-0">
         {/* Mobile: stacked cards (the table is too wide for small screens) */}
         <div className="md:hidden divide-y divide-border min-w-0">
           {list.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
-              No properties yet.
+              {emptyMessage}
             </div>
           ) : (
             list.map((p) => (
@@ -1502,7 +1738,7 @@ const PropertiesAdmin = () => {
                     colSpan={7}
                     className="p-12 text-center text-muted-foreground"
                   >
-                    No properties yet.
+                    {emptyMessage}
                   </td>
                 </tr>
               ) : (
@@ -1856,6 +2092,11 @@ const Approvals = () => {
     { auth: true },
   );
   const { approve, reject } = usePropertyMutations();
+  const [viewId, setViewId] = useState<string | null>(null);
+  const {
+    data: viewProperty,
+    isLoading: viewLoading,
+  } = useProperty(viewId ?? undefined);
   const pending = useMemo(
     () =>
       (data?.items ?? [])
@@ -1863,16 +2104,61 @@ const Approvals = () => {
         .map((x) => x.property),
     [data],
   );
+  const listViewFallback = useMemo(
+    () => pending.find((p) => p.id === viewId) ?? null,
+    [pending, viewId],
+  );
+  const viewTarget = viewProperty ?? listViewFallback;
+
   const act = async (id: string, status: "Approved" | "Rejected") => {
     try {
       if (status === "Approved") await approve.mutateAsync(id);
       else await reject.mutateAsync({ id });
       toast.success(`Property ${status.toLowerCase()}`);
+      setViewId(null);
       void refetch();
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
   };
+
+  if (viewId) {
+    if (viewLoading && !viewTarget) {
+      return (
+        <div className="animate-fade-in py-16 text-center text-muted-foreground">
+          Loading property…
+        </div>
+      );
+    }
+    if (viewTarget) {
+      return (
+        <div className="animate-fade-in">
+          <PropertyDetailView
+            property={viewTarget}
+            onBack={() => setViewId(null)}
+            backLabel="Back to approvals"
+          />
+          <div className="mx-auto mt-6 flex max-w-2xl flex-wrap gap-2">
+            <Button
+              variant="luxe"
+              size="sm"
+              onClick={() => void act(viewTarget.id, "Approved")}
+            >
+              <CheckCircle2 className="h-3 w-3" /> Approve
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void act(viewTarget.id, "Rejected")}
+            >
+              <XCircle className="h-3 w-3" /> Reject
+            </Button>
+          </div>
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="animate-fade-in">
       <h1 className="font-serif text-3xl md:text-4xl mb-6 md:mb-8">
@@ -1883,31 +2169,50 @@ const Approvals = () => {
           All caught up — no pending properties.
         </div>
       ) : (
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {pending.map((p) => (
             <div
               key={p.id}
-              className="bg-card border border-border rounded-2xl overflow-hidden hover-lift"
+              className="bg-card border border-border rounded-xl overflow-hidden flex flex-col max-w-sm mx-auto w-full sm:max-w-none sm:mx-0"
             >
-              <img src={p.image} alt="" className="h-48 w-full object-cover" />
-              <div className="p-5">
-                <h3 className="font-serif text-xl">{p.title}</h3>
-                <div className="text-sm text-muted-foreground">
-                  {p.location} · ₹{p.price.toLocaleString("en-US")}
+              <img
+                src={p.image}
+                alt=""
+                className="h-44 w-full object-cover bg-muted"
+              />
+              <div className="flex flex-1 flex-col p-3">
+                <h3 className="line-clamp-2 text-sm font-semibold leading-snug">
+                  {p.title}
+                </h3>
+                <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                  {p.location}
                 </div>
-                <p className="text-sm mt-2 line-clamp-2">{p.description}</p>
-                <div className="flex gap-2 mt-4">
+                <div className="text-gold-gradient mt-2 text-sm font-semibold">
+                  ₹{p.price.toLocaleString("en-IN")}
+                </div>
+                <div className="mt-auto flex items-center gap-1.5 pt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 shrink-0 p-0"
+                    onClick={() => setViewId(p.id)}
+                    title="View"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                  </Button>
                   <Button
                     variant="luxe"
                     size="sm"
-                    onClick={() => act(p.id, "Approved")}
+                    className="h-8 flex-1"
+                    onClick={() => void act(p.id, "Approved")}
                   >
                     <CheckCircle2 className="h-3 w-3" /> Approve
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => act(p.id, "Rejected")}
+                    className="h-8 flex-1"
+                    onClick={() => void act(p.id, "Rejected")}
                   >
                     <XCircle className="h-3 w-3" /> Reject
                   </Button>
