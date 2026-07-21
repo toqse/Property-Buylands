@@ -978,14 +978,18 @@ const PropertyDetailView = ({ property, onBack }: PropertyDetailViewProps) => {
   );
 };
 
+const PROPERTIES_PAGE_SIZE = 10;
+
 const PropertiesAdmin = () => {
+  const [page, setPage] = useState(1);
   const { data: listData, refetch } = usePropertyList(
     {
       moderationStatus: "all",
       includeAds: false,
-      pageSize: 100,
+      page,
+      pageSize: PROPERTIES_PAGE_SIZE,
     },
-    { auth: true },
+    { auth: true, keepPreviousPage: true },
   );
   const propertyMutations = usePropertyMutations();
   const addUploadProgress = usePropertyUploadProgress();
@@ -997,6 +1001,14 @@ const PropertiesAdmin = () => {
         .map((x) => x.property),
     [listData],
   );
+  const totalCount = listData?.count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PROPERTIES_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   usePropertyVideoStatusPolling(list);
   const fallbackImage = list[0]?.image ?? "";
 
@@ -1344,13 +1356,13 @@ const PropertiesAdmin = () => {
       await propertyMutations.remove.mutateAsync(removed.id);
       toast.success(`“${removed.title}” has been removed`);
       setDeleteTarget(null);
-      void refetch();
+      // If we deleted the last item on this page, step back one page.
+      if (list.length <= 1 && page > 1) setPage((p) => p - 1);
+      else void refetch();
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
   };
-
-  const propertiesPager = usePagination(list, 10);
 
   if (viewTarget) {
     return (
@@ -1376,12 +1388,12 @@ const PropertiesAdmin = () => {
       <div className="bg-card border border-border rounded-2xl overflow-hidden min-w-0">
         {/* Mobile: stacked cards (the table is too wide for small screens) */}
         <div className="md:hidden divide-y divide-border min-w-0">
-          {propertiesPager.paginated.length === 0 ? (
+          {list.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               No properties yet.
             </div>
           ) : (
-            propertiesPager.paginated.map((p) => (
+            list.map((p) => (
               <div key={p.id} className="p-3 min-w-0">
                 <div className="flex gap-3 min-w-0">
                   <img
@@ -1484,7 +1496,7 @@ const PropertiesAdmin = () => {
               </tr>
             </thead>
             <tbody>
-              {propertiesPager.paginated.length === 0 ? (
+              {list.length === 0 ? (
                 <tr>
                   <td
                     colSpan={7}
@@ -1494,7 +1506,7 @@ const PropertiesAdmin = () => {
                   </td>
                 </tr>
               ) : (
-                propertiesPager.paginated.map((p) => (
+                list.map((p) => (
                   <tr
                     key={p.id}
                     className="border-t border-border hover:bg-muted/40"
@@ -1581,11 +1593,11 @@ const PropertiesAdmin = () => {
         </div>
       </div>
       <PaginationFooter
-        page={propertiesPager.page}
-        total={list.length}
-        pageSize={10}
-        onPrev={propertiesPager.goPrev}
-        onNext={propertiesPager.goNext}
+        page={safePage}
+        total={totalCount}
+        pageSize={PROPERTIES_PAGE_SIZE}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
 
       {/* Add property — same comprehensive fields as the user dashboard */}
