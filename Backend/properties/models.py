@@ -467,6 +467,13 @@ class SiteSettings(models.Model):
         default=False,
         help_text="If true, the iOS app forces users to update.",
     )
+    require_staff_property_approval = models.BooleanField(
+        default=False,
+        help_text=(
+            "If true, properties created by portal staff start as pending and need "
+            "admin approval. If false, staff-created properties are auto-approved."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

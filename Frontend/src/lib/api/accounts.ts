@@ -135,4 +135,79 @@ export const accountsApi = {
   deleteOwner(id: number | string) {
     return apiRequest<void>(`accounts/owners/${id}/`, { method: "DELETE", auth: true });
   },
+
+  listStaff(params?: Record<string, string | number | boolean>) {
+    const qs = params
+      ? "?" +
+        new URLSearchParams(
+          Object.entries(params).map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : "";
+    return apiRequest<import("@/lib/api/client").PaginatedResponse<import("@/lib/api/types").ApiStaff>>(
+      `accounts/staff/${qs}`,
+      { auth: true },
+    );
+  },
+
+  getStaff(id: number | string) {
+    return apiRequest<import("@/lib/api/types").ApiStaff>(`accounts/staff/${id}/`, { auth: true });
+  },
+
+  createStaff(body: Record<string, unknown>) {
+    return apiRequest<import("@/lib/api/types").ApiStaff>(`accounts/staff/`, {
+      method: "POST",
+      auth: true,
+      body,
+    });
+  },
+
+  patchStaff(id: number | string, body: Record<string, unknown>) {
+    return apiRequest<import("@/lib/api/types").ApiStaff>(`accounts/staff/${id}/`, {
+      method: "PATCH",
+      auth: true,
+      body,
+    });
+  },
+
+  deleteStaff(id: number | string) {
+    return apiRequest<void>(`accounts/staff/${id}/`, { method: "DELETE", auth: true });
+  },
+
+  staffOverview() {
+    return apiRequest<import("@/lib/api/types").ApiStaffOverview>(`accounts/staff/overview/`, {
+      auth: true,
+    });
+  },
+
+  staffActivity(id: number | string, params?: Record<string, string | number>) {
+    const qs = params
+      ? "?" +
+        new URLSearchParams(
+          Object.entries(params).map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : "";
+    return apiRequest<
+      import("@/lib/api/client").PaginatedResponse<import("@/lib/api/types").ApiStaffActivity>
+    >(`accounts/staff/${id}/activity/${qs}`, { auth: true });
+  },
+
+  staffPerformance(id: number | string, params?: Record<string, string | number>) {
+    const qs = params
+      ? "?" +
+        new URLSearchParams(
+          Object.entries(params).map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : "";
+    return apiRequest<import("@/lib/api/types").ApiStaffPerformance>(
+      `accounts/staff/${id}/performance/${qs}`,
+      { auth: true },
+    );
+  },
+
+  staffMeDashboard() {
+    return apiRequest<import("@/lib/api/types").ApiStaffDashboard>(
+      `accounts/staff/me/dashboard/`,
+      { auth: true },
+    );
+  },
 };

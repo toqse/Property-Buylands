@@ -17,7 +17,7 @@ export function MobileBottomNav() {
 
   // The admin panel has its own navigation; the public bottom bar should not
   // appear there (especially on mobile, where it overlaps admin controls).
-  if (pathname.startsWith("/admin")) return null;
+  if (pathname.startsWith("/admin") || pathname.startsWith("/staff")) return null;
 
   if (!visible) return null;
 

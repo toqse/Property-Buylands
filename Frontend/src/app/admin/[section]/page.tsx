@@ -4,6 +4,7 @@ const ADMIN_SECTIONS = [
   "properties",
   "approvals",
   "users",
+  "staff",
   "categories",
   "banners",
   "testimonials",

@@ -13,26 +13,28 @@ import { readGlobalLocationPrefs, writeGlobalLocationPrefs } from "@/lib/listing
 export const NAVBAR_CURRENT_LOCATION_LABEL = "My current location";
 export const NAVBAR_CURRENT_LOCATION_MENU_LABEL = "Use my current location";
 
-function defaultNavbarSelection(): LocationSelection {
-  return (
-    locationStringToSelection("Any", {
-      allValue: ALL_LOCATIONS_VALUE,
-      allLabel: "All Locations",
-    }) ?? {
-      value: ALL_LOCATIONS_VALUE,
-      label: "All Locations",
-      source: "all",
-    }
-  );
+/** Stable default — required by useSyncExternalStore getServerSnapshot. */
+const DEFAULT_NAVBAR_SELECTION: LocationSelection =
+  locationStringToSelection("Any", {
+    allValue: ALL_LOCATIONS_VALUE,
+    allLabel: "All Locations",
+  }) ?? {
+    value: ALL_LOCATIONS_VALUE,
+    label: "All Locations",
+    source: "all",
+  };
+
+function getServerNavbarSelection(): LocationSelection {
+  return DEFAULT_NAVBAR_SELECTION;
 }
 
 function selectionFromGlobalPrefs(): LocationSelection {
   if (typeof window === "undefined" || isBrowserReload()) {
-    return defaultNavbarSelection();
+    return DEFAULT_NAVBAR_SELECTION;
   }
   const globalPref = readGlobalLocationPrefs();
   if (!globalPref || globalPref.location === "Any") {
-    return defaultNavbarSelection();
+    return DEFAULT_NAVBAR_SELECTION;
   }
   return (
     locationStringToSelection(globalPref.location, {
@@ -41,11 +43,15 @@ function selectionFromGlobalPrefs(): LocationSelection {
       currentLocationLabel: NAVBAR_CURRENT_LOCATION_LABEL,
       latitude: globalPref.latitude,
       longitude: globalPref.longitude,
-    }) ?? defaultNavbarSelection()
+      source:
+        globalPref.latitude != null && globalPref.longitude != null
+          ? "map"
+          : undefined,
+    }) ?? DEFAULT_NAVBAR_SELECTION
   );
 }
 
-let navbarSelection: LocationSelection = defaultNavbarSelection();
+let navbarSelection: LocationSelection = DEFAULT_NAVBAR_SELECTION;
 const listeners = new Set<() => void>();
 
 function emitNavbarLocationChange(): void {
@@ -92,7 +98,7 @@ export function setNavbarToCurrentLocation(
   const selection =
     locationStringToSelection(CURRENT_LOCATION_VALUE, {
       currentLocationLabel: NAVBAR_CURRENT_LOCATION_LABEL,
-    }) ?? defaultNavbarSelection();
+    }) ?? DEFAULT_NAVBAR_SELECTION;
   setNavbarLocationSelection(selection);
 }
 
@@ -103,7 +109,7 @@ export function setNavbarToAllLocations(radiusKm: number): void {
     searchRadius: String(radiusKm),
     autoCurrentLocationDismissed: true,
   });
-  setNavbarLocationSelection(defaultNavbarSelection());
+  setNavbarLocationSelection(DEFAULT_NAVBAR_SELECTION);
 }
 
 export function subscribeNavbarLocation(listener: () => void): () => void {
@@ -115,6 +121,6 @@ export function useNavbarLocationSelection(): LocationSelection {
   return useSyncExternalStore(
     subscribeNavbarLocation,
     getNavbarLocationSelection,
-    defaultNavbarSelection,
+    getServerNavbarSelection,
   );
 }

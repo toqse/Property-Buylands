@@ -21,7 +21,12 @@ export interface SessionUser {
   phone: string;
   whatsapp?: string;
   address?: string;
-  role: "user" | "admin";
+  role: "user" | "staff" | "admin";
+  roleLabel?: string;
+  permissions?: {
+    can_manage_properties: boolean;
+    can_manage_advertisements: boolean;
+  };
 }
 
 interface AuthCtx {
@@ -122,7 +127,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const refreshProfile = useCallback(async () => {
     const t = getToken();
     if (!t) return null;
+    const stored = readStoredUser();
     try {
+      if (stored?.role === "staff") {
+        const dash = await accountsApi.staffMeDashboard();
+        const mapped = mapApiUserToSession(dash.user);
+        persist(mapped, t);
+        return mapped;
+      }
       const profile = await accountsApi.getProfile();
       const mapped = mapApiUserToSession(profile);
       persist(mapped, t);

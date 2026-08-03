@@ -15,27 +15,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { LucideIcon } from "lucide-react";
-import { Mail, MapPin, Clock, Send } from "lucide-react";
+import { Mail, MapPin, Clock, Send, Navigation } from "lucide-react";
 import { toast } from "sonner";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { useCompanyContact, useCatalogMutations } from "@/hooks/api/useCatalog";
 import { getErrorMessage } from "@/lib/api/errors";
 
-const WhatsAppGlyph = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 32 32"
-    className={className}
-    fill="currentColor"
-    aria-hidden="true"
-  >
-    <path d="M19.11 17.2c-.27-.14-1.58-.78-1.82-.87-.24-.09-.42-.13-.6.14-.18.27-.69.87-.85 1.05-.16.18-.31.2-.58.07-.27-.14-1.15-.42-2.18-1.35-.81-.72-1.35-1.61-1.51-1.88-.16-.27-.02-.42.12-.56.12-.12.27-.31.4-.47.13-.16.18-.27.27-.45.09-.18.04-.34-.02-.47-.07-.14-.6-1.44-.82-1.98-.22-.52-.44-.45-.6-.46h-.51c-.18 0-.47.07-.71.34-.24.27-.93.91-.93 2.22 0 1.31.95 2.58 1.08 2.76.13.18 1.86 2.84 4.5 3.98.63.27 1.12.43 1.5.55.63.2 1.21.17 1.66.1.51-.08 1.58-.65 1.8-1.27.22-.62.22-1.15.16-1.27-.07-.12-.24-.2-.51-.34z" />
-    <path d="M16 3.2c-7.05 0-12.78 5.74-12.78 12.79 0 2.25.59 4.45 1.7 6.38L3.2 28.8l6.58-1.69a12.74 12.74 0 0 0 6.22 1.59h.01c7.05 0 12.79-5.74 12.79-12.79C28.8 8.94 23.06 3.2 16 3.2zm0 23.38h-.01a10.6 10.6 0 0 1-5.4-1.48l-.39-.23-3.9 1 1.04-3.8-.25-.39a10.56 10.56 0 0 1-1.62-5.64C5.47 10.2 10.2 5.47 16 5.47s10.53 4.73 10.53 10.54c0 5.81-4.73 10.57-10.53 10.57z" />
-  </svg>
-);
+const OFFICE_DIRECTIONS_URL = "https://maps.app.goo.gl/ZfjRTwzueGuBBWvt8";
 
 type ContactCard = {
   key: string;
-  Icon: LucideIcon | typeof WhatsAppGlyph;
+  Icon: LucideIcon;
   label: string;
   detail: React.ReactNode;
 };
@@ -56,8 +46,8 @@ const BUDGET_OPTIONS = [
   { value: "undisclosed", label: "Prefer not to say" },
 ] as const;
 
-const OFFICE_LAT = 11.29268612842755;
-const OFFICE_LNG = 75.8176451067927;
+const OFFICE_MAP_EMBED_SRC =
+  "https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d10166.831500228405!2d77.61876389045686!3d12.87016058835937!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bae6bbb49cfcd2d%3A0x487814f466a93341!2sSplendid%20Lake%20Breez!5e1!3m2!1sen!2sin!4v1785728109277!5m2!1sen!2sin";
 
 const Contact = () => {
   const { data: company } = useCompanyContact();
@@ -67,10 +57,6 @@ const Contact = () => {
 
   const address = (company?.address || company?.company_address || "").trim();
   const email = (company?.email || company?.company_email || "").trim();
-  const whatsapp = (company?.whatsapp || company?.admin_whatsapp || "").trim();
-  const whatsappHref = whatsapp
-    ? `https://wa.me/${whatsapp.replace(/\D/g, "")}`
-    : "";
 
   const contactCards: ContactCard[] = [];
   if (address) {
@@ -98,23 +84,21 @@ const Contact = () => {
       ),
     });
   }
-  if (whatsapp) {
-    contactCards.push({
-      key: "whatsapp",
-      Icon: WhatsAppGlyph,
-      label: "WhatsApp",
-      detail: (
-        <a
-          href={whatsappHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-gold transition-colors underline-offset-2 hover:underline"
-        >
-          {whatsapp}
-        </a>
-      ),
-    });
-  }
+  contactCards.push({
+    key: "directions",
+    Icon: Navigation,
+    label: "Directions",
+    detail: (
+      <a
+        href={OFFICE_DIRECTIONS_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hover:text-gold transition-colors underline-offset-2 hover:underline"
+      >
+        Open in Google Maps
+      </a>
+    ),
+  });
   contactCards.push({
     key: "hours",
     Icon: Clock,
@@ -303,10 +287,10 @@ const Contact = () => {
           <div className="rounded-2xl overflow-hidden border border-border h-[280px] md:h-[400px] bg-muted relative">
             <iframe
               title="Buylands India office location"
-              src={`https://www.google.com/maps?q=${OFFICE_LAT},${OFFICE_LNG}&hl=en&z=15&output=embed`}
+              src={OFFICE_MAP_EMBED_SRC}
               className="absolute inset-0 h-full w-full border-0"
               loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
+              referrerPolicy="strict-origin-when-cross-origin"
               allowFullScreen
             />
           </div>

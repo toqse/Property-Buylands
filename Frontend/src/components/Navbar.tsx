@@ -7,6 +7,7 @@ import { Logo } from "./Logo";
 import { useAuth } from "@/context/AuthContext";
 import { AuthDialog } from "./auth/AuthDialog";
 import { LocationSearch } from "./LocationSearch";
+import { homePathForRole } from "@/lib/api/mappers/user";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
@@ -130,7 +131,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
         <div className="hidden md:flex shrink-0 justify-center">
           <LocationSearch
             instanceId="navbar-location-search"
-            className="w-[14vw] min-w-[200px]"
+            className="w-[18vw] min-w-[248px]"
           />
         </div>
 
@@ -150,7 +151,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>{user.email}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate(user.role === "admin" ? "/admin" : "/dashboard")}>
+                <DropdownMenuItem onClick={() => navigate(homePathForRole(user.role))}>
                   <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { logout(); navigate("/"); }}>
@@ -226,7 +227,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
                   className="w-full gap-2 font-semibold"
                   onClick={() => {
                     setOpen(false);
-                    navigate(user.role === "admin" ? "/admin" : "/dashboard");
+                    navigate(homePathForRole(user.role));
                   }}
                 >
                   <LayoutDashboard className="h-4 w-4" /> Dashboard

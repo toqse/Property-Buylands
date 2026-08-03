@@ -25,7 +25,7 @@ export type LocationSelection = {
   label: string;
   latitude?: number;
   longitude?: number;
-  source: "all" | "current" | "catalog" | "osm";
+  source: "all" | "current" | "catalog" | "osm" | "map";
   description?: string;
 };
 
@@ -183,7 +183,8 @@ export function locationStringToSelection(
     latitude: opts?.latitude,
     longitude: opts?.longitude,
     source: opts?.source ?? "catalog",
-    description: opts?.source === "osm" ? undefined : "Location",
+    description:
+      opts?.source === "osm" || opts?.source === "map" ? undefined : "Location",
   };
 }
 

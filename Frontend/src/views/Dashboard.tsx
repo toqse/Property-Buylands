@@ -199,6 +199,7 @@ const Dashboard = () => {
     if (!hydrated) return;
     if (!user) navigate("/");
     else if (user.role === "admin") navigate("/admin");
+    else if (user.role === "staff") navigate("/staff");
   }, [navigate, user, hydrated]);
 
   // Debounce the search box so we don't hit the API on every keystroke.
@@ -227,7 +228,7 @@ const Dashboard = () => {
   const filteredProperties = properties;
 
   if (!hydrated) return null;
-  if (!user || user.role === "admin") return null;
+  if (!user || user.role === "admin" || user.role === "staff") return null;
 
   const propertiesTotalPages = Math.max(
     1,

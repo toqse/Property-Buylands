@@ -38,6 +38,11 @@ import {
   type LocationSelection,
 } from "@/components/LocationSearchSelect";
 import {
+  MapLocationPicker,
+  MapLocationPinButton,
+  type MapLocationConfirm,
+} from "@/components/MapLocationPicker";
+import {
   NAVBAR_CURRENT_LOCATION_LABEL,
   setNavbarLocationSelection,
   setNavbarToAllLocations,
@@ -303,6 +308,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     latitude: number;
     longitude: number;
   } | null>(null);
+  const [draftMapOpen, setDraftMapOpen] = useState(false);
   const draftPlaceGeoRef = useRef<{
     latitude: number;
     longitude: number;
@@ -751,6 +757,23 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     draftLocationSearchCandidateRef.current = selection;
   }, []);
 
+  const handleDraftMapConfirm = useCallback(
+    (result: MapLocationConfirm) => {
+      handleDraftLocationSelect({
+        value: result.label,
+        label: result.label,
+        latitude: result.latitude,
+        longitude: result.longitude,
+        source: "map",
+      });
+    },
+    [handleDraftLocationSelect],
+  );
+
+  const draftMapInitialCenter =
+    draftSelectedPlaceGeo ??
+    (coords ? { latitude: coords.latitude, longitude: coords.longitude } : null);
+
   const draftLocationSelection = useMemo(
     () =>
       locationStringToSelection(draftLocation, {
@@ -759,7 +782,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         currentLocationLabel: "My current location",
         latitude: draftSelectedPlaceGeo?.latitude,
         longitude: draftSelectedPlaceGeo?.longitude,
-        source: draftSelectedPlaceGeo ? "osm" : undefined,
+        source: draftSelectedPlaceGeo ? "map" : undefined,
       }),
     [draftLocation, draftSelectedPlaceGeo],
   );
@@ -1309,18 +1332,27 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                   {/* Location */}
                   <div>
                     <Label className={mobileFilterLabelClass}>Location</Label>
-                    <LocationSearchSelect
-                      instanceId="properties-mobile-filter-location"
-                      value={draftLocationSelection}
-                      onChange={handleDraftLocationSelect}
-                      onSearchCandidateChange={handleDraftLocationSearchCandidateChange}
-                      propertyFor={draftPropertyForFilter}
-                      variant="modal"
-                      allValue="Any"
-                      allLabel="No location filter"
-                      currentLocationLabel="My current location"
-                      placeholder="Select location"
-                    />
+                    <div className="flex gap-2">
+                      <div className="relative min-w-0 flex-1">
+                        <LocationSearchSelect
+                          instanceId="properties-mobile-filter-location"
+                          value={draftLocationSelection}
+                          onChange={handleDraftLocationSelect}
+                          onSearchCandidateChange={handleDraftLocationSearchCandidateChange}
+                          propertyFor={draftPropertyForFilter}
+                          variant="modal"
+                          allValue="Any"
+                          allLabel="No location filter"
+                          currentLocationLabel="My current location"
+                          placeholder="Select location"
+                        />
+                      </div>
+                      <MapLocationPinButton
+                        size="modal"
+                        active={draftSelectedPlaceGeo != null}
+                        onClick={() => setDraftMapOpen(true)}
+                      />
+                    </div>
                   </div>
 
                   <button
@@ -1473,6 +1505,11 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
                           placeholder="Select or search a location"
                         />
                       </div>
+                      <MapLocationPinButton
+                        size="modal"
+                        active={draftSelectedPlaceGeo != null}
+                        onClick={() => setDraftMapOpen(true)}
+                      />
                       {draftLocation !== "Any" && (
                         <Button
                           type="button"
@@ -1780,6 +1817,13 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         </div>
         </RevealOnScroll>
       </section>
+
+      <MapLocationPicker
+        open={draftMapOpen}
+        onOpenChange={setDraftMapOpen}
+        initialCenter={draftMapInitialCenter}
+        onConfirm={handleDraftMapConfirm}
+      />
 
       <Footer />
     </div>

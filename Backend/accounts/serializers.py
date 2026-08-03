@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
-from .models import OTPVerification, UserProfile
+from .models import OTPVerification, StaffActivityLog, StaffProfile, UserProfile
+from .permissions import get_staff_permissions
 
 
 def _split_full_name(full: str) -> tuple[str, str]:
@@ -14,7 +15,7 @@ def _split_full_name(full: str) -> tuple[str, str]:
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """User JSON for login/register responses; includes owner profile when present."""
+    """User JSON for login/register responses; includes owner/staff profile when present."""
 
     is_property_owner = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
@@ -23,6 +24,8 @@ class UserSerializer(serializers.ModelSerializer):
     avatar = serializers.SerializerMethodField()
     account_type = serializers.SerializerMethodField()
     email_verified = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
+    role_label = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -33,6 +36,7 @@ class UserSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "is_staff",
+            "is_superuser",
             "is_property_owner",
             "phone",
             "whatsapp_number",
@@ -40,6 +44,8 @@ class UserSerializer(serializers.ModelSerializer):
             "avatar",
             "account_type",
             "email_verified",
+            "permissions",
+            "role_label",
         )
 
     def get_is_property_owner(self, obj):
@@ -47,7 +53,11 @@ class UserSerializer(serializers.ModelSerializer):
         return bool(p and p.account_type == UserProfile.ACCOUNT_PROPERTY_OWNER)
 
     def get_phone(self, obj):
-        return getattr(getattr(obj, "profile", None), "phone", "") or ""
+        owner = getattr(obj, "profile", None)
+        if owner and owner.phone:
+            return owner.phone
+        staff = getattr(obj, "staff_profile", None)
+        return getattr(staff, "phone", "") or ""
 
     def get_whatsapp_number(self, obj):
         return getattr(getattr(obj, "profile", None), "whatsapp_number", "") or ""
@@ -72,6 +82,19 @@ class UserSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(url)
         return url
+
+    def get_permissions(self, obj):
+        return get_staff_permissions(obj)
+
+    def get_role_label(self, obj):
+        if obj.is_superuser:
+            return "Super Admin"
+        staff = getattr(obj, "staff_profile", None)
+        if staff and staff.role_label:
+            return staff.role_label
+        if obj.is_staff:
+            return "Staff"
+        return ""
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -311,3 +334,127 @@ class OwnerAdminUpdateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"email": "Email already in use."})
 
         return attrs
+
+
+class StaffAdminListSerializer(serializers.ModelSerializer):
+    """Superuser list/detail for staff accounts."""
+
+    phone = serializers.SerializerMethodField()
+    role_label = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
+    property_count = serializers.IntegerField(read_only=True, required=False)
+    advertisement_count = serializers.IntegerField(read_only=True, required=False)
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+            "is_staff",
+            "is_superuser",
+            "is_active",
+            "date_joined",
+            "phone",
+            "role_label",
+            "permissions",
+            "property_count",
+            "advertisement_count",
+        )
+
+    def get_full_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name or obj.username or obj.email
+
+    def get_phone(self, obj):
+        return getattr(getattr(obj, "staff_profile", None), "phone", "") or ""
+
+    def get_role_label(self, obj):
+        if obj.is_superuser:
+            return "Super Admin"
+        staff = getattr(obj, "staff_profile", None)
+        return (staff.role_label if staff and staff.role_label else "Staff")
+
+    def get_permissions(self, obj):
+        return get_staff_permissions(obj)
+
+
+class StaffAdminCreateSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=120)
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password2 = serializers.CharField(write_only=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    role_label = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    can_manage_properties = serializers.BooleanField(required=False, default=True)
+    can_manage_advertisements = serializers.BooleanField(required=False, default=True)
+
+    def validate_email(self, value):
+        email = value.strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("Email already in use.")
+        return email
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password2"]:
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
+        return attrs
+
+
+class StaffAdminUpdateSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    role_label = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    can_manage_properties = serializers.BooleanField(required=False)
+    can_manage_advertisements = serializers.BooleanField(required=False)
+    is_active = serializers.BooleanField(required=False)
+    new_password = serializers.CharField(required=False, write_only=True, validators=[validate_password])
+    new_password2 = serializers.CharField(required=False, write_only=True)
+
+    def validate(self, attrs):
+        new_pw = attrs.get("new_password")
+        new_pw2 = attrs.get("new_password2")
+        if new_pw or new_pw2:
+            if not new_pw:
+                raise serializers.ValidationError({"new_password": "New password is required."})
+            if not new_pw2:
+                raise serializers.ValidationError({"new_password2": "Please confirm the new password."})
+            if new_pw != new_pw2:
+                raise serializers.ValidationError({"new_password": "Password fields didn't match."})
+
+        email = attrs.get("email")
+        if email is not None:
+            email = email.strip().lower()
+            attrs["email"] = email
+            instance = self.context.get("instance")
+            if instance and User.objects.filter(email__iexact=email).exclude(pk=instance.pk).exists():
+                raise serializers.ValidationError({"email": "Email already in use."})
+        return attrs
+
+
+class StaffActivityLogSerializer(serializers.ModelSerializer):
+    actor_email = serializers.EmailField(source="actor.email", read_only=True)
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StaffActivityLog
+        fields = (
+            "id",
+            "actor",
+            "actor_email",
+            "actor_name",
+            "action",
+            "resource_type",
+            "resource_id",
+            "summary",
+            "created_at",
+        )
+
+    def get_actor_name(self, obj):
+        name = f"{obj.actor.first_name} {obj.actor.last_name}".strip()
+        return name or obj.actor.username or obj.actor.email

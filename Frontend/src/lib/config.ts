@@ -1,6 +1,6 @@
 export const DEFAULT_BACKEND_BASE_URL =
   "https://api.buylandsindia.com/api/";
-//export const DEFAULT_BACKEND_BASE_URL = "http://192.168.1.42:8000/api/";
+// export const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8844/api/";
 /** Single switch for backend API and OpenStreetMap request/response console output */
 export const display_console_logs = true;
 

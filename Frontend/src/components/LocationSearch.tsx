@@ -27,6 +27,11 @@ import {
   locationStringToSelection,
   type LocationSelection,
 } from "@/components/LocationSearchSelect";
+import {
+  MapLocationPicker,
+  MapLocationPinButton,
+  type MapLocationConfirm,
+} from "@/components/MapLocationPicker";
 
 type LocationSearchProps = {
   instanceId: string;
@@ -64,9 +69,25 @@ export function LocationSearch({
   const { coords, radiusKm, requestLocationForFilter } = useUserLocation();
   const value = useNavbarLocationSelection();
   const [pendingCurrentLocation, setPendingCurrentLocation] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
   const hydratedRef = useRef(false);
 
   const radius = String(radiusKm || 10);
+
+  const pinActive =
+    value != null &&
+    value.source !== "all" &&
+    value.latitude != null &&
+    value.longitude != null &&
+    Number.isFinite(value.latitude) &&
+    Number.isFinite(value.longitude);
+
+  const mapInitialCenter =
+    pinActive && value
+      ? { latitude: value.latitude!, longitude: value.longitude! }
+      : coords
+        ? { latitude: coords.latitude, longitude: coords.longitude }
+        : null;
 
   useEffect(() => {
     if (hydratedRef.current) return;
@@ -215,22 +236,49 @@ export function LocationSearch({
       applyGlobalLocation(storedLocation, storedGeo);
       goToResults(storedSelection);
     },
-    [goToResults, requestLocationForFilter, applyGlobalLocation],
+    [coords, goToResults, requestLocationForFilter, applyGlobalLocation],
+  );
+
+  const handleMapConfirm = useCallback(
+    (result: MapLocationConfirm) => {
+      handleChange({
+        value: result.label,
+        label: result.label,
+        latitude: result.latitude,
+        longitude: result.longitude,
+        source: "map",
+      });
+    },
+    [handleChange],
   );
 
   return (
-    <LocationSearchSelect
-      instanceId={instanceId}
-      value={value}
-      onChange={handleChange}
-      placeholder={placeholder}
-      className={cn(className)}
-      variant="navbar"
-      allValue={ALL_LOCATIONS_VALUE}
-      allLabel="All Locations"
-      currentLocationLabel={NAVBAR_CURRENT_LOCATION_MENU_LABEL}
-      selectedCurrentLocationLabel={NAVBAR_CURRENT_LOCATION_LABEL}
-    />
+    <>
+      <div className={cn("flex min-w-0 items-center gap-2", className)}>
+        <LocationSearchSelect
+          instanceId={instanceId}
+          value={value}
+          onChange={handleChange}
+          placeholder={placeholder}
+          className="min-w-0 flex-1"
+          variant="navbar"
+          allValue={ALL_LOCATIONS_VALUE}
+          allLabel="All Locations"
+          currentLocationLabel={NAVBAR_CURRENT_LOCATION_MENU_LABEL}
+          selectedCurrentLocationLabel={NAVBAR_CURRENT_LOCATION_LABEL}
+        />
+        <MapLocationPinButton
+          size="navbar"
+          active={pinActive}
+          onClick={() => setMapOpen(true)}
+        />
+      </div>
+      <MapLocationPicker
+        open={mapOpen}
+        onOpenChange={setMapOpen}
+        initialCenter={mapInitialCenter}
+        onConfirm={handleMapConfirm}
+      />
+    </>
   );
 }
-

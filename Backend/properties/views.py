@@ -16,6 +16,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from property_listing.video_constants import VIDEO_FAILED, VIDEO_PROCESSING, VIDEO_READY
+from accounts.activity import log_staff_activity
+from accounts.models import StaffActivityLog
+from accounts.permissions import get_staff_permissions, user_is_platform_admin, user_is_portal_staff
 
 from .models import (
     AdminPanelImage,
@@ -491,15 +494,78 @@ class PropertyViewSet(viewsets.ModelViewSet):
             )
 
     def perform_create(self, serializer):
-        status_val = (
-            Property.MODERATION_APPROVED
-            if self.request.user.is_authenticated and self.request.user.is_staff
-            else Property.MODERATION_PENDING
-        )
+        from rest_framework.exceptions import PermissionDenied
+
+        user = self.request.user
+        if user.is_authenticated and user.is_staff:
+            perms = get_staff_permissions(user)
+            if not perms.get("can_manage_properties"):
+                raise PermissionDenied("You do not have permission to manage properties.")
+
+        if user.is_authenticated and user.is_staff:
+            # Superusers always auto-approve; portal staff respect site setting.
+            if user_is_platform_admin(user):
+                status_val = Property.MODERATION_APPROVED
+            else:
+                require_approval = SiteSettings.get_settings().require_staff_property_approval
+                status_val = (
+                    Property.MODERATION_PENDING
+                    if require_approval
+                    else Property.MODERATION_APPROVED
+                )
+        else:
+            status_val = Property.MODERATION_PENDING
+
         kwargs = {"moderation_status": status_val}
-        if self.request.user.is_authenticated and not self.request.user.is_staff:
-            kwargs["created_by"] = self.request.user
-        serializer.save(**kwargs)
+        if user.is_authenticated:
+            kwargs["created_by"] = user
+        instance = serializer.save(**kwargs)
+        if user.is_authenticated and user.is_staff:
+            log_staff_activity(
+                user,
+                action=StaffActivityLog.ACTION_CREATE,
+                resource_type=StaffActivityLog.RESOURCE_PROPERTY,
+                resource_id=str(instance.pk),
+                summary=f"Created property: {getattr(instance, 'title', instance.pk)}",
+            )
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import PermissionDenied
+
+        user = self.request.user
+        if user.is_authenticated and user.is_staff and not user_is_platform_admin(user):
+            perms = get_staff_permissions(user)
+            if not perms.get("can_manage_properties"):
+                raise PermissionDenied("You do not have permission to manage properties.")
+        instance = serializer.save()
+        if user.is_authenticated and user.is_staff:
+            log_staff_activity(
+                user,
+                action=StaffActivityLog.ACTION_UPDATE,
+                resource_type=StaffActivityLog.RESOURCE_PROPERTY,
+                resource_id=str(instance.pk),
+                summary=f"Updated property: {getattr(instance, 'title', instance.pk)}",
+            )
+
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import PermissionDenied
+
+        user = self.request.user
+        if user.is_authenticated and user.is_staff and not user_is_platform_admin(user):
+            perms = get_staff_permissions(user)
+            if not perms.get("can_manage_properties"):
+                raise PermissionDenied("You do not have permission to manage properties.")
+        pk = instance.pk
+        title = getattr(instance, "title", pk)
+        instance.delete()
+        if user.is_authenticated and user.is_staff:
+            log_staff_activity(
+                user,
+                action=StaffActivityLog.ACTION_DELETE,
+                resource_type=StaffActivityLog.RESOURCE_PROPERTY,
+                resource_id=str(pk),
+                summary=f"Deleted property: {title}",
+            )
 
     @action(detail=False, methods=["get"], url_path="mine")
     def mine(self, request, *args, **kwargs):
@@ -514,9 +580,9 @@ class PropertyViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
-        if not request.user.is_authenticated or not request.user.is_staff:
+        if not user_is_platform_admin(request.user):
             return Response(
-                {"detail": "Only staff can approve properties."},
+                {"detail": "Only platform admins can approve properties."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         prop = self.get_object()
@@ -529,9 +595,9 @@ class PropertyViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
-        if not request.user.is_authenticated or not request.user.is_staff:
+        if not user_is_platform_admin(request.user):
             return Response(
-                {"detail": "Only staff can reject properties."},
+                {"detail": "Only platform admins can reject properties."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         prop = self.get_object()
@@ -730,24 +796,40 @@ class PropertyViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         staff = user.is_authenticated and user.is_staff
+        portal_staff = user_is_portal_staff(user)
+        platform_admin = user_is_platform_admin(user)
 
         if self.action in ("update", "partial_update", "destroy", "delete_image"):
-            if staff:
+            if platform_admin:
                 pass
+            elif portal_staff:
+                queryset = queryset.filter(created_by=user)
             elif user.is_authenticated:
                 queryset = queryset.filter(created_by=user)
             else:
                 queryset = queryset.none()
-        elif staff:
-            if self.action == 'list':
-                ms = (self.request.query_params.get('moderation_status') or 'all').strip().lower()
+        elif portal_staff:
+            # Portal staff only see properties they created
+            queryset = queryset.filter(created_by=user)
+            if self.action == "list":
+                ms = (self.request.query_params.get("moderation_status") or "all").strip().lower()
                 if ms in (
                     Property.MODERATION_PENDING,
                     Property.MODERATION_APPROVED,
                     Property.MODERATION_REJECTED,
                 ):
                     queryset = queryset.filter(moderation_status=ms)
-        elif self.action == 'list':
+        elif platform_admin or (staff and not portal_staff):
+            # Superuser / legacy staff with is_superuser
+            if self.action == "list":
+                ms = (self.request.query_params.get("moderation_status") or "all").strip().lower()
+                if ms in (
+                    Property.MODERATION_PENDING,
+                    Property.MODERATION_APPROVED,
+                    Property.MODERATION_REJECTED,
+                ):
+                    queryset = queryset.filter(moderation_status=ms)
+        elif self.action == "list":
             queryset = queryset.filter(moderation_status=Property.MODERATION_APPROVED)
             queryset = filter_public_video_ready(queryset)
         else:

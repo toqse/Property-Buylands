@@ -16,7 +16,7 @@ function WhatsAppIcon({ className }: { className?: string }) {
 export function FloatingWhatsApp() {
   const { pathname } = useLocation();
 
-  if (pathname.startsWith("/admin") || pathname.startsWith("/dashboard")) {
+  if (pathname.startsWith("/admin") || pathname.startsWith("/staff") || pathname.startsWith("/dashboard")) {
     return null;
   }
 

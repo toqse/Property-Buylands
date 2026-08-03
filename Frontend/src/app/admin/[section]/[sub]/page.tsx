@@ -4,6 +4,7 @@ const ADMIN_SUB_ROUTES: { section: string; sub: string }[] = [
   { section: "locations", sub: "states" },
   { section: "locations", sub: "districts" },
   { section: "locations", sub: "cities" },
+  { section: "staff", sub: "activity" },
 ];
 
 export function generateStaticParams() {

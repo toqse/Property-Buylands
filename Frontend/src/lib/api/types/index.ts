@@ -6,6 +6,7 @@ export interface ApiUser {
   first_name: string;
   last_name: string;
   is_staff: boolean;
+  is_superuser?: boolean;
   is_property_owner: boolean;
   phone: string;
   whatsapp_number: string;
@@ -13,6 +14,72 @@ export interface ApiUser {
   avatar: string | null;
   account_type: string | null;
   email_verified: boolean;
+  permissions?: {
+    can_manage_properties?: boolean;
+    can_manage_advertisements?: boolean;
+  };
+  role_label?: string;
+}
+
+export interface ApiStaffPermissions {
+  can_manage_properties: boolean;
+  can_manage_advertisements: boolean;
+}
+
+export interface ApiStaff {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  full_name?: string;
+  is_staff: boolean;
+  is_superuser: boolean;
+  is_active: boolean;
+  date_joined: string;
+  phone: string;
+  role_label: string;
+  permissions: ApiStaffPermissions;
+  property_count?: number;
+  advertisement_count?: number;
+}
+
+export interface ApiStaffActivity {
+  id: number;
+  actor: number;
+  actor_email: string;
+  actor_name: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  summary: string;
+  created_at: string;
+}
+
+export interface ApiStaffOverview {
+  total_staff: number;
+  active_staff: number;
+  inactive_staff: number;
+  staff: ApiStaff[];
+}
+
+export interface ApiStaffPerformance {
+  staff_id: number;
+  period_days: number;
+  properties_created: number;
+  advertisements_created: number;
+  activity_total: number;
+  activity_create: number;
+  activity_update: number;
+  activity_delete: number;
+  activity_login: number;
+}
+
+export interface ApiStaffDashboard {
+  user: ApiUser;
+  properties_count: number;
+  advertisements_count: number;
+  recent_activity: ApiStaffActivity[];
 }
 
 export interface AuthTokenResponse {
@@ -258,6 +325,8 @@ export interface ApiSiteSettings {
   testimonials_section_tag?: string;
   testimonials_section_heading?: string;
   testimonials_section_description?: string;
+  /** When true, staff-created properties need admin approval. */
+  require_staff_property_approval?: boolean;
 }
 
 export interface ApiCompanyContact {

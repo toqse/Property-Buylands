@@ -46,6 +46,7 @@ export function usePropertyList(
     auth?: boolean;
     keepPreviousPage?: boolean;
     staleTime?: number;
+    enabled?: boolean;
   } = {},
 ) {
   const params = buildPropertyListParams(filters);
@@ -60,6 +61,7 @@ export function usePropertyList(
     },
     staleTime: opts.staleTime,
     placeholderData: opts.keepPreviousPage ? keepPreviousData : undefined,
+    enabled: opts.enabled ?? true,
   });
 }
 
@@ -97,7 +99,10 @@ export function useProperty(id: string | undefined) {
   };
 }
 
-export function useMyProperties(params: PropertyListParams = {}) {
+export function useMyProperties(
+  params: PropertyListParams = {},
+  opts?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: queryKeys.myProperties(params),
     queryFn: async () => {
@@ -107,6 +112,7 @@ export function useMyProperties(params: PropertyListParams = {}) {
         items: page.results.map(mapApiPropertyToUi),
       };
     },
+    enabled: opts?.enabled ?? true,
   });
 }
 

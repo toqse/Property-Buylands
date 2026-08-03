@@ -13,7 +13,8 @@ from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import OTPVerification, PendingOwnerRegistration, UserProfile
+from .activity import log_staff_activity
+from .models import OTPVerification, PendingOwnerRegistration, StaffActivityLog, StaffProfile, UserProfile
 from .otp_service import (
     OTPDeliveryError,
     deliver_otp_email,
@@ -24,7 +25,7 @@ from .otp_service import (
     send_otp_to_recipient,
 )
 from .pagination import OwnerAdminPagination
-from .permissions import IsStaffUser
+from .permissions import IsStaffUser, IsSuperUser
 from .serializers import (
     UserSerializer,
     RegisterSerializer,
@@ -40,6 +41,10 @@ from .serializers import (
     ProfileEmailChangeRequestSerializer,
     OwnerAdminListSerializer,
     OwnerAdminUpdateSerializer,
+    StaffAdminListSerializer,
+    StaffAdminCreateSerializer,
+    StaffAdminUpdateSerializer,
+    StaffActivityLogSerializer,
     _split_full_name,
 )
 
@@ -89,6 +94,16 @@ class AccountsAPIRootView(APIView):
                     "owners_detail": {
                         "method": "GET, PATCH, DELETE",
                         "path": "/api/accounts/owners/{id}/",
+                    },
+                    "staff_list": {"method": "GET, POST", "path": "/api/accounts/staff/"},
+                    "staff_detail": {
+                        "method": "GET, PATCH, DELETE",
+                        "path": "/api/accounts/staff/{id}/",
+                    },
+                    "staff_overview": {"method": "GET", "path": "/api/accounts/staff/overview/"},
+                    "staff_me_dashboard": {
+                        "method": "GET",
+                        "path": "/api/accounts/staff/me/dashboard/",
                     },
                 },
             }
@@ -226,6 +241,31 @@ class OwnerRegisterVerifyView(APIView):
         )
 
 
+def _user_for_auth_response(user):
+    return (
+        User.objects.select_related("profile", "staff_profile")
+        .filter(pk=user.pk)
+        .first()
+        or user
+    )
+
+
+def _issue_auth_token(request, user):
+    token, _created = Token.objects.get_or_create(user=user)
+    if user.is_staff:
+        log_staff_activity(
+            user,
+            action=StaffActivityLog.ACTION_LOGIN,
+            resource_type=StaffActivityLog.RESOURCE_AUTH,
+            summary="Staff login",
+        )
+    payload_user = _user_for_auth_response(user)
+    return {
+        "token": token.key,
+        "user": UserSerializer(payload_user, context={"request": request}).data,
+    }
+
+
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -233,8 +273,7 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.validated_data["user"]
-            token, _created = Token.objects.get_or_create(user=user)
-            return Response({"token": token.key, "user": UserSerializer(user, context={"request": request}).data})
+            return Response(_issue_auth_token(request, user))
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -248,11 +287,14 @@ class LoginOtpRequestView(APIView):
         email = ser.validated_data["email"]
         invalid_email_message = "No user account found for this email address."
         try:
-            user = User.objects.select_related("profile").get(email__iexact=email)
+            user = User.objects.select_related("profile", "staff_profile").get(email__iexact=email)
         except User.DoesNotExist:
             return otp_send_failure(message=invalid_email_message)
 
-        if not user.is_active or not hasattr(user, "profile") or user.is_staff:
+        # Owners need a profile; staff may log in with StaffProfile (or is_staff alone).
+        is_owner = hasattr(user, "profile") and not user.is_staff
+        is_staff_user = user.is_staff
+        if not user.is_active or (not is_owner and not is_staff_user):
             return otp_send_failure(message=invalid_email_message)
 
         try:
@@ -280,11 +322,13 @@ class LoginOtpVerifyView(APIView):
         otp = ser.validated_data["otp"].strip()
 
         try:
-            user = User.objects.get(email__iexact=email)
+            user = User.objects.select_related("profile", "staff_profile").get(email__iexact=email)
         except User.DoesNotExist:
             return Response({"detail": "Invalid email or code."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not user.is_active or not hasattr(user, "profile"):
+        is_owner = hasattr(user, "profile") and not user.is_staff
+        is_staff_user = user.is_staff
+        if not user.is_active or (not is_owner and not is_staff_user):
             return Response({"detail": "Invalid email or code."}, status=status.HTTP_400_BAD_REQUEST)
 
         otp_obj = (
@@ -301,12 +345,12 @@ class LoginOtpVerifyView(APIView):
             return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
         OTPVerification.objects.filter(user=user, purpose=OTPVerification.PURPOSE_LOGIN).delete()
-        token, _created = Token.objects.get_or_create(user=user)
+        auth = _issue_auth_token(request, user)
         return otp_verify_success(
             message="OTP verified successfully.",
             otp=otp,
-            token=token.key,
-            user=UserSerializer(user, context={"request": request}).data,
+            token=auth["token"],
+            user=auth["user"],
         )
 
 
@@ -437,11 +481,15 @@ class ProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        ok, err = _profile_required(request.user)
-        if not ok:
-            return err
-        user = User.objects.select_related("profile").get(pk=request.user.pk)
-        return Response(UserSerializer(user, context={"request": request}).data)
+        user = User.objects.select_related("profile", "staff_profile").get(pk=request.user.pk)
+        if hasattr(user, "profile"):
+            return Response(UserSerializer(user, context={"request": request}).data)
+        if user.is_staff:
+            return Response(UserSerializer(user, context={"request": request}).data)
+        return Response(
+            {"detail": "Profile is only available for property owner accounts."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     def patch(self, request):
         ok, err = _profile_required(request.user)
@@ -626,7 +674,7 @@ class PropertyOwnerAdminViewSet(
     GET/PATCH/DELETE /api/accounts/owners/{id}/
     """
 
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsSuperUser]
     pagination_class = OwnerAdminPagination
     serializer_class = OwnerAdminListSerializer
     http_method_names = ["get", "patch", "delete", "head", "options"]
@@ -686,3 +734,291 @@ class PropertyOwnerAdminViewSet(
         Token.objects.filter(user=user).delete()
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _staff_admin_queryset():
+    return (
+        User.objects.filter(is_staff=True)
+        .select_related("staff_profile")
+        .annotate(
+            property_count=Count("owned_properties", distinct=True),
+            advertisement_count=Count("created_ads", distinct=True),
+        )
+        .order_by("-date_joined")
+    )
+
+
+def _apply_staff_admin_update(user, profile, data):
+    user_fields = []
+    profile_fields = []
+
+    if "full_name" in data:
+        first_name, last_name = _split_full_name(data["full_name"])
+        user.first_name = first_name
+        user.last_name = last_name
+        user_fields.extend(["first_name", "last_name"])
+
+    if "email" in data:
+        new_email = data["email"]
+        if new_email.lower() != user.email.lower():
+            user.email = new_email
+            user_fields.append("email")
+
+    if "is_active" in data:
+        user.is_active = data["is_active"]
+        user_fields.append("is_active")
+
+    if user_fields:
+        user.save(update_fields=user_fields)
+
+    if "phone" in data:
+        profile.phone = data["phone"].strip()
+        profile_fields.append("phone")
+    if "role_label" in data:
+        profile.role_label = data["role_label"].strip()
+        profile_fields.append("role_label")
+    if "can_manage_properties" in data:
+        profile.can_manage_properties = data["can_manage_properties"]
+        profile_fields.append("can_manage_properties")
+    if "can_manage_advertisements" in data:
+        profile.can_manage_advertisements = data["can_manage_advertisements"]
+        profile_fields.append("can_manage_advertisements")
+
+    if profile_fields:
+        profile.save(update_fields=profile_fields)
+
+    if data.get("new_password"):
+        user.set_password(data["new_password"])
+        user.save(update_fields=["password"])
+
+
+class StaffAdminViewSet(viewsets.GenericViewSet):
+    """
+    Superuser staff management + staff self-dashboard.
+    /api/accounts/staff/
+    """
+
+    pagination_class = OwnerAdminPagination
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action == "me_dashboard":
+            return [IsStaffUser()]
+        return [IsSuperUser()]
+
+    def get_queryset(self):
+        qs = _staff_admin_queryset()
+        search = (self.request.query_params.get("search") or "").strip()
+        if search:
+            qs = qs.filter(
+                Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(email__icontains=search)
+                | Q(username__icontains=search)
+                | Q(staff_profile__phone__icontains=search)
+                | Q(staff_profile__role_label__icontains=search)
+            )
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            v = str(is_active).strip().lower()
+            if v in ("1", "true", "yes"):
+                qs = qs.filter(is_active=True)
+            elif v in ("0", "false", "no"):
+                qs = qs.filter(is_active=False)
+        return qs
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return StaffAdminCreateSerializer
+        if self.action in ("partial_update", "update"):
+            return StaffAdminUpdateSerializer
+        return StaffAdminListSerializer
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            ser = StaffAdminListSerializer(page, many=True, context={"request": request})
+            return self.get_paginated_response(ser.data)
+        ser = StaffAdminListSerializer(queryset, many=True, context={"request": request})
+        return Response(ser.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        user = self.get_object()
+        return Response(StaffAdminListSerializer(user, context={"request": request}).data)
+
+    def create(self, request, *args, **kwargs):
+        ser = StaffAdminCreateSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = ser.validated_data
+        email = data["email"]
+        first_name, last_name = _split_full_name(data["full_name"])
+
+        with transaction.atomic():
+            user = User.objects.create(
+                username=_unique_username_from_email(email),
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                is_staff=True,
+                is_superuser=False,
+                is_active=True,
+            )
+            user.set_password(data["password"])
+            user.save()
+            StaffProfile.objects.create(
+                user=user,
+                phone=(data.get("phone") or "").strip(),
+                role_label=(data.get("role_label") or "").strip(),
+                can_manage_properties=data.get("can_manage_properties", True),
+                can_manage_advertisements=data.get("can_manage_advertisements", True),
+            )
+            log_staff_activity(
+                request.user,
+                action=StaffActivityLog.ACTION_CREATE,
+                resource_type=StaffActivityLog.RESOURCE_STAFF,
+                resource_id=str(user.pk),
+                summary=f"Created staff account {email}",
+            )
+
+        user = _staff_admin_queryset().get(pk=user.pk)
+        return Response(
+            StaffAdminListSerializer(user, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        user = self.get_object()
+        if user.is_superuser and user.pk != request.user.pk:
+            return Response(
+                {"detail": "Other superuser accounts cannot be edited via this endpoint."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ser = StaffAdminUpdateSerializer(
+            data=request.data,
+            partial=True,
+            context={"instance": user, "request": request},
+        )
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        profile, _created = StaffProfile.objects.get_or_create(user=user)
+        _apply_staff_admin_update(user, profile, ser.validated_data)
+        if "is_active" in ser.validated_data and not ser.validated_data["is_active"]:
+            Token.objects.filter(user=user).delete()
+        log_staff_activity(
+            request.user,
+            action=StaffActivityLog.ACTION_UPDATE,
+            resource_type=StaffActivityLog.RESOURCE_STAFF,
+            resource_id=str(user.pk),
+            summary=f"Updated staff account {user.email}",
+        )
+        user = _staff_admin_queryset().get(pk=user.pk)
+        return Response(StaffAdminListSerializer(user, context={"request": request}).data)
+
+    def destroy(self, request, *args, **kwargs):
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            return Response(
+                {"detail": "You cannot delete your own account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if user.is_superuser:
+            return Response(
+                {"detail": "Superuser accounts cannot be deleted via this endpoint."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Soft-deactivate rather than hard delete
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        Token.objects.filter(user=user).delete()
+        log_staff_activity(
+            request.user,
+            action=StaffActivityLog.ACTION_DELETE,
+            resource_type=StaffActivityLog.RESOURCE_STAFF,
+            resource_id=str(user.pk),
+            summary=f"Deactivated staff account {user.email}",
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def overview(self, request, *args, **kwargs):
+        qs = _staff_admin_queryset().filter(is_superuser=False)
+        total = qs.count()
+        active = qs.filter(is_active=True).count()
+        staff_rows = StaffAdminListSerializer(qs[:50], many=True, context={"request": request}).data
+        return Response(
+            {
+                "total_staff": total,
+                "active_staff": active,
+                "inactive_staff": total - active,
+                "staff": staff_rows,
+            }
+        )
+
+    def activity(self, request, *args, **kwargs):
+        user = self.get_object()
+        logs = StaffActivityLog.objects.filter(actor=user).select_related("actor")
+
+        action = (request.query_params.get("action") or "").strip().lower()
+        if action:
+            logs = logs.filter(action=action)
+
+        resource_type = (request.query_params.get("resource_type") or "").strip().lower()
+        if resource_type:
+            logs = logs.filter(resource_type=resource_type)
+
+        search = (request.query_params.get("search") or "").strip()
+        if search:
+            logs = logs.filter(
+                Q(summary__icontains=search)
+                | Q(resource_type__icontains=search)
+                | Q(action__icontains=search)
+            )
+
+        page = self.paginate_queryset(logs)
+        if page is not None:
+            ser = StaffActivityLogSerializer(page, many=True)
+            return self.get_paginated_response(ser.data)
+        return Response(StaffActivityLogSerializer(logs[:100], many=True).data)
+
+    def performance(self, request, *args, **kwargs):
+        user = self.get_object()
+        days = request.query_params.get("days")
+        try:
+            days_int = max(1, min(365, int(days))) if days else 30
+        except (TypeError, ValueError):
+            days_int = 30
+        since = timezone.now() - timedelta(days=days_int)
+        logs = StaffActivityLog.objects.filter(actor=user, created_at__gte=since)
+        return Response(
+            {
+                "staff_id": user.pk,
+                "period_days": days_int,
+                "properties_created": user.owned_properties.count(),
+                "advertisements_created": user.created_ads.count(),
+                "activity_total": logs.count(),
+                "activity_create": logs.filter(action=StaffActivityLog.ACTION_CREATE).count(),
+                "activity_update": logs.filter(action=StaffActivityLog.ACTION_UPDATE).count(),
+                "activity_delete": logs.filter(action=StaffActivityLog.ACTION_DELETE).count(),
+                "activity_login": logs.filter(action=StaffActivityLog.ACTION_LOGIN).count(),
+            }
+        )
+
+    def me_dashboard(self, request, *args, **kwargs):
+        user = request.user
+        recent = (
+            StaffActivityLog.objects.filter(actor=user)
+            .select_related("actor")
+            .order_by("-created_at")[:20]
+        )
+        return Response(
+            {
+                "user": UserSerializer(
+                    _user_for_auth_response(user), context={"request": request}
+                ).data,
+                "properties_count": user.owned_properties.count(),
+                "advertisements_count": user.created_ads.count(),
+                "recent_activity": StaffActivityLogSerializer(recent, many=True).data,
+            }
+        )

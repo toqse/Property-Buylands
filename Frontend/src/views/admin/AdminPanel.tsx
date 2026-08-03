@@ -154,9 +154,12 @@ import {
   Megaphone,
   ExternalLink,
   Play,
+  UserCog,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import StaffAdmin from "@/views/admin/StaffAdmin";
+import StaffActivityAdmin from "@/views/admin/StaffActivityAdmin";
 import {
   videoProcessingStatusLabel,
   videoProcessingStatusTone,
@@ -201,6 +204,7 @@ const navItems: NavEntry[] = [
   { to: "/admin/properties", icon: Building2, label: "Properties" },
   { to: "/admin/approvals", icon: CheckCircle2, label: "Approvals" },
   { to: "/admin/users", icon: Users, label: "Users" },
+  { to: "/admin/staff", icon: UserCog, label: "Staff" },
   { to: "/admin/categories", icon: Tag, label: "Categories" },
   { to: "/admin/banners", icon: ImageIcon, label: "Banners" },
   { to: "/admin/testimonials", icon: Star, label: "Testimonials" },
@@ -6765,6 +6769,8 @@ const SettingsPage = () => {
   const [androidForceUpdate, setAndroidForceUpdate] = useState(false);
   const [iosAppVersion, setIosAppVersion] = useState("");
   const [iosForceUpdate, setIosForceUpdate] = useState(false);
+  const [requireStaffApproval, setRequireStaffApproval] = useState(false);
+  const [savingStaffApproval, setSavingStaffApproval] = useState(false);
 
   useEffect(() => {
     setAndroidAppVersion(mobileAppSettings?.android_app_version ?? "");
@@ -6772,6 +6778,10 @@ const SettingsPage = () => {
     setIosAppVersion(mobileAppSettings?.ios_app_version ?? "");
     setIosForceUpdate(Boolean(mobileAppSettings?.ios_force_update));
   }, [mobileAppSettings]);
+
+  useEffect(() => {
+    setRequireStaffApproval(Boolean(settings?.require_staff_property_approval));
+  }, [settings?.require_staff_property_approval]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -6786,6 +6796,26 @@ const SettingsPage = () => {
       toast.success("Company contact saved");
     } catch (err) {
       toast.error(getErrorMessage(err));
+    }
+  };
+
+  const handleStaffApprovalToggle = async (checked: boolean) => {
+    setRequireStaffApproval(checked);
+    setSavingStaffApproval(true);
+    try {
+      await catalogMutations.patchSiteSettings.mutateAsync({
+        require_staff_property_approval: checked,
+      });
+      toast.success(
+        checked
+          ? "Staff-created properties now require approval"
+          : "Staff-created properties are auto-approved",
+      );
+    } catch (err) {
+      setRequireStaffApproval(!checked);
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingStaffApproval(false);
     }
   };
 
@@ -6807,6 +6837,32 @@ const SettingsPage = () => {
   return (
     <div className="animate-fade-in max-w-3xl space-y-6">
       <h1 className="font-serif text-3xl md:text-4xl mb-6">Settings</h1>
+
+      <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4">
+        <div>
+          <h2 className="font-serif text-lg">Staff property moderation</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            When enabled, properties created by portal staff start as pending and need
+            admin approval. When disabled, staff listings are published immediately.
+            Super-admin creations are always auto-approved.
+          </p>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Require approval for staff properties</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {requireStaffApproval
+                ? "Staff listings go to Approvals first"
+                : "Staff listings are auto-approved"}
+            </p>
+          </div>
+          <Switch
+            checked={requireStaffApproval}
+            disabled={isLoading || savingStaffApproval}
+            onCheckedChange={handleStaffApprovalToggle}
+          />
+        </div>
+      </div>
 
       <form
         key={`settings-${contactDefaults.phone}-${contactDefaults.email}`}
@@ -6984,7 +7040,15 @@ const AdminPanel = () => {
     // Wait until the session is restored from localStorage before deciding,
     // otherwise a page refresh redirects to login before `user` is rehydrated.
     if (!hydrated) return;
-    if (!user || user.role !== "admin") navigate("/admin/login");
+    if (!user) {
+      navigate("/admin/login");
+      return;
+    }
+    if (user.role === "staff") {
+      navigate("/staff");
+      return;
+    }
+    if (user.role !== "admin") navigate("/admin/login");
   }, [navigate, user, hydrated]);
   // Auto-close the mobile nav whenever the route changes.
   useEffect(() => {
@@ -7006,6 +7070,8 @@ const AdminPanel = () => {
         return <Approvals />;
       case "users":
         return <UsersAdmin />;
+      case "staff":
+        return sub === "activity" ? <StaffActivityAdmin /> : <StaffAdmin />;
       case "categories":
         return <Categories />;
       case "banners":

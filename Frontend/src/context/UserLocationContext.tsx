@@ -74,7 +74,7 @@ function toUserCoords(latitude: number, longitude: number): UserCoords {
 
 export function UserLocationProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "";
-  const isAdminRoute = pathname.startsWith("/admin");
+  const isAdminRoute = pathname.startsWith("/admin") || pathname.startsWith("/staff");
   const { data: siteSettings } = useSiteSettings(isAdminRoute);
   const defaultRadius = siteSettings?.filter_radius ?? DEFAULT_PROPERTY_FILTER_RADIUS_KM;
 

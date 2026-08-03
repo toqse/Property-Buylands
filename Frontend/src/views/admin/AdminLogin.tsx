@@ -43,8 +43,12 @@ const AdminLogin = () => {
     setLoading(true);
     try {
       const res = await accountsApi.login(email.trim(), password);
-      if (!res.user.is_staff) {
-        toast.error("This account is not an administrator");
+      if (!res.user.is_superuser) {
+        if (res.user.is_staff) {
+          toast.error("Use the staff login page for staff accounts");
+        } else {
+          toast.error("This account is not an administrator");
+        }
         return;
       }
       loginFromApiResponse(res);

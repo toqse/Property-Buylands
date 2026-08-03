@@ -108,8 +108,12 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
     setLoading(true);
     try {
       const res = await accountsApi.login(normalizeEmail(email), password);
+      if (res.user.is_superuser) {
+        toast.error("Use the admin login page for administrator accounts");
+        return;
+      }
       if (res.user.is_staff) {
-        toast.error("Use the admin login page for staff accounts");
+        toast.error("Use the staff login page for staff accounts");
         return;
       }
       loginFromApiResponse(res);
@@ -232,6 +236,16 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
       if (!res.token || !res.user) {
         toast.error("Invalid verification response");
         return;
+      }
+      if (mode !== "register-verify") {
+        if (res.user.is_superuser) {
+          toast.error("Use the admin login page for administrator accounts");
+          return;
+        }
+        if (res.user.is_staff) {
+          toast.error("Use the staff login page for staff accounts");
+          return;
+        }
       }
       loginFromApiResponse({ token: res.token, user: res.user });
       toast.success(mode === "register-verify" ? "Account created — welcome!" : "Welcome back!");

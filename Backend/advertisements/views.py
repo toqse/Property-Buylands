@@ -4,8 +4,12 @@ from django.db import connection
 from django.db.models import Q
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from accounts.activity import log_staff_activity
+from accounts.models import StaffActivityLog
+from accounts.permissions import get_staff_permissions, user_is_portal_staff
 from advertisements.injector import get_active_ads_payload
 from advertisements.models import Advertisement
 from advertisements.pagination import AdvertisementPagination
@@ -36,8 +40,22 @@ class AdvertisementViewSet(viewsets.ModelViewSet):
             return [permissions.AllowAny()]
         return [permissions.IsAdminUser()]
 
+    def _ensure_ad_permission(self, user):
+        if not user or not user.is_authenticated or not user.is_staff:
+            raise PermissionDenied("Staff access required.")
+        perms = get_staff_permissions(user)
+        if not perms.get("can_manage_advertisements"):
+            raise PermissionDenied("You do not have permission to manage advertisements.")
+
     def get_queryset(self):
         queryset = super().get_queryset()
+        user = self.request.user
+
+        if self.action != "active":
+            if user_is_portal_staff(user):
+                queryset = queryset.filter(created_by=user)
+            # Superusers see all
+
         params = self.request.query_params
 
         ad_type = (params.get("ad_type") or "").strip().lower()
@@ -80,7 +98,42 @@ class AdvertisementViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        user = self.request.user
+        self._ensure_ad_permission(user)
+        instance = serializer.save(created_by=user)
+        log_staff_activity(
+            user,
+            action=StaffActivityLog.ACTION_CREATE,
+            resource_type=StaffActivityLog.RESOURCE_ADVERTISEMENT,
+            resource_id=str(instance.pk),
+            summary=f"Created advertisement: {getattr(instance, 'title', instance.pk)}",
+        )
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        self._ensure_ad_permission(user)
+        instance = serializer.save()
+        log_staff_activity(
+            user,
+            action=StaffActivityLog.ACTION_UPDATE,
+            resource_type=StaffActivityLog.RESOURCE_ADVERTISEMENT,
+            resource_id=str(instance.pk),
+            summary=f"Updated advertisement: {getattr(instance, 'title', instance.pk)}",
+        )
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        self._ensure_ad_permission(user)
+        pk = instance.pk
+        title = getattr(instance, "title", pk)
+        instance.delete()
+        log_staff_activity(
+            user,
+            action=StaffActivityLog.ACTION_DELETE,
+            resource_type=StaffActivityLog.RESOURCE_ADVERTISEMENT,
+            resource_id=str(pk),
+            summary=f"Deleted advertisement: {title}",
+        )
 
     @action(detail=False, methods=["get"], url_path="active")
     def active(self, request):
@@ -93,4 +146,3 @@ class AdvertisementViewSet(viewsets.ModelViewSet):
 
         payload = get_active_ads_payload(request, placement)
         return Response(payload)
-

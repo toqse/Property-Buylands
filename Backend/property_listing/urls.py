@@ -25,6 +25,7 @@ from accounts.views import (
     PropertyOwnerAdminViewSet,
     RegisterView,
     ResetPasswordView,
+    StaffAdminViewSet,
     VerifyOTPView,
 )
 from property_listing.views import api_meta
@@ -60,6 +61,39 @@ urlpatterns = [
             {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
         ),
         name="owner-admin-detail",
+    ),
+    # Staff management (superuser) + staff dashboard
+    re_path(
+        r"^api/accounts/staff/me/dashboard/?$",
+        StaffAdminViewSet.as_view({"get": "me_dashboard"}),
+        name="staff-me-dashboard",
+    ),
+    re_path(
+        r"^api/accounts/staff/overview/?$",
+        StaffAdminViewSet.as_view({"get": "overview"}),
+        name="staff-overview",
+    ),
+    re_path(
+        r"^api/accounts/staff/?$",
+        StaffAdminViewSet.as_view({"get": "list", "post": "create"}),
+        name="staff-admin-list",
+    ),
+    re_path(
+        r"^api/accounts/staff/(?P<pk>\d+)/activity/?$",
+        StaffAdminViewSet.as_view({"get": "activity"}),
+        name="staff-admin-activity",
+    ),
+    re_path(
+        r"^api/accounts/staff/(?P<pk>\d+)/performance/?$",
+        StaffAdminViewSet.as_view({"get": "performance"}),
+        name="staff-admin-performance",
+    ),
+    re_path(
+        r"^api/accounts/staff/(?P<pk>\d+)/?$",
+        StaffAdminViewSet.as_view(
+            {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+        ),
+        name="staff-admin-detail",
     ),
     path("api/accounts/", include("accounts.urls")),
     path("api/properties/", include("properties.urls")),

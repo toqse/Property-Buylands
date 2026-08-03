@@ -60,7 +60,7 @@ export function AdminModal({
         aria-modal="true"
         aria-labelledby="admin-modal-title"
         className={cn(
-          "relative z-[201] w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg border border-border bg-background p-5 sm:p-6 shadow-lg",
+          "relative z-[201] w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-border bg-background p-5 sm:p-6 shadow-lg [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.35)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-muted/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border [&::-webkit-scrollbar-thumb]:border-border/60 [&::-webkit-scrollbar-thumb]:hover:bg-muted/90",
           className,
         )}
         onClick={(event) => event.stopPropagation()}

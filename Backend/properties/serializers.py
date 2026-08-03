@@ -965,6 +965,7 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
             "testimonials_section_tag",
             "testimonials_section_heading",
             "testimonials_section_description",
+            "require_staff_property_approval",
             "created_at",
             "updated_at",
         ]
