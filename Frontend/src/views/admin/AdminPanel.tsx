@@ -13,6 +13,7 @@ import { NavLink, useLocation, useNavigate } from "@/lib/router";
 import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/Logo";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { PortalAccountMenu } from "@/components/PortalAccountMenu";
 import { Button } from "@/components/ui/button";
 import { SubmitProgressButton } from "@/components/SubmitProgressButton";
 import { PropertyUploadProgress } from "@/components/PropertyUploadProgress";
@@ -127,7 +128,6 @@ import {
   Tag,
   Image as ImageIcon,
   Settings,
-  LogOut,
   CheckCircle2,
   XCircle,
   Eye,
@@ -353,15 +353,9 @@ type PendingDelete = { label: string; action: () => void } | null;
 
 type SidebarBodyProps = {
   onNavigate?: () => void;
-  showInlineSignOut?: boolean;
 };
 
-const SidebarBody = ({
-  onNavigate,
-  showInlineSignOut = false,
-}: SidebarBodyProps) => {
-  const { logout } = useAuth();
-  const navigate = useNavigate();
+const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
   const { pathname } = useLocation();
 
   // Auto-expand the group whose basePath matches the current route.
@@ -382,11 +376,6 @@ const SidebarBody = ({
 
   const toggleGroup = (label: string) =>
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
-  const handleSignOut = () => {
-    onNavigate?.();
-    logout();
-    navigate("/");
-  };
 
   return (
     <>
@@ -469,25 +458,7 @@ const SidebarBody = ({
             </NavLink>
           );
         })}
-        {showInlineSignOut && (
-          <Button
-            variant="ghost"
-            className="mt-3 w-full justify-start border-t border-background/10 rounded-none px-4 pt-5 text-background/80 hover:bg-background/5 hover:text-background"
-            onClick={handleSignOut}
-          >
-            <LogOut className="h-4 w-4" /> Sign out
-          </Button>
-        )}
       </nav>
-      {!showInlineSignOut && (
-        <Button
-          variant="ghost"
-          className="text-background/80 hover:bg-background/5 hover:text-background justify-start"
-          onClick={handleSignOut}
-        >
-          <LogOut className="h-4 w-4" /> Sign out
-        </Button>
-      )}
     </>
   );
 };
@@ -506,28 +477,54 @@ type MobileTopBarProps = {
 };
 
 const MobileTopBar = ({ open, onOpenChange }: MobileTopBarProps) => (
-  <header className="md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 bg-[#05070a] text-background px-4 py-3 border-b border-white/5">
-    <Logo variant="light" imgClassName="h-9 brightness-0 invert" />
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-background hover:bg-white/10"
-          aria-label="Open navigation menu"
+  <header className="md:hidden sticky top-0 z-30 flex items-center border-b border-border bg-background/95 backdrop-blur px-4 h-14">
+    <div className="flex w-10 shrink-0 items-center">
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Open navigation menu"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        </SheetTrigger>
+        <SheetContent
+          side="left"
+          className="w-72 max-w-[85vw] bg-[#05070a] text-background border-r border-white/10 p-6 flex flex-col"
         >
-          <Menu className="h-5 w-5" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent
-        side="left"
-        className="w-72 max-w-[85vw] bg-[#05070a] text-background border-r border-white/10 p-6 flex flex-col"
-      >
-        <SidebarBody onNavigate={() => onOpenChange(false)} showInlineSignOut />
-      </SheetContent>
-    </Sheet>
+          <SidebarBody onNavigate={() => onOpenChange(false)} />
+        </SheetContent>
+      </Sheet>
+    </div>
+    <h1 className="flex-1 text-center text-sm sm:text-base font-semibold tracking-wide text-foreground">
+      Admin Portal
+    </h1>
+    <div className="flex w-10 shrink-0 items-center justify-end">
+      <PortalAccountMenu
+        loginPath="/admin/login"
+        signOutDescription="You will need to sign in again to access the admin portal."
+      />
+    </div>
   </header>
 );
+
+function AdminTopNavbar() {
+  return (
+    <header className="hidden md:flex sticky top-0 z-20 items-center border-b border-border bg-background/95 backdrop-blur px-6 h-14">
+      <div className="w-10 shrink-0" />
+      <h1 className="flex-1 text-center text-base font-semibold tracking-wide text-foreground">
+        Admin Portal
+      </h1>
+      <div className="flex w-10 shrink-0 items-center justify-end">
+        <PortalAccountMenu
+          loginPath="/admin/login"
+          signOutDescription="You will need to sign in again to access the admin portal."
+        />
+      </div>
+    </header>
+  );
+}
 
 const Overview = () => {
   const { data: allProps } = usePropertyList(
@@ -7187,10 +7184,13 @@ const AdminPanel = () => {
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-background">
       <Sidebar />
-      <MobileTopBar open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
-      <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-10 overflow-x-hidden">
-        {renderSection()}
-      </main>
+      <div className="flex-1 min-w-0 flex flex-col">
+        <MobileTopBar open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
+        <AdminTopNavbar />
+        <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-10 overflow-x-hidden">
+          {renderSection()}
+        </main>
+      </div>
     </div>
   );
 };

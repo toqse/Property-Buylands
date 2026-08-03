@@ -475,8 +475,22 @@ def _profile_required(user):
     return True, None
 
 
+def _apply_password_change(user, data):
+    """Apply new_password from validated ProfileUpdateSerializer data, or return an error Response."""
+    if not data.get("new_password"):
+        return None
+    if not user.check_password(data["current_password"]):
+        return Response(
+            {"current_password": ["Current password is incorrect."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    user.set_password(data["new_password"])
+    user.save(update_fields=["password"])
+    return None
+
+
 class ProfileView(APIView):
-    """GET / PATCH authenticated owner profile."""
+    """GET / PATCH authenticated owner or staff/admin profile."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -492,17 +506,39 @@ class ProfileView(APIView):
         )
 
     def patch(self, request):
-        ok, err = _profile_required(request.user)
-        if not ok:
-            return err
+        user = User.objects.select_related("profile", "staff_profile").get(pk=request.user.pk)
 
         ser = ProfileUpdateSerializer(data=request.data, context={"request": request}, partial=True)
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        user = User.objects.select_related("profile").get(pk=request.user.pk)
-        profile = user.profile
         data = ser.validated_data
+
+        # Portal staff / platform admin (no owner UserProfile required).
+        if user.is_staff and not hasattr(user, "profile"):
+            if "full_name" in data:
+                first_name, last_name = _split_full_name(data["full_name"])
+                user.first_name = first_name
+                user.last_name = last_name
+                user.save(update_fields=["first_name", "last_name"])
+
+            if "phone" in data:
+                staff_profile, _ = StaffProfile.objects.get_or_create(user=user)
+                staff_profile.phone = data["phone"].strip()
+                staff_profile.save(update_fields=["phone", "updated_at"])
+
+            pw_err = _apply_password_change(user, data)
+            if pw_err is not None:
+                return pw_err
+
+            user = User.objects.select_related("profile", "staff_profile").get(pk=user.pk)
+            return Response(UserSerializer(user, context={"request": request}).data)
+
+        ok, err = _profile_required(user)
+        if not ok:
+            return err
+
+        profile = user.profile
 
         if "full_name" in data:
             first_name, last_name = _split_full_name(data["full_name"])
@@ -551,16 +587,11 @@ class ProfileView(APIView):
         if profile_fields:
             profile.save(update_fields=profile_fields)
 
-        if data.get("new_password"):
-            if not user.check_password(data["current_password"]):
-                return Response(
-                    {"current_password": ["Current password is incorrect."]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            user.set_password(data["new_password"])
-            user.save(update_fields=["password"])
+        pw_err = _apply_password_change(user, data)
+        if pw_err is not None:
+            return pw_err
 
-        user = User.objects.select_related("profile").get(pk=user.pk)
+        user = User.objects.select_related("profile", "staff_profile").get(pk=user.pk)
         response_data = UserSerializer(user, context={"request": request}).data
         if verified_email_otp is not None:
             return Response(

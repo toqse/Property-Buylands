@@ -33,6 +33,7 @@ import {
 } from "@/components/PropertyListingForm";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdvertisementEditorForm } from "@/components/admin/AdvertisementEditorForm";
+import { PortalAccountMenu } from "@/components/PortalAccountMenu";
 import { Button } from "@/components/ui/button";
 import {
   SubmitProgressButton,
@@ -52,34 +53,14 @@ import { toast } from "sonner";
 import {
   Building2,
   LayoutDashboard,
-  LogOut,
   Megaphone,
   Menu,
   Plus,
   Trash2,
   Pencil,
-  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 const navItems = [
   { to: "/staff", label: "Dashboard", icon: LayoutDashboard, end: true, perm: null },
@@ -139,88 +120,29 @@ function StaffSidebar({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function StaffTopNavbar({ onOpenMenu }: { onOpenMenu: () => void }) {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const [confirmSignOut, setConfirmSignOut] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    try {
-      await logout();
-      navigate("/staff/login");
-    } finally {
-      setSigningOut(false);
-      setConfirmSignOut(false);
-    }
-  };
-
   return (
-    <>
-      <header className="sticky top-0 z-20 flex items-center border-b border-border bg-background/95 backdrop-blur px-4 sm:px-6 h-14">
-        <div className="flex w-10 shrink-0 items-center md:w-0 md:overflow-hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={onOpenMenu}
-            aria-label="Open navigation"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-        </div>
-        <h1 className="flex-1 text-center text-sm sm:text-base font-semibold tracking-wide text-foreground">
-          Staff Portal
-        </h1>
-        <div className="flex w-10 shrink-0 items-center justify-end">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded-full"
-                aria-label="Account menu"
-              >
-                <User className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="font-normal">
-                <p className="text-sm font-medium truncate">{user?.name || "Staff"}</p>
-                {user?.email ? (
-                  <p className="text-xs text-muted-foreground truncate mt-0.5">{user.email}</p>
-                ) : null}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive cursor-pointer"
-                onSelect={() => setConfirmSignOut(true)}
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
-
-      <AlertDialog open={confirmSignOut} onOpenChange={setConfirmSignOut}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Sign out?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You will need to sign in again to access the staff portal.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={signingOut}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void handleSignOut()} disabled={signingOut}>
-              {signingOut ? "Signing out…" : "Sign out"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <header className="sticky top-0 z-20 flex items-center border-b border-border bg-background/95 backdrop-blur px-4 sm:px-6 h-14">
+      <div className="flex w-10 shrink-0 items-center md:w-0 md:overflow-hidden">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          onClick={onOpenMenu}
+          aria-label="Open navigation"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+      </div>
+      <h1 className="flex-1 text-center text-sm sm:text-base font-semibold tracking-wide text-foreground">
+        Staff Portal
+      </h1>
+      <div className="flex w-10 shrink-0 items-center justify-end">
+        <PortalAccountMenu
+          loginPath="/staff/login"
+          signOutDescription="You will need to sign in again to access the staff portal."
+        />
+      </div>
+    </header>
   );
 }
 
