@@ -218,7 +218,7 @@ export function useAllCities() {
 
 export function useAdminAds(
   params: Record<string, string | number> = {},
-  opts: { pollVideoProcessing?: boolean } = {},
+  opts: { pollVideoProcessing?: boolean; staleTime?: number } = {},
 ) {
   return useQuery({
     queryKey: queryKeys.adminAds(params),
@@ -226,6 +226,7 @@ export function useAdminAds(
       const page = await advertisementsApi.listAdmin(params);
       return { ...page, items: page.results.map(mapApiAdToUi) };
     },
+    staleTime: opts.staleTime,
     refetchInterval: opts.pollVideoProcessing
       ? (query) => videoProcessingPollInterval(query.state.data?.items ?? [])
       : false,
@@ -234,7 +235,9 @@ export function useAdminAds(
 
 export function useCatalogMutations() {
   const qc = useQueryClient();
-  const inv = (keys: string[]) => keys.forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
+  const inv = async (keys: string[]) => {
+    await Promise.all(keys.map((k) => qc.invalidateQueries({ queryKey: [k] })));
+  };
 
   return {
     patchSiteSettings: useMutation({
@@ -323,7 +326,7 @@ export function useCatalogMutations() {
         const { form, onUploadProgress } = resolveAdFormInput(input);
         return advertisementsApi.create(form, { onUploadProgress });
       },
-      onSuccess: () => inv(["adminAds", "activeAds"]),
+      onSuccess: () => inv(["adminAds", "activeAds", "staffMeDashboard"]),
     }),
     updateAd: useMutation({
       mutationFn: ({
@@ -335,11 +338,11 @@ export function useCatalogMutations() {
         form: FormData;
         onUploadProgress?: UploadProgressCallback;
       }) => advertisementsApi.update(id, form, { onUploadProgress }),
-      onSuccess: () => inv(["adminAds", "activeAds"]),
+      onSuccess: () => inv(["adminAds", "activeAds", "staffMeDashboard"]),
     }),
     deleteAd: useMutation({
       mutationFn: (id: number) => advertisementsApi.delete(id),
-      onSuccess: () => inv(["adminAds", "activeAds"]),
+      onSuccess: () => inv(["adminAds", "activeAds", "staffMeDashboard"]),
     }),
     createHeroBanner: useMutation({
       mutationFn: (form: FormData) => contentApi.heroBanners.create(form),

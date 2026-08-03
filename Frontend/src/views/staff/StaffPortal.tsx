@@ -93,9 +93,6 @@ function StaffSidebar({ onNavigate }: { onNavigate?: () => void }) {
     <aside className="flex flex-col h-full w-64 border-r border-border bg-slate-950 text-slate-100">
       <div className="p-5 border-b border-slate-800">
         <Logo />
-        <p className="mt-3 text-xs uppercase tracking-wider text-emerald-400/90">Staff Portal</p>
-        <p className="mt-1 text-sm font-medium truncate">{user?.name}</p>
-        <p className="text-xs text-slate-400 truncate">{user?.roleLabel || "Staff"}</p>
       </div>
       <nav className="flex-1 p-3 space-y-1">
         {visible.map((item) => (
@@ -135,10 +132,39 @@ function StaffSidebar({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+function StaffTopNavbar({ onOpenMenu }: { onOpenMenu: () => void }) {
+  const { user } = useAuth();
+
+  return (
+    <header className="sticky top-0 z-20 flex items-center border-b border-border bg-background/95 backdrop-blur px-4 sm:px-6 h-14">
+      <div className="flex w-10 shrink-0 items-center md:w-0 md:overflow-hidden">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          onClick={onOpenMenu}
+          aria-label="Open navigation"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+      </div>
+      <h1 className="flex-1 text-center text-sm sm:text-base font-semibold tracking-wide text-foreground">
+        Staff Portal
+      </h1>
+      <div className="flex min-w-10 shrink-0 items-center justify-end max-w-[40%]">
+        <span className="truncate text-sm font-medium text-foreground" title={user?.name}>
+          {user?.name}
+        </span>
+      </div>
+    </header>
+  );
+}
+
 function StaffDashboardSection() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["staffMeDashboard"],
     queryFn: () => accountsApi.staffMeDashboard(),
+    staleTime: 0,
   });
 
   if (isLoading) return <p className="text-muted-foreground">Loading dashboard…</p>;
@@ -151,7 +177,7 @@ function StaffDashboardSection() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Overview of your properties, advertisements, and recent activity.
+          Overview of your properties and advertisements.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -164,26 +190,6 @@ function StaffDashboardSection() {
           <p className="text-3xl font-semibold mt-1">{dash.advertisements_count}</p>
         </div>
       </div>
-      <div className="rounded-xl border border-border bg-card p-5">
-        <h2 className="font-medium mb-3">Recent activity</h2>
-        {dash.recent_activity?.length ? (
-          <ul className="space-y-2">
-            {dash.recent_activity.map((a) => (
-              <li
-                key={a.id}
-                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm border-b border-border/60 pb-2 last:border-0"
-              >
-                <span>{a.summary || `${a.action} ${a.resource_type}`}</span>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(a.created_at).toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">No activity yet.</p>
-        )}
-      </div>
     </div>
   );
 }
@@ -191,7 +197,10 @@ function StaffDashboardSection() {
 function StaffPropertiesSection() {
   const { user } = useAuth();
   const canManage = user?.permissions?.can_manage_properties !== false;
-  const { data, refetch, isFetching } = useMyProperties({ page_size: 50 });
+  const { data, refetch, isFetching } = useMyProperties(
+    { page_size: 50 },
+    { staleTime: 0 },
+  );
   const mutations = usePropertyMutations();
   const { data: propertyTypesData } = usePropertyTypes();
   const properties = data?.items ?? [];
@@ -280,8 +289,8 @@ function StaffPropertiesSection() {
             : "Property created and published",
         );
       }
+      await refetch();
       setOpen(false);
-      void refetch();
     } catch (err) {
       const apiField = getApiErrorField(err);
       const message = getErrorMessage(err);
@@ -298,7 +307,7 @@ function StaffPropertiesSection() {
       await mutations.remove.mutateAsync(deleteTarget.id);
       toast.success("Property deleted");
       setDeleteTarget(null);
-      void refetch();
+      await refetch();
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -412,7 +421,10 @@ function StaffPropertiesSection() {
 function StaffAdsSection() {
   const { user } = useAuth();
   const canManage = user?.permissions?.can_manage_advertisements !== false;
-  const { data, refetch, isFetching } = useAdminAds({ page_size: 50, ordering: "newest" });
+  const { data, refetch, isFetching } = useAdminAds(
+    { page_size: 50, ordering: "newest" },
+    { staleTime: 0 },
+  );
   const catalogMutations = useCatalogMutations();
   const ads = data?.items ?? [];
 
@@ -442,10 +454,16 @@ function StaffAdsSection() {
       await catalogMutations.deleteAd.mutateAsync(Number(deleteTarget.id));
       toast.success("Advertisement deleted");
       setDeleteTarget(null);
-      void refetch();
+      await refetch();
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
+  };
+
+  const handleAdSaved = async () => {
+    await refetch();
+    setOpen(false);
+    setEditingAd(null);
   };
 
   return (
@@ -515,8 +533,7 @@ function StaffAdsSection() {
           initialAd={editingAd ?? undefined}
           onCancel={() => setOpen(false)}
           onSaved={() => {
-            setOpen(false);
-            void refetch();
+            void handleAdSaved();
           }}
         />
       </AdminModal>
@@ -577,24 +594,20 @@ const StaffPortal = () => {
       <div className="hidden md:block sticky top-0 h-screen">
         <StaffSidebar />
       </div>
-      <div className="md:hidden flex items-center justify-between border-b border-border px-4 py-3">
-        <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
-          <Menu className="h-5 w-5" />
-        </Button>
-        <span className="text-sm font-medium">Staff Portal</span>
-        <span className="w-9" />
-      </div>
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-64">
           <SheetTitle className="sr-only">Staff navigation</SheetTitle>
           <StaffSidebar onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
-      <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-10">
-        {section === "properties" && <StaffPropertiesSection />}
-        {section === "advertisements" && <StaffAdsSection />}
-        {(section === "dashboard" || section === undefined) && <StaffDashboardSection />}
-      </main>
+      <div className="flex-1 min-w-0 flex flex-col">
+        <StaffTopNavbar onOpenMenu={() => setMobileOpen(true)} />
+        <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-10">
+          {section === "properties" && <StaffPropertiesSection />}
+          {section === "advertisements" && <StaffAdsSection />}
+          {(section === "dashboard" || section === undefined) && <StaffDashboardSection />}
+        </main>
+      </div>
     </div>
   );
 };

@@ -101,7 +101,7 @@ export function useProperty(id: string | undefined) {
 
 export function useMyProperties(
   params: PropertyListParams = {},
-  opts?: { enabled?: boolean },
+  opts?: { enabled?: boolean; staleTime?: number },
 ) {
   return useQuery({
     queryKey: queryKeys.myProperties(params),
@@ -113,15 +113,19 @@ export function useMyProperties(
       };
     },
     enabled: opts?.enabled ?? true,
+    staleTime: opts?.staleTime,
   });
 }
 
 export function usePropertyMutations() {
   const qc = useQueryClient();
-  const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ["properties"] });
-    void qc.invalidateQueries({ queryKey: ["myProperties"] });
-    void qc.invalidateQueries({ queryKey: ["property"] });
+  const invalidate = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["properties"] }),
+      qc.invalidateQueries({ queryKey: ["myProperties"] }),
+      qc.invalidateQueries({ queryKey: ["property"] }),
+      qc.invalidateQueries({ queryKey: ["staffMeDashboard"] }),
+    ]);
   };
 
   return {
