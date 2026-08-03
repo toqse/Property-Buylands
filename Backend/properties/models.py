@@ -230,6 +230,11 @@ class Property(models.Model):
         db_index=True,
         help_text="Public listings only show approved properties.",
     )
+    rejection_reason = models.TextField(
+        blank=True,
+        default="",
+        help_text="Free-text reason shown to the owner/staff when a listing is rejected.",
+    )
     moderated_at = models.DateTimeField(null=True, blank=True)
     moderated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

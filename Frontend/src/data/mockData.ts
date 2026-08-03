@@ -35,6 +35,8 @@ export interface Property {
   /** Backend user id of the listing creator (when exposed by API). */
   createdBy?: number;
   status: PropertyStatus;
+  /** Free-text reason from admin when status is Rejected. */
+  rejectionReason?: string;
   featured?: boolean;
   videoUrl?: string;
   lat: number;

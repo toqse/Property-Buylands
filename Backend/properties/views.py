@@ -537,7 +537,30 @@ class PropertyViewSet(viewsets.ModelViewSet):
             perms = get_staff_permissions(user)
             if not perms.get("can_manage_properties"):
                 raise PermissionDenied("You do not have permission to manage properties.")
+
+        was_rejected = serializer.instance.moderation_status == Property.MODERATION_REJECTED
         instance = serializer.save()
+
+        # Owner/portal-staff edits of a rejected listing re-enter the approval queue.
+        if (
+            was_rejected
+            and user.is_authenticated
+            and not user_is_platform_admin(user)
+        ):
+            instance.moderation_status = Property.MODERATION_PENDING
+            instance.rejection_reason = ""
+            instance.moderated_at = None
+            instance.moderated_by = None
+            instance.save(
+                update_fields=[
+                    "moderation_status",
+                    "rejection_reason",
+                    "moderated_at",
+                    "moderated_by",
+                    "updated_at",
+                ]
+            )
+
         if user.is_authenticated and user.is_staff:
             log_staff_activity(
                 user,
@@ -587,9 +610,18 @@ class PropertyViewSet(viewsets.ModelViewSet):
             )
         prop = self.get_object()
         prop.moderation_status = Property.MODERATION_APPROVED
+        prop.rejection_reason = ""
         prop.moderated_at = timezone.now()
         prop.moderated_by = request.user
-        prop.save(update_fields=["moderation_status", "moderated_at", "moderated_by", "updated_at"])
+        prop.save(
+            update_fields=[
+                "moderation_status",
+                "rejection_reason",
+                "moderated_at",
+                "moderated_by",
+                "updated_at",
+            ]
+        )
         serializer = self.get_serializer(prop)
         return Response(serializer.data)
 
@@ -600,11 +632,26 @@ class PropertyViewSet(viewsets.ModelViewSet):
                 {"detail": "Only platform admins can reject properties."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        reason = (request.data.get("reason") or "").strip()
+        if not reason:
+            return Response(
+                {"reason": ["A rejection reason is required."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         prop = self.get_object()
         prop.moderation_status = Property.MODERATION_REJECTED
+        prop.rejection_reason = reason
         prop.moderated_at = timezone.now()
         prop.moderated_by = request.user
-        prop.save(update_fields=["moderation_status", "moderated_at", "moderated_by", "updated_at"])
+        prop.save(
+            update_fields=[
+                "moderation_status",
+                "rejection_reason",
+                "moderated_at",
+                "moderated_by",
+                "updated_at",
+            ]
+        )
         serializer = self.get_serializer(prop)
         return Response(serializer.data)
 

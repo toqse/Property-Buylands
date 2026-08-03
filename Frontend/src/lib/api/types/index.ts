@@ -150,6 +150,7 @@ export interface ApiProperty {
   parking_spaces?: number;
   is_featured?: boolean;
   moderation_status?: "pending" | "approved" | "rejected";
+  rejection_reason?: string | null;
   moderated_at?: string | null;
   moderated_by_username?: string | null;
   created_by?: number;

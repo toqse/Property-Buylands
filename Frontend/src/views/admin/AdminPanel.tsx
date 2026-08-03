@@ -2097,6 +2097,9 @@ const Approvals = () => {
   );
   const { approve, reject } = usePropertyMutations();
   const [viewId, setViewId] = useState<string | null>(null);
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
   const {
     data: viewProperty,
     isLoading: viewLoading,
@@ -2113,12 +2116,20 @@ const Approvals = () => {
     [pending, viewId],
   );
   const viewTarget = viewProperty ?? listViewFallback;
+  const rejectTarget =
+    pending.find((p) => p.id === rejectTargetId) ??
+    (viewTarget?.id === rejectTargetId ? viewTarget : null);
 
-  const act = async (id: string, status: "Approved" | "Rejected") => {
+  const closeRejectDialog = () => {
+    if (rejecting) return;
+    setRejectTargetId(null);
+    setRejectReason("");
+  };
+
+  const actApprove = async (id: string) => {
     try {
-      if (status === "Approved") await approve.mutateAsync(id);
-      else await reject.mutateAsync({ id });
-      toast.success(`Property ${status.toLowerCase()}`);
+      await approve.mutateAsync(id);
+      toast.success("Property approved");
       setViewId(null);
       void refetch();
     } catch (err) {
@@ -2126,11 +2137,77 @@ const Approvals = () => {
     }
   };
 
+  const confirmReject = async () => {
+    if (!rejectTargetId) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      toast.error("Please enter a rejection reason");
+      return;
+    }
+    setRejecting(true);
+    try {
+      await reject.mutateAsync({ id: rejectTargetId, reason });
+      toast.success("Property rejected");
+      setRejectTargetId(null);
+      setRejectReason("");
+      setViewId(null);
+      void refetch();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRejecting(false);
+    }
+  };
+
+  const rejectDialog = (
+    <Dialog
+      open={!!rejectTargetId}
+      onOpenChange={(open) => {
+        if (!open) closeRejectDialog();
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-serif text-2xl">Reject property</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {rejectTarget
+            ? `Explain why “${rejectTarget.title}” was not approved. The owner or staff will see this reason.`
+            : "Explain why this listing was not approved. The owner or staff will see this reason."}
+        </p>
+        <div className="space-y-2">
+          <Label htmlFor="reject-reason">Reason for rejection</Label>
+          <Textarea
+            id="reject-reason"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="e.g. Missing clear property photos, incorrect location…"
+            rows={4}
+            disabled={rejecting}
+          />
+        </div>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={closeRejectDialog} disabled={rejecting}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={rejecting || !rejectReason.trim()}
+            onClick={() => void confirmReject()}
+          >
+            {rejecting ? "Rejecting…" : "Reject"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (viewId) {
     if (viewLoading && !viewTarget) {
       return (
         <div className="animate-fade-in py-16 text-center text-muted-foreground">
           Loading property…
+          {rejectDialog}
         </div>
       );
     }
@@ -2146,18 +2223,22 @@ const Approvals = () => {
             <Button
               variant="luxe"
               size="sm"
-              onClick={() => void act(viewTarget.id, "Approved")}
+              onClick={() => void actApprove(viewTarget.id)}
             >
               <CheckCircle2 className="h-3 w-3" /> Approve
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void act(viewTarget.id, "Rejected")}
+              onClick={() => {
+                setRejectReason("");
+                setRejectTargetId(viewTarget.id);
+              }}
             >
               <XCircle className="h-3 w-3" /> Reject
             </Button>
           </div>
+          {rejectDialog}
         </div>
       );
     }
@@ -2208,7 +2289,7 @@ const Approvals = () => {
                     variant="luxe"
                     size="sm"
                     className="h-8 flex-1"
-                    onClick={() => void act(p.id, "Approved")}
+                    onClick={() => void actApprove(p.id)}
                   >
                     <CheckCircle2 className="h-3 w-3" /> Approve
                   </Button>
@@ -2216,7 +2297,10 @@ const Approvals = () => {
                     variant="outline"
                     size="sm"
                     className="h-8 flex-1"
-                    onClick={() => void act(p.id, "Rejected")}
+                    onClick={() => {
+                      setRejectReason("");
+                      setRejectTargetId(p.id);
+                    }}
                   >
                     <XCircle className="h-3 w-3" /> Reject
                   </Button>
@@ -2226,6 +2310,7 @@ const Approvals = () => {
           ))}
         </div>
       )}
+      {rejectDialog}
     </div>
   );
 };

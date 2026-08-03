@@ -164,6 +164,7 @@ export function mapApiPropertyToUi(p: ApiProperty): Property {
     ownerEmail: p.email || "",
     createdBy: p.created_by,
     status: moderationToStatus(p.moderation_status),
+    rejectionReason: (p.rejection_reason || "").trim() || undefined,
     featured: p.is_featured,
     videoUrl: p.property_video_url || undefined,
     videoThumbnail: p.video_thumbnail_url || undefined,

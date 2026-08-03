@@ -228,12 +228,14 @@ class PropertySerializer(serializers.ModelSerializer):
             'project_status', 'floors', 'sighting', 'area_cent',
             'parking_spaces', 'is_featured', 'images', 
             'uploaded_images', 'remove_video', 'created_at', 'updated_at',
-            'moderation_status', 'moderated_at', 'moderated_by_username', 'created_by',
+            'moderation_status', 'rejection_reason', 'moderated_at',
+            'moderated_by_username', 'created_by',
         ]
         read_only_fields = (
             'created_at',
             'updated_at',
             'moderation_status',
+            'rejection_reason',
             'moderated_at',
             'moderated_by_username',
             'created_by',

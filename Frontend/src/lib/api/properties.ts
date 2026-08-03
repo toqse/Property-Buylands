@@ -141,7 +141,7 @@ export const propertiesApi = {
     return apiRequest<ApiProperty>(`properties/properties/${id}/reject/`, {
       method: "POST",
       auth: true,
-      body: reason ? { reason } : {},
+      body: { reason: (reason || "").trim() },
     });
   },
 

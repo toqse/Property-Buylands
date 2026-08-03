@@ -34,16 +34,17 @@ import {
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdvertisementEditorForm } from "@/components/admin/AdvertisementEditorForm";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SubmitProgressButton,
+  PROPERTY_SUBMIT_MESSAGES,
+} from "@/components/SubmitProgressButton";
+import { PropertyUploadProgress } from "@/components/PropertyUploadProgress";
+import {
+  VideoProcessingStatusBadge,
+  hasPropertyUploadedVideo,
+} from "@/components/VideoProcessingStatusBadge";
+import { usePropertyUploadProgress } from "@/hooks/usePropertyUploadProgress";
+import { usePropertyVideoStatusPolling } from "@/hooks/api/usePropertyVideoStatusPolling";
 import { Logo } from "@/components/Logo";
 import type { Property } from "@/data/mockData";
 import type { ApiStaffDashboard } from "@/lib/api/types";
@@ -57,9 +58,28 @@ import {
   Plus,
   Trash2,
   Pencil,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const navItems = [
   { to: "/staff", label: "Dashboard", icon: LayoutDashboard, end: true, perm: null },
@@ -80,8 +100,7 @@ const navItems = [
 ];
 
 function StaffSidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const perms = user?.permissions;
 
   const visible = navItems.filter((item) => {
@@ -115,48 +134,93 @@ function StaffSidebar({ onNavigate }: { onNavigate?: () => void }) {
           </NavLink>
         ))}
       </nav>
-      <div className="p-3 border-t border-slate-800">
-        <Button
-          variant="ghost"
-          className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"
-          onClick={async () => {
-            await logout();
-            navigate("/staff/login");
-          }}
-        >
-          <LogOut className="h-4 w-4 mr-2" />
-          Sign out
-        </Button>
-      </div>
     </aside>
   );
 }
 
 function StaffTopNavbar({ onOpenMenu }: { onOpenMenu: () => void }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await logout();
+      navigate("/staff/login");
+    } finally {
+      setSigningOut(false);
+      setConfirmSignOut(false);
+    }
+  };
 
   return (
-    <header className="sticky top-0 z-20 flex items-center border-b border-border bg-background/95 backdrop-blur px-4 sm:px-6 h-14">
-      <div className="flex w-10 shrink-0 items-center md:w-0 md:overflow-hidden">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          onClick={onOpenMenu}
-          aria-label="Open navigation"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
-      </div>
-      <h1 className="flex-1 text-center text-sm sm:text-base font-semibold tracking-wide text-foreground">
-        Staff Portal
-      </h1>
-      <div className="flex min-w-10 shrink-0 items-center justify-end max-w-[40%]">
-        <span className="truncate text-sm font-medium text-foreground" title={user?.name}>
-          {user?.name}
-        </span>
-      </div>
-    </header>
+    <>
+      <header className="sticky top-0 z-20 flex items-center border-b border-border bg-background/95 backdrop-blur px-4 sm:px-6 h-14">
+        <div className="flex w-10 shrink-0 items-center md:w-0 md:overflow-hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={onOpenMenu}
+            aria-label="Open navigation"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        </div>
+        <h1 className="flex-1 text-center text-sm sm:text-base font-semibold tracking-wide text-foreground">
+          Staff Portal
+        </h1>
+        <div className="flex w-10 shrink-0 items-center justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full"
+                aria-label="Account menu"
+              >
+                <User className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="font-normal">
+                <p className="text-sm font-medium truncate">{user?.name || "Staff"}</p>
+                {user?.email ? (
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{user.email}</p>
+                ) : null}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive cursor-pointer"
+                onSelect={() => setConfirmSignOut(true)}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      <AlertDialog open={confirmSignOut} onOpenChange={setConfirmSignOut}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will need to sign in again to access the staff portal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={signingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleSignOut()} disabled={signingOut}>
+              {signingOut ? "Signing out…" : "Sign out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -204,6 +268,8 @@ function StaffPropertiesSection() {
   const mutations = usePropertyMutations();
   const { data: propertyTypesData } = usePropertyTypes();
   const properties = data?.items ?? [];
+  usePropertyVideoStatusPolling(properties);
+  const uploadProgress = usePropertyUploadProgress();
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Property | null>(null);
@@ -212,9 +278,11 @@ function StaffPropertiesSection() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ListingFieldErrors>({});
   const [deleteTarget, setDeleteTarget] = useState<Property | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [retryingVideoId, setRetryingVideoId] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const isSaving = mutations.create.isPending || mutations.update.isPending;
 
   if (!canManage) {
     return <p className="text-muted-foreground">You do not have permission to manage properties.</p>;
@@ -226,6 +294,7 @@ function StaffPropertiesSection() {
     setImageFiles([]);
     setVideoFile(null);
     setFieldErrors({});
+    uploadProgress.clearUploadProgress();
     setOpen(true);
   };
 
@@ -235,7 +304,26 @@ function StaffPropertiesSection() {
     setImageFiles([]);
     setVideoFile(null);
     setFieldErrors({});
+    uploadProgress.clearUploadProgress();
     setOpen(true);
+  };
+
+  const handleRetryVideoProcessing = async (property: Property) => {
+    setRetryingVideoId(property.id);
+    try {
+      await mutations.retryVideoProcessing.mutateAsync(property.id);
+      if (editing?.id === property.id) {
+        setEditing((prev) =>
+          prev ? { ...prev, videoProcessingStatus: "processing" } : prev,
+        );
+      }
+      await refetch();
+      toast.success("Video compression restarted");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRetryingVideoId(null);
+    }
   };
 
   const save = async () => {
@@ -254,7 +342,6 @@ function StaffPropertiesSection() {
       applyListingValidationError(setFieldErrors, mediaError, "uploaded_images");
       return;
     }
-    setSaving(true);
     try {
       const typeId = propertyTypesData?.results?.find(
         (t) => t.name.toLowerCase() === draft.propertyCategory.toLowerCase(),
@@ -276,28 +363,44 @@ function StaffPropertiesSection() {
         ),
         mode: editing ? "update" : "create",
       });
-      if (editing) {
-        await mutations.update.mutateAsync({ id: editing.id, form });
-        toast.success("Property updated");
-      } else {
-        const created = await mutations.create.mutateAsync(form);
-        const pending =
-          (created as { moderation_status?: string })?.moderation_status === "pending";
-        toast.success(
-          pending
-            ? "Property created — awaiting admin approval"
-            : "Property created and published",
-        );
+      const onUploadProgress = uploadProgress.makeUploadProgressHandler(!!videoFile);
+      try {
+        if (editing) {
+          const wasRejected = editing.status === "Rejected";
+          await mutations.update.mutateAsync({
+            id: editing.id,
+            form,
+            onUploadProgress,
+          });
+          toast.success(
+            wasRejected
+              ? "Property updated — resubmitted for approval"
+              : "Property updated",
+          );
+        } else {
+          const created = await mutations.create.mutateAsync({
+            form,
+            onUploadProgress,
+          });
+          const pending =
+            (created as { moderation_status?: string })?.moderation_status === "pending";
+          toast.success(
+            pending
+              ? "Property created — awaiting admin approval"
+              : "Property created and published",
+          );
+        }
+        await refetch();
+        setOpen(false);
+        setEditing(null);
+      } finally {
+        uploadProgress.clearUploadProgress();
       }
-      await refetch();
-      setOpen(false);
     } catch (err) {
       const apiField = getApiErrorField(err);
       const message = getErrorMessage(err);
       if (apiField) applyListingValidationError(setFieldErrors, message, apiField);
       else toast.error(message);
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -341,6 +444,7 @@ function StaffPropertiesSection() {
               <tr>
                 <th className="px-4 py-3 font-medium">Title</th>
                 <th className="px-4 py-3 font-medium hidden sm:table-cell">Status</th>
+                <th className="px-4 py-3 font-medium hidden md:table-cell">Video</th>
                 <th className="px-4 py-3 font-medium hidden md:table-cell">Price</th>
                 <th className="px-4 py-3 font-medium text-right">Actions</th>
               </tr>
@@ -348,8 +452,43 @@ function StaffPropertiesSection() {
             <tbody>
               {properties.map((p) => (
                 <tr key={p.id} className="border-t border-border">
-                  <td className="px-4 py-3 font-medium">{p.title}</td>
-                  <td className="px-4 py-3 hidden sm:table-cell">{p.status || "—"}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{p.title}</div>
+                    {p.status === "Rejected" && p.rejectionReason ? (
+                      <p className="mt-1 text-xs text-destructive line-clamp-2">
+                        Rejection reason: {p.rejectionReason}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 hidden sm:table-cell">
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+                        p.status === "Approved"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : p.status === "Pending"
+                            ? "bg-amber-50 text-amber-800"
+                            : p.status === "Rejected"
+                              ? "bg-destructive/15 text-destructive"
+                              : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {p.status || "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 hidden md:table-cell">
+                    <VideoProcessingStatusBadge
+                      variant="table"
+                      status={p.videoProcessingStatus}
+                      hasUploadedVideo={hasPropertyUploadedVideo(p.videoUrl)}
+                      onRetry={
+                        p.videoProcessingStatus === "failed"
+                          ? () => void handleRetryVideoProcessing(p)
+                          : undefined
+                      }
+                      retrying={retryingVideoId === p.id}
+                    />
+                  </td>
                   <td className="px-4 py-3 hidden md:table-cell">{p.price ?? "—"}</td>
                   <td className="px-4 py-3 text-right space-x-1">
                     <Button size="sm" variant="ghost" onClick={() => openEdit(p)}>
@@ -368,11 +507,23 @@ function StaffPropertiesSection() {
 
       <AdminModal
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          if (isSaving) return;
+          setOpen(false);
+        }}
         title={editing ? "Edit property" : "Add property"}
         className="max-w-3xl"
       >
         <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+          {editing?.status === "Rejected" && editing.rejectionReason ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p className="font-medium">This listing was rejected</p>
+              <p className="mt-1 text-destructive/90">{editing.rejectionReason}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Fix the issues below and save to resubmit for approval.
+              </p>
+            </div>
+          ) : null}
           <ListingFormFields
             draft={draft}
             setDraft={setDraft}
@@ -385,14 +536,39 @@ function StaffPropertiesSection() {
             existingImages={editing?.images ?? []}
             existingVideoUrl={editing?.videoUrl}
             fieldErrors={fieldErrors}
+            lockVideoChanges={isSaving}
+            videoProcessingStatus={editing?.videoProcessingStatus}
+            onRetryVideoProcessing={
+              editing?.videoProcessingStatus === "failed"
+                ? () => void handleRetryVideoProcessing(editing)
+                : undefined
+            }
+            retryingVideoProcessing={retryingVideoId === editing?.id}
           />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={save} disabled={saving}>
-              {saving ? "Saving…" : editing ? "Update" : "Create"}
-            </Button>
+          <div className="space-y-3 pt-2">
+            <PropertyUploadProgress
+              active={isSaving && uploadProgress.trackingVideo}
+              progress={uploadProgress.progress}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setOpen(false)}
+                disabled={isSaving}
+              >
+                Cancel
+              </Button>
+              <SubmitProgressButton
+                onClick={() => void save()}
+                submitting={isSaving}
+                idleLabel={editing ? "Update" : "Create"}
+                messages={
+                  uploadProgress.trackingVideo
+                    ? ["Uploading video…"]
+                    : PROPERTY_SUBMIT_MESSAGES
+                }
+              />
+            </div>
           </div>
         </div>
       </AdminModal>
@@ -409,7 +585,7 @@ function StaffPropertiesSection() {
           <Button variant="outline" onClick={() => setDeleteTarget(null)}>
             Cancel
           </Button>
-          <Button variant="destructive" onClick={confirmDelete}>
+          <Button variant="destructive" onClick={() => void confirmDelete()}>
             Delete
           </Button>
         </div>

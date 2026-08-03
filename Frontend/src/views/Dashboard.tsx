@@ -526,7 +526,11 @@ const Dashboard = () => {
             imageId,
           });
         }
-        toast.success(`“${editDraft.title.trim()}” updated`);
+        toast.success(
+          editTarget.status === "Rejected"
+            ? `“${editDraft.title.trim()}” updated — resubmitted for approval`
+            : `“${editDraft.title.trim()}” updated`,
+        );
         setEditTarget(null);
         resetEditPropertyForm();
         void refetch();
@@ -810,6 +814,13 @@ const Dashboard = () => {
                           {p.status}
                         </span>
                       </div>
+
+                      {p.status === "Rejected" && p.rejectionReason ? (
+                        <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                          <span className="font-medium">Rejection reason: </span>
+                          {p.rejectionReason}
+                        </div>
+                      ) : null}
 
                       <div className="mt-2 flex items-start gap-1.5 text-sm text-muted-foreground">
                         <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
@@ -1564,6 +1575,15 @@ const Dashboard = () => {
               </DrawerDescription>
             </div>
             <div className={MOBILE_PROPERTY_DRAWER_BODY_CLASS}>
+              {editTarget?.status === "Rejected" && editTarget.rejectionReason ? (
+                <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <p className="font-medium">This listing was rejected</p>
+                  <p className="mt-1 text-destructive/90">{editTarget.rejectionReason}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Fix the issues below and save to resubmit for approval.
+                  </p>
+                </div>
+              ) : null}
               <ListingFormFields
                 draft={editDraft}
                 setDraft={setEditDraft}
@@ -1646,6 +1666,15 @@ const Dashboard = () => {
               </DialogTitle>
             </DialogHeader>
             <div className="overflow-y-auto overflow-x-hidden px-6 pb-4 flex-1 space-y-6 min-h-0 min-w-0">
+              {editTarget?.status === "Rejected" && editTarget.rejectionReason ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <p className="font-medium">This listing was rejected</p>
+                  <p className="mt-1 text-destructive/90">{editTarget.rejectionReason}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Fix the issues below and save to resubmit for approval.
+                  </p>
+                </div>
+              ) : null}
               <ListingFormFields
                 draft={editDraft}
                 setDraft={setEditDraft}
