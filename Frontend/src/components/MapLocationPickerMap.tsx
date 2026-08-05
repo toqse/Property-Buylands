@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -45,6 +45,46 @@ export function MapLocationPickerMap({
 
   const initialCenterRef = useRef(center);
   const initialZoomRef = useRef(zoom);
+  const markerPositionRef = useRef(markerPosition);
+  markerPositionRef.current = markerPosition;
+
+  useEffect(() => {
+    initialCenterRef.current = center;
+    initialZoomRef.current = zoom;
+  }, [center, zoom]);
+
+  const [mapReadyTick, setMapReadyTick] = useState(0);
+
+  const syncMarker = (map: L.Map, position: [number, number] | null) => {
+    if (!position) {
+      if (markerRef.current) {
+        map.removeLayer(markerRef.current);
+        markerRef.current = null;
+      }
+      return;
+    }
+
+    if (!markerRef.current) {
+      const marker = L.marker(position, {
+        draggable: true,
+        icon: mapPinIcon,
+      }).addTo(map);
+      marker.on("dragend", () => {
+        const { lat, lng } = marker.getLatLng();
+        onPickRef.current(lat, lng);
+      });
+      markerRef.current = marker;
+      return;
+    }
+
+    const current = markerRef.current.getLatLng();
+    if (
+      Math.abs(current.lat - position[0]) > 1e-9 ||
+      Math.abs(current.lng - position[1]) > 1e-9
+    ) {
+      markerRef.current.setLatLng(position);
+    }
+  };
 
   useEffect(() => {
     const el = containerRef.current;
@@ -93,6 +133,10 @@ export function MapLocationPickerMap({
 
       mapRef.current = map;
 
+      // Drop the pin immediately if we already know the location
+      // (e.g. "My current location" opened the picker).
+      syncMarker(map, markerPositionRef.current);
+
       for (const ms of [50, 150, 300, 500]) {
         timers.push(window.setTimeout(refreshSize, ms));
       }
@@ -101,6 +145,8 @@ export function MapLocationPickerMap({
         ro = new ResizeObserver(() => refreshSize());
         ro.observe(el);
       }
+
+      setMapReadyTick((n) => n + 1);
     };
 
     timers.push(
@@ -125,59 +171,25 @@ export function MapLocationPickerMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    if (!markerPosition) {
-      if (markerRef.current) {
-        map.removeLayer(markerRef.current);
-        markerRef.current = null;
-      }
-      return;
-    }
-
-    if (!markerRef.current) {
-      const marker = L.marker(markerPosition, {
-        draggable: true,
-        icon: mapPinIcon,
-      }).addTo(map);
-      marker.on("dragend", () => {
-        const { lat, lng } = marker.getLatLng();
-        onPickRef.current(lat, lng);
-      });
-      markerRef.current = marker;
-      return;
-    }
-
-    const current = markerRef.current.getLatLng();
-    if (
-      Math.abs(current.lat - markerPosition[0]) > 1e-9 ||
-      Math.abs(current.lng - markerPosition[1]) > 1e-9
-    ) {
-      markerRef.current.setLatLng(markerPosition);
-    }
-  }, [markerPosition?.[0], markerPosition?.[1], markerPosition == null]);
+    syncMarker(map, markerPosition);
+  }, [markerPosition?.[0], markerPosition?.[1], markerPosition == null, mapReadyTick]);
 
   useEffect(() => {
     if (recenterKey <= 0) return;
     const map = mapRef.current;
     if (!map) return;
     map.setView(center, zoom, { animate: true });
-    if (markerPosition) {
-      if (!markerRef.current) {
-        const marker = L.marker(markerPosition, {
-          draggable: true,
-          icon: mapPinIcon,
-        }).addTo(map);
-        marker.on("dragend", () => {
-          const { lat, lng } = marker.getLatLng();
-          onPickRef.current(lat, lng);
-        });
-        markerRef.current = marker;
-      } else {
-        markerRef.current.setLatLng(center);
-      }
-    }
+    syncMarker(map, markerPosition);
     window.setTimeout(() => map.invalidateSize({ animate: false }), 50);
-  }, [recenterKey, center[0], center[1], zoom, markerPosition?.[0], markerPosition?.[1]]);
+  }, [
+    recenterKey,
+    center[0],
+    center[1],
+    zoom,
+    markerPosition?.[0],
+    markerPosition?.[1],
+    mapReadyTick,
+  ]);
 
   return (
     <div className="absolute inset-0">

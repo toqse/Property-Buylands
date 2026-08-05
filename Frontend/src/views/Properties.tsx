@@ -29,7 +29,9 @@ import {
   CURRENT_LOCATION_VALUE,
   RADIUS_OPTIONS,
   buildLocationCoordsMap,
+  geoPointFromParams,
   getLocationSearchValue,
+  normalizeGeoPoint,
 } from "@/lib/locationFilter";
 import {
   ALL_LOCATIONS_VALUE,
@@ -770,10 +772,6 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     [handleDraftLocationSelect],
   );
 
-  const draftMapInitialCenter =
-    draftSelectedPlaceGeo ??
-    (coords ? { latitude: coords.latitude, longitude: coords.longitude } : null);
-
   const draftLocationSelection = useMemo(
     () =>
       locationStringToSelection(draftLocation, {
@@ -798,6 +796,42 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     () => new URLSearchParams(effectiveFilterKey),
     [effectiveFilterKey],
   );
+
+  const draftMapInitialCenter = useMemo(() => {
+    const fromDraft = normalizeGeoPoint(draftSelectedPlaceGeo);
+    if (fromDraft) return fromDraft;
+    if (draftIsCurrentLocationFilter) {
+      const fromCoords = normalizeGeoPoint(coords);
+      if (fromCoords) return fromCoords;
+      const fromUrl = geoPointFromParams(
+        queryFilterParams.get("lat"),
+        queryFilterParams.get("lng"),
+      );
+      if (fromUrl) return fromUrl;
+      return null;
+    }
+    if (
+      draftLocation !== "Any" &&
+      draftLocation !== CURRENT_LOCATION_VALUE
+    ) {
+      const fromCatalog = locationCoordsByLabel.get(draftLocation);
+      const normalized = normalizeGeoPoint(fromCatalog);
+      if (normalized) return normalized;
+    }
+    const fromUrl = geoPointFromParams(
+      queryFilterParams.get("lat"),
+      queryFilterParams.get("lng"),
+    );
+    if (fromUrl) return fromUrl;
+    return normalizeGeoPoint(coords);
+  }, [
+    draftSelectedPlaceGeo,
+    draftIsCurrentLocationFilter,
+    draftLocation,
+    coords,
+    locationCoordsByLabel,
+    queryFilterParams,
+  ]);
 
   const queryCategory = queryFilterParams.get("category") || "All";
   const queryType = normalizePropertyForType(
@@ -998,6 +1032,51 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
     else params.delete("q");
     navigateListingFilters(params);
   }, [searchInput, effectiveFilterKey, navigateListingFilters]);
+
+  const changeSearchRadius = useCallback(
+    (nextRadius: string) => {
+      const params = new URLSearchParams(effectiveFilterKey);
+      if (!params.get("radius") && !params.get("lat") && !params.get("lng")) {
+        return;
+      }
+      if (params.get("radius") === nextRadius) return;
+
+      setSearchRadius(nextRadius);
+      setDraftSearchRadius(nextRadius);
+      params.set("radius", nextRadius);
+
+      const lat = Number(params.get("lat"));
+      const lng = Number(params.get("lng"));
+      const geo =
+        Number.isFinite(lat) && Number.isFinite(lng)
+          ? { latitude: lat, longitude: lng }
+          : undefined;
+
+      persistSectionLocationPrefs({
+        location,
+        searchRadius: nextRadius,
+        autoCurrentLocationDismissed,
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
+      });
+      writeGlobalLocationPrefs({
+        location,
+        searchRadius: nextRadius,
+        autoCurrentLocationDismissed,
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
+      });
+
+      navigateListingFilters(params);
+    },
+    [
+      effectiveFilterKey,
+      location,
+      autoCurrentLocationDismissed,
+      persistSectionLocationPrefs,
+      navigateListingFilters,
+    ],
+  );
 
   const applyFilters = () => {
     const nextQ = searchInput.trim();
@@ -1225,6 +1304,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
           queryFilterParams.get("location") ||
           (queryFilterParams.get("lat") ? CURRENT_LOCATION_VALUE : "Any"),
         searchRadius: queryFilterParams.get("radius") || String(defaultRadiusKm),
+        hasRadiusFilter: Boolean(queryFilterParams.get("radius")),
         price: [...queryPrice],
         priceRange,
         features: queryFeatures,
@@ -1306,6 +1386,10 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
           <ActiveListingFiltersBar
             chips={activeFilterChips}
             onClearAll={resetFilters}
+            searchRadius={
+              queryFilterParams.get("radius") || String(defaultRadiusKm)
+            }
+            onRadiusChange={changeSearchRadius}
           />
 
           {isMobile ? (
@@ -1822,6 +1906,7 @@ const Properties = ({ defaultType }: { defaultType?: "For Sale" | "For Rent" } =
         open={draftMapOpen}
         onOpenChange={setDraftMapOpen}
         initialCenter={draftMapInitialCenter}
+        preferCurrentLocation={draftIsCurrentLocationFilter}
         onConfirm={handleDraftMapConfirm}
       />
 

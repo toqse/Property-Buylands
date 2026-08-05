@@ -8,6 +8,8 @@ import {
 export type ActiveListingFilterChip = {
   id: string;
   label: string;
+  /** When set, the chip opens an inline control (e.g. radius picker). */
+  kind?: "radius";
 };
 
 const PRICE_RANGE_LABELS: Record<string, string> = {
@@ -54,6 +56,8 @@ export function buildActiveListingFilterChips(options: {
   defaultType?: "For Sale" | "For Rent";
   location: string;
   searchRadius: string;
+  /** True when lat/lng (+ radius) geo filtering is active. */
+  hasRadiusFilter?: boolean;
   price: number[];
   priceRange: string;
   features: number[];
@@ -81,11 +85,21 @@ export function buildActiveListingFilterChips(options: {
   }
 
   if (options.location && options.location !== "Any") {
-    const label =
-      options.location === CURRENT_LOCATION_VALUE
-        ? `Within ${options.searchRadius} km`
-        : options.location;
-    chips.push({ id: "location", label });
+    // Current-location geo filter is represented by the radius chip alone.
+    if (options.location !== CURRENT_LOCATION_VALUE) {
+      chips.push({ id: "location", label: options.location });
+    }
+  }
+
+  if (
+    options.hasRadiusFilter ||
+    options.location === CURRENT_LOCATION_VALUE
+  ) {
+    chips.push({
+      id: "radius",
+      label: `Within ${options.searchRadius} km`,
+      kind: "radius",
+    });
   }
 
   const [priceMin, priceMax] = options.price;

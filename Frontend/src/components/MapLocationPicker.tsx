@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { LocateFixed, MapPin } from "lucide-react";
+import { LocateFixed } from "lucide-react";
 import "leaflet/dist/leaflet.css";
+import { LocationMapIcon } from "@/components/LocationMapIcon";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useUserLocation } from "@/context/UserLocationContext";
 import { reverseGeocodeOsm } from "@/lib/osmSearch";
+import { isValidGeoPoint, normalizeGeoPoint } from "@/lib/locationFilter";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +42,8 @@ type MapLocationPickerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialCenter?: { latitude: number; longitude: number } | null;
+  /** When true and no valid initial center, detect GPS on open. */
+  preferCurrentLocation?: boolean;
   onConfirm: (result: MapLocationConfirm) => void;
 };
 
@@ -93,15 +97,19 @@ export function MapLocationPinButton({
         className,
       )}
     >
-      <MapPin className={cn("h-5 w-5", active && "fill-[#1c5fa8]/25")} />
+      <LocationMapIcon className={size === "modal" ? "h-6 w-6" : "h-5 w-5"} />
     </button>
   );
 }
 
+const MOBILE_MAP_DRAWER_CONTENT_CLASS =
+  "bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-[120] mt-0 flex max-h-[calc(100dvh-3.75rem-env(safe-area-inset-bottom,0px))] min-h-[min(480px,72dvh)] flex-col gap-0 overflow-hidden rounded-t-3xl p-0";
+
 export function MapLocationPicker({
   open,
   onOpenChange,
-  initialCenter: _initialCenter,
+  initialCenter,
+  preferCurrentLocation = false,
   onConfirm,
 }: MapLocationPickerProps) {
   const isMobile = useIsMobile();
@@ -120,6 +128,23 @@ export function MapLocationPicker({
   const abortRef = useRef<AbortController | null>(null);
   const initializedForOpenRef = useRef(false);
 
+  const resolveInitialPosition = useCallback((): [number, number] | null => {
+    const normalized = normalizeGeoPoint(initialCenter);
+    if (!normalized) return null;
+    return [normalized.latitude, normalized.longitude];
+  }, [initialCenter?.latitude, initialCenter?.longitude]);
+
+  const applyMapPosition = useCallback((latitude: number, longitude: number) => {
+    if (!isValidGeoPoint(latitude, longitude)) return;
+    const pos: [number, number] = [latitude, longitude];
+    setViewCenter(pos);
+    setZoom(LOCAL_ZOOM);
+    setPickedPosition(pos);
+    setPreviewLabel("");
+    setRecenterKey((k) => k + 1);
+    setMapMountKey((k) => k + 1);
+  }, []);
+
   useEffect(() => {
     if (!open) {
       initializedForOpenRef.current = false;
@@ -135,17 +160,36 @@ export function MapLocationPicker({
 
     if (!initializedForOpenRef.current) {
       initializedForOpenRef.current = true;
-      setViewCenter(INDIA_CENTER);
-      setZoom(DEFAULT_ZOOM);
-      setPickedPosition(null);
-      setPreviewLabel("");
-      setRecenterKey(0);
-      setMapMountKey((k) => k + 1);
+      const initialPos = resolveInitialPosition();
+      if (initialPos) {
+        applyMapPosition(initialPos[0], initialPos[1]);
+      } else if (preferCurrentLocation) {
+        setViewCenter(INDIA_CENTER);
+        setZoom(DEFAULT_ZOOM);
+        setPickedPosition(null);
+        setPreviewLabel("");
+        setRecenterKey(0);
+        setMapMountKey((k) => k + 1);
+        setLocating(true);
+        void requestLocationForFilter().then((result) => {
+          setLocating(false);
+          if (result) {
+            applyMapPosition(result.latitude, result.longitude);
+          }
+        });
+      } else {
+        setViewCenter(INDIA_CENTER);
+        setZoom(DEFAULT_ZOOM);
+        setPickedPosition(null);
+        setPreviewLabel("");
+        setRecenterKey(0);
+        setMapMountKey((k) => k + 1);
+      }
     }
 
     const t = window.setTimeout(() => setMapVisible(true), 120);
     return () => window.clearTimeout(t);
-  }, [open]);
+  }, [open, resolveInitialPosition, preferCurrentLocation, applyMapPosition, requestLocationForFilter]);
 
   useEffect(() => {
     if (!open || !pickedPosition) {
@@ -153,6 +197,10 @@ export function MapLocationPicker({
       return;
     }
     const [lat, lng] = pickedPosition;
+    if (!isValidGeoPoint(lat, lng)) {
+      setGeocoding(false);
+      return;
+    }
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -257,7 +305,7 @@ export function MapLocationPicker({
 
   const mapBlock = (
     <div
-      className="relative min-h-[240px] flex-1 overflow-hidden rounded-xl border border-border/70 bg-[#e8eef5] md:min-h-[420px]"
+      className="relative min-h-[220px] flex-1 overflow-hidden rounded-xl border border-border/70 bg-[#e8eef5] sm:min-h-[420px]"
       data-vaul-no-drag
     >
       {open && mapVisible ? (
@@ -270,7 +318,7 @@ export function MapLocationPicker({
           recenterKey={recenterKey}
         />
       ) : (
-        <div className="flex h-full min-h-[240px] w-full items-center justify-center text-sm text-muted-foreground md:min-h-[420px]">
+        <div className="flex h-full min-h-[220px] w-full items-center justify-center text-sm text-muted-foreground sm:min-h-[420px]">
           Loading map…
         </div>
       )}
@@ -290,9 +338,12 @@ export function MapLocationPicker({
 
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="bottom-[60px] z-[120] mt-0 flex max-h-[calc(100dvh-5rem)] flex-col rounded-t-3xl">
-          <DrawerHeader className="shrink-0 px-5 pb-2 pt-1 text-left">
+      <Drawer open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
+        <DrawerContent
+          overlayClassName="z-[110]"
+          className={MOBILE_MAP_DRAWER_CONTENT_CLASS}
+        >
+          <DrawerHeader className="shrink-0 px-5 pb-2 pt-2 text-left">
             <DrawerTitle className="text-lg font-semibold tracking-tight">
               Pick location on map
             </DrawerTitle>
@@ -304,7 +355,7 @@ export function MapLocationPicker({
             {mapBlock}
             {selectedLocationBlock}
           </div>
-          <DrawerFooter className="shrink-0 gap-2 border-t border-border/70 px-5 py-2.5">
+          <DrawerFooter className="shrink-0 gap-2 border-t border-border/70 bg-background px-5 py-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] shadow-[0_-6px_16px_-10px_rgba(15,23,42,0.18)]">
             {currentLocationButton}
             {confirmButton}
           </DrawerFooter>

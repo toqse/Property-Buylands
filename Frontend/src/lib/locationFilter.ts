@@ -30,6 +30,38 @@ export function getLocationSearchValue(value: string) {
   return value.split(",")[0]?.trim() || value;
 }
 
+/** Reject null island, out-of-range, and non-finite coordinates. */
+export function isValidGeoPoint(latitude: number, longitude: number): boolean {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+  if (latitude === 0 && longitude === 0) return false;
+  if (latitude < -90 || latitude > 90) return false;
+  if (longitude < -180 || longitude > 180) return false;
+  return true;
+}
+
+export function geoPointFromParams(
+  latRaw: string | null | undefined,
+  lngRaw: string | null | undefined,
+): { latitude: number; longitude: number } | null {
+  if (latRaw == null || lngRaw == null || latRaw === "" || lngRaw === "") {
+    return null;
+  }
+  const latitude = Number(latRaw);
+  const longitude = Number(lngRaw);
+  if (!isValidGeoPoint(latitude, longitude)) return null;
+  return { latitude, longitude };
+}
+
+export function normalizeGeoPoint(
+  point: { latitude?: number | null; longitude?: number | null } | null | undefined,
+): { latitude: number; longitude: number } | null {
+  if (!point) return null;
+  const { latitude, longitude } = point;
+  if (latitude == null || longitude == null) return null;
+  if (!isValidGeoPoint(latitude, longitude)) return null;
+  return { latitude, longitude };
+}
+
 export function buildLocationCoordsMap(
   results: {
     location_name?: string;

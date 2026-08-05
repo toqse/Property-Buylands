@@ -90,7 +90,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
           : "sticky top-0 border-b border-border/60 bg-white shadow-sm",
       )}
     >
-      <div className="container flex h-24 items-center justify-between gap-4 overflow-visible">
+      <div className="container flex h-24 items-center justify-between gap-2 overflow-visible sm:gap-4">
         <Link to="/" className="shrink-0 transition-opacity hover:opacity-90">
           <Logo
             src="/brand/logo.png"
@@ -102,7 +102,7 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
             src="/brand/logo.png"
             variant="dark"
             className="flex sm:hidden origin-left -my-1 -ml-1"
-            imgClassName="h-9"
+            imgClassName="h-7"
           />
         </Link>
 
@@ -136,8 +136,11 @@ export const Navbar = ({ variant = "solid" }: { variant?: NavbarVariant }) => {
         </div>
 
         {/* Mobile — location search replaces the old "Sell Property" CTA */}
-        <div className="md:hidden min-w-0 flex-1 pl-3">
-          <LocationSearch instanceId="navbar-location-search-mobile" />
+        <div className="md:hidden flex min-w-0 flex-1 justify-end pl-1.5">
+          <LocationSearch
+            instanceId="navbar-location-search-mobile"
+            className="w-full min-w-0 max-w-[200px] sm:max-w-[220px]"
+          />
         </div>
 
         <div className="hidden md:flex shrink-0 items-center gap-3">

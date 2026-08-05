@@ -2,7 +2,7 @@
 
 import { Link } from "@/lib/router";
 import { Logo } from "./Logo";
-import { ArrowUp, Facebook, Instagram, Linkedin, Mail, MapPin, Phone, Share2 } from "lucide-react";
+import { ArrowUp, Facebook, Instagram, Linkedin, Mail, MapPin, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { revealFadeUpClass } from "@/lib/revealFade";
 import { useInViewOnce } from "@/hooks/useInViewOnce";
@@ -19,9 +19,9 @@ export function Footer() {
   const categories = (propertyTypesData?.results ?? []).map((t) => t.name);
 
   const address = (company?.address || company?.company_address || "").trim();
-  const phone = (company?.phone || company?.admin_phone || "").trim();
+  // const phone = (company?.phone || company?.admin_phone || "").trim();
   const email = (company?.email || company?.company_email || "").trim();
-  const phoneHref = phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : "";
+  // const phoneHref = phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : "";
   const year = new Date().getFullYear();
 
   const scrollToTop = () => {
@@ -133,6 +133,7 @@ export function Footer() {
                 <span className="leading-relaxed whitespace-pre-line">{address}</span>
               </li>
             )}
+            {/* Phone from API temporarily hidden
             {phone && (
               <li className="flex gap-2">
                 <Phone className="h-4 w-4 text-white mt-0.5 shrink-0" />
@@ -141,6 +142,7 @@ export function Footer() {
                 </a>
               </li>
             )}
+            */}
             {email && (
               <li className="flex gap-2">
                 <Mail className="h-4 w-4 text-white mt-0.5 shrink-0" />
@@ -149,7 +151,7 @@ export function Footer() {
                 </a>
               </li>
             )}
-            {!address && !phone && !email && (
+            {!address && !email && (
               <li className="text-background/50">Contact details coming soon.</li>
             )}
           </ul>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { useNavigate, buildAppPath, isListingPagePath, normalizeListingPath } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,7 @@ import { isBrowserReload } from "@/lib/browserReload";
 import {
   CURRENT_LOCATION_VALUE,
   getLocationSearchValue,
+  normalizeGeoPoint,
 } from "@/lib/locationFilter";
 import {
   clearAllSectionLocationPrefs,
@@ -29,7 +31,6 @@ import {
 } from "@/components/LocationSearchSelect";
 import {
   MapLocationPicker,
-  MapLocationPinButton,
   type MapLocationConfirm,
 } from "@/components/MapLocationPicker";
 
@@ -70,6 +71,7 @@ export function LocationSearch({
   const value = useNavbarLocationSelection();
   const [pendingCurrentLocation, setPendingCurrentLocation] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [mapPortalReady, setMapPortalReady] = useState(false);
   const hydratedRef = useRef(false);
 
   const radius = String(radiusKm || 10);
@@ -82,12 +84,28 @@ export function LocationSearch({
     Number.isFinite(value.latitude) &&
     Number.isFinite(value.longitude);
 
-  const mapInitialCenter =
-    pinActive && value
-      ? { latitude: value.latitude!, longitude: value.longitude! }
-      : coords
-        ? { latitude: coords.latitude, longitude: coords.longitude }
-        : null;
+  const mapInitialCenter = useMemo(() => {
+    if (pinActive && value) {
+      return normalizeGeoPoint({
+        latitude: value.latitude,
+        longitude: value.longitude,
+      });
+    }
+    if (
+      value?.value === CURRENT_LOCATION_VALUE ||
+      value?.source === "current"
+    ) {
+      return normalizeGeoPoint(coords);
+    }
+    return normalizeGeoPoint(coords);
+  }, [pinActive, value, coords]);
+
+  const preferMapCurrentLocation =
+    value?.value === CURRENT_LOCATION_VALUE || value?.source === "current";
+
+  useEffect(() => {
+    setMapPortalReady(true);
+  }, []);
 
   useEffect(() => {
     if (hydratedRef.current) return;
@@ -252,33 +270,41 @@ export function LocationSearch({
     [handleChange],
   );
 
+  const openMapPicker = useCallback(() => {
+    if (typeof document !== "undefined") {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+    setMapOpen(true);
+  }, []);
+
   return (
     <>
-      <div className={cn("flex min-w-0 items-center gap-2", className)}>
-        <LocationSearchSelect
-          instanceId={instanceId}
-          value={value}
-          onChange={handleChange}
-          placeholder={placeholder}
-          className="min-w-0 flex-1"
-          variant="navbar"
-          allValue={ALL_LOCATIONS_VALUE}
-          allLabel="All Locations"
-          currentLocationLabel={NAVBAR_CURRENT_LOCATION_MENU_LABEL}
-          selectedCurrentLocationLabel={NAVBAR_CURRENT_LOCATION_LABEL}
-        />
-        <MapLocationPinButton
-          size="navbar"
-          active={pinActive}
-          onClick={() => setMapOpen(true)}
-        />
-      </div>
-      <MapLocationPicker
-        open={mapOpen}
-        onOpenChange={setMapOpen}
-        initialCenter={mapInitialCenter}
-        onConfirm={handleMapConfirm}
+      <LocationSearchSelect
+        instanceId={instanceId}
+        value={value}
+        onChange={handleChange}
+        placeholder={placeholder}
+        className={cn("min-w-0", className)}
+        variant="navbar"
+        allValue={ALL_LOCATIONS_VALUE}
+        allLabel="All Locations"
+        currentLocationLabel={NAVBAR_CURRENT_LOCATION_MENU_LABEL}
+        selectedCurrentLocationLabel={NAVBAR_CURRENT_LOCATION_LABEL}
+        onMapPickClick={openMapPicker}
+        mapPinActive={pinActive}
       />
+      {mapPortalReady
+        ? createPortal(
+            <MapLocationPicker
+              open={mapOpen}
+              onOpenChange={setMapOpen}
+              initialCenter={mapInitialCenter}
+              preferCurrentLocation={preferMapCurrentLocation}
+              onConfirm={handleMapConfirm}
+            />,
+            document.body,
+          )
+        : null}
     </>
   );
 }

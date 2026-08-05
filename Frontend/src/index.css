@@ -318,3 +318,10 @@
 .buylands-leaflet-map .leaflet-control-attribution {
   display: none !important;
 }
+.buylands-map-pin {
+  background: transparent !important;
+  border: none !important;
+}
+.buylands-leaflet-map .leaflet-marker-pane {
+  z-index: 600;
+}
