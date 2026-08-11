@@ -203,8 +203,15 @@ class DistrictViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = District.objects.select_related('state').all().order_by('name')
         state_id = self.request.query_params.get('state_id')
+        state = self.request.query_params.get('state')
         if state_id:
             queryset = queryset.filter(state_id=state_id)
+        elif state:
+            raw = state.strip()
+            if raw.isdigit():
+                queryset = queryset.filter(state_id=int(raw))
+            else:
+                queryset = queryset.filter(state__name__iexact=raw)
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(name__icontains=search.strip())

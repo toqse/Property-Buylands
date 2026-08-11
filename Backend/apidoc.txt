@@ -1601,10 +1601,11 @@ Send `[]` to clear all nearby places.
   | Param | Type | Notes |
   |-------|------|--------|
   | `state_id` | int | Filter districts by state ID |
+  | `state` | int or string | Filter by state ID (if numeric) or state name (case-insensitive). Ignored when `state_id` is also provided. |
   | `page` | int | Page number (default `1`) |
   | `page_size` | int | Items per page (default `20`, max `100`) |
   | `search` | string | Optional — case-insensitive match on district name |
-- **Example**: `/api/properties/districts/?state_id=1&page=1&page_size=20`
+- **Example**: `/api/properties/districts/?state_id=1&page=1&page_size=20` or `/api/properties/districts/?state=Kerala`
 - **Success Response**: 
   - **Code**: 200 OK
   - **Content**: 
