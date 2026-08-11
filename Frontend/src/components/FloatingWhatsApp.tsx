@@ -1,6 +1,7 @@
 "use client";
 
 import { useLocation } from "@/lib/router";
+import { isStandalonePublicPage } from "@/lib/standalonePages";
 
 const WHATSAPP_NUMBER = "918803667788";
 const WHATSAPP_HREF = `https://wa.me/${WHATSAPP_NUMBER}`;
@@ -16,7 +17,12 @@ function WhatsAppIcon({ className }: { className?: string }) {
 export function FloatingWhatsApp() {
   const { pathname } = useLocation();
 
-  if (pathname.startsWith("/admin") || pathname.startsWith("/staff") || pathname.startsWith("/dashboard")) {
+  if (
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/staff") ||
+    pathname.startsWith("/dashboard") ||
+    isStandalonePublicPage(pathname)
+  ) {
     return null;
   }
 

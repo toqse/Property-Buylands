@@ -2,6 +2,7 @@
 
 import type { LegalDocument, LegalSection } from "@/data/legalDocuments";
 import { useCompanyContact } from "@/hooks/api/useCatalog";
+import { useStandalonePublicPage } from "@/hooks/useStandalonePublicPage";
 import { cn } from "@/lib/utils";
 
 function applyContactPlaceholders(text: string, phone: string, address: string): string {
@@ -65,6 +66,8 @@ export function LegalDocumentPage({ document }: { document: LegalDocument }) {
   const { data: company } = useCompanyContact();
   const phone = (company?.phone || company?.admin_phone || "").trim();
   const address = (company?.address || company?.company_address || "").trim();
+
+  useStandalonePublicPage();
 
   return (
     <div className="min-h-screen flex flex-col">

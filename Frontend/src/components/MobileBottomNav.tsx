@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { NavLink, useLocation } from "@/lib/router";
+import { isStandalonePublicPage } from "@/lib/standalonePages";
 import { BadgeDollarSign, Building2, Home, KeyRound, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,13 @@ export function MobileBottomNav() {
 
   // The admin panel has its own navigation; the public bottom bar should not
   // appear there (especially on mobile, where it overlaps admin controls).
-  if (pathname.startsWith("/admin") || pathname.startsWith("/staff")) return null;
+  if (
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/staff") ||
+    isStandalonePublicPage(pathname)
+  ) {
+    return null;
+  }
 
   if (!visible) return null;
 
