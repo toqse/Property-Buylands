@@ -161,7 +161,7 @@ export const PRIVACY_POLICY: LegalDocument = {
       ],
       items: [
         "Grievance Officer: [Name]",
-        "Email: grievance@buylandsindia.com",
+        "Email: info@buylandsindia.com",
         "Phone: [Phone number]",
         "Address: [Registered office address]",
         "We will acknowledge and address grievances within the timelines prescribed under applicable law.",
@@ -327,7 +327,7 @@ export const TERMS_CONDITIONS: LegalDocument = {
       ],
       items: [
         "Grievance Officer: [Name]",
-        "Email: grievance@buylandsindia.com",
+        "Email: info@buylandsindia.com",
         "Phone: [Phone number]",
         "Address: [Registered office address]",
       ],
