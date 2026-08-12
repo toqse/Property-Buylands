@@ -138,10 +138,8 @@ def send_otp_to_recipient(
     return OTPVerification.objects.create(user=user, purpose=purpose, otp=otp_code)
 
 
-def _otp_payload(*, success: bool, message: str, otp: str | None = None, **extra) -> dict:
+def _otp_payload(*, success: bool, message: str, **extra) -> dict:
     payload = {"success": success, "message": message}
-    if otp is not None:
-        payload["otp"] = otp
     payload.update(extra)
     return payload
 
@@ -149,14 +147,13 @@ def _otp_payload(*, success: bool, message: str, otp: str | None = None, **extra
 def otp_send_success(
     message: str = OTP_SEND_SUCCESS_MESSAGE,
     http_status: int = status.HTTP_200_OK,
-    otp: str | None = None,
 ):
-    return Response(_otp_payload(success=True, message=message, otp=otp), status=http_status)
+    return Response(_otp_payload(success=True, message=message), status=http_status)
 
 
 def otp_send_failure(message: str = OTP_SEND_FAILURE_MESSAGE):
     return Response(_otp_payload(success=False, message=message), status=status.HTTP_400_BAD_REQUEST)
 
 
-def otp_verify_success(message: str, otp: str, **extra):
-    return Response(_otp_payload(success=True, message=message, otp=otp, **extra), status=status.HTTP_200_OK)
+def otp_verify_success(message: str, **extra):
+    return Response(_otp_payload(success=True, message=message, **extra), status=status.HTTP_200_OK)

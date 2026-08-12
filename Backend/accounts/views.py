@@ -169,7 +169,7 @@ class OwnerRegisterInitView(APIView):
         except OTPDeliveryError:
             return otp_send_failure()
 
-        return otp_send_success(otp=otp_code, http_status=status.HTTP_201_CREATED)
+        return otp_send_success(http_status=status.HTTP_201_CREATED)
 
 
 class OwnerRegisterVerifyView(APIView):
@@ -235,7 +235,6 @@ class OwnerRegisterVerifyView(APIView):
         user = User.objects.select_related("profile").get(pk=user.pk)
         return otp_verify_success(
             message="OTP verified successfully.",
-            otp=otp,
             token=token.key,
             user=UserSerializer(user, context={"request": request}).data,
         )
@@ -308,7 +307,7 @@ class LoginOtpRequestView(APIView):
         except OTPDeliveryError:
             return otp_send_failure()
 
-        return otp_send_success(otp=otp_obj.otp)
+        return otp_send_success()
 
 
 class LoginOtpVerifyView(APIView):
@@ -348,7 +347,6 @@ class LoginOtpVerifyView(APIView):
         auth = _issue_auth_token(request, user)
         return otp_verify_success(
             message="OTP verified successfully.",
-            otp=otp,
             token=auth["token"],
             user=auth["user"],
         )
@@ -378,7 +376,7 @@ class ForgotPasswordView(APIView):
             except OTPDeliveryError:
                 return otp_send_failure()
 
-            return otp_send_success(otp=otp_obj.otp)
+            return otp_send_success()
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -407,7 +405,7 @@ class VerifyOTPView(APIView):
                 if otp_obj:
                     otp_obj.is_verified = True
                     otp_obj.save(update_fields=["is_verified"])
-                    return otp_verify_success(message="OTP verified successfully.", otp=otp.strip())
+                    return otp_verify_success(message="OTP verified successfully.")
                 return Response(
                     {"success": False, "message": "Invalid OTP or expired"},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -559,7 +557,7 @@ class ProfileView(APIView):
 
         new_email = data.get("email")
         email_otp = (data.get("email_otp") or "").strip()
-        verified_email_otp = None
+        email_changed = False
         if new_email and new_email.lower() != user.email.lower():
             otp_obj = (
                 OTPVerification.objects.filter(
@@ -576,7 +574,7 @@ class ProfileView(APIView):
                     {"email_otp": ["Invalid or expired verification code."]},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            verified_email_otp = email_otp
+            email_changed = True
             user.email = new_email
             user.save(update_fields=["email"])
             profile.pending_email = ""
@@ -593,12 +591,11 @@ class ProfileView(APIView):
 
         user = User.objects.select_related("profile", "staff_profile").get(pk=user.pk)
         response_data = UserSerializer(user, context={"request": request}).data
-        if verified_email_otp is not None:
+        if email_changed:
             return Response(
                 {
                     "success": True,
                     "message": "Email updated successfully.",
-                    "otp": verified_email_otp,
                     "user": response_data,
                 }
             )
@@ -636,7 +633,7 @@ class ProfileEmailChangeRequestView(APIView):
         profile.pending_email = new_email
         profile.save(update_fields=["pending_email"])
 
-        return otp_send_success(otp=otp_obj.otp)
+        return otp_send_success()
 
 
 def _owner_admin_queryset():

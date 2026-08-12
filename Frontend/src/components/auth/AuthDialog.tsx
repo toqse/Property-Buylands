@@ -8,7 +8,6 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { useAuth } from "@/context/AuthContext";
 import { accountsApi } from "@/lib/api/accounts";
 import { getErrorMessage } from "@/lib/api/errors";
-import { display_console_logs } from "@/lib/config";
 import { toast } from "sonner";
 import { Mail, KeyRound, User, Lock, Eye, EyeOff } from "lucide-react";
 import { Logo } from "../Logo";
@@ -136,9 +135,6 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
     setLoading(true);
     try {
       const res = await accountsApi.loginOtpRequest(normalizeEmail(email));
-      if (display_console_logs && res.otp) {
-        console.log(`Dev OTP: ${res.otp}`);
-      }
       toast.success(res.message || `Verification code sent to ${email}`);
       setOtp("");
       setMode("login-verify");
@@ -196,9 +192,6 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
         password,
         password2: confirmPassword,
       });
-      if (display_console_logs && res.otp) {
-        console.log(`Dev OTP: ${res.otp}`);
-      }
       toast.success(res.message || `Verification code sent to ${email}`);
       setOtp("");
       setMode("register-verify");
@@ -272,17 +265,14 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
           password,
           password2: confirmPassword,
         });
-        if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
         toast.success(res.message || "Verification code resent");
         setOtp("");
       } else if (mode === "login-verify") {
         const res = await accountsApi.loginOtpRequest(normalized);
-        if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
         toast.success(res.message || "Verification code resent");
         setOtp("");
       } else if (mode === "forgot-verify") {
         const res = await accountsApi.forgotPassword(normalized);
-        if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
         toast.success(res.message || "Reset code resent");
         setOtp("");
       }
@@ -303,7 +293,6 @@ export const AuthDialog = ({ open, onOpenChange, initialMode = "login-password" 
     setLoading(true);
     try {
       const res = await accountsApi.forgotPassword(normalizeEmail(email));
-      if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
       toast.success(res.message || `Reset code sent to ${email}`);
       setOtp("");
       setMode("forgot-verify");

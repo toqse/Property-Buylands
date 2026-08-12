@@ -90,7 +90,6 @@ export interface AuthTokenResponse {
 export interface OtpInitResponse {
   success?: boolean;
   message?: string;
-  otp?: string;
 }
 
 export interface ApiPropertyImage {

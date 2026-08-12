@@ -5,7 +5,6 @@ import { useNavigate } from "@/lib/router";
 import { useAuth } from "@/context/AuthContext";
 import { accountsApi } from "@/lib/api/accounts";
 import { getErrorMessage } from "@/lib/api/errors";
-import { display_console_logs } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,7 +72,6 @@ const StaffLogin = () => {
     setLoading(true);
     try {
       const res = await accountsApi.loginOtpRequest(email.trim());
-      if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
       toast.success(res.message || "Login code sent to your email");
       setOtp("");
       setOtpStep("verify");
@@ -117,7 +115,6 @@ const StaffLogin = () => {
     setLoading(true);
     try {
       const res = await accountsApi.loginOtpRequest(email.trim());
-      if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
       toast.success(res.message || "Login code resent");
       setOtp("");
       setResendCooldown(RESEND_COOLDOWN_SEC);
@@ -133,7 +130,6 @@ const StaffLogin = () => {
     setLoading(true);
     try {
       const res = await accountsApi.forgotPassword(email.trim());
-      if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
       toast.success(res.message || "Reset code sent to your email");
       setOtp("");
       setForgotStep("verify");
@@ -172,7 +168,6 @@ const StaffLogin = () => {
     setLoading(true);
     try {
       const res = await accountsApi.forgotPassword(email.trim());
-      if (display_console_logs && res.otp) console.log(`Dev OTP: ${res.otp}`);
       toast.success(res.message || "Reset code resent");
       setOtp("");
       setResendCooldown(RESEND_COOLDOWN_SEC);
